@@ -659,8 +659,8 @@ const InspirationScreen = ({
   }
 
   const currentCard = cards[0];
-  const nextCard = cards[1] ?? cards[0];
-  
+  const nextCard = cards.length > 1 ? cards[1] : null;
+
   return (
     <div className="inspiration-layout app-screen-gradient">
       <header className="inspiration-header mb-1 mt-3 flex items-center justify-between gap-2 px-6">
@@ -676,25 +676,21 @@ const InspirationScreen = ({
 
       <div className="inspiration-main app-inset min-h-0">
         <div className="inspiration-cards">
+          {nextCard ? (
             <div
               aria-hidden
-              className="inspiration-card inspiration-card-stack inspiration-card-back overflow-hidden rounded-3xl"
+              className="inspiration-card inspiration-card-back overflow-hidden rounded-3xl"
             >
-              <div className="inspiration-card-photo-cell">
               <OutfitPhotoDisplay
                 photoUrl={nextCard.photoUrl}
                 emoji={nextCard.emoji}
                 bg={nextCard.bg}
-                className="inspiration-card-photo-flex"
+                className="inspiration-card-back-photo"
               />
-              </div>
-              <div className="inspiration-card-content shrink-0 p-3">
-                <div className="text-base font-bold text-stone-800">{nextCard.temp}</div>
-                <div className="text-xs text-stone-500">{nextCard.who}・{nextCard.location}</div>
-              </div>
             </div>
-            <div className="inspiration-card-stage">
-            <AnimatePresence mode="wait" initial={false}>
+          ) : null}
+          <div className="inspiration-card-stage">
+            <AnimatePresence initial={false}>
               <motion.div
                 key={currentCard.id}
                 initial={{ scale: 0.96, opacity: 0 }}
