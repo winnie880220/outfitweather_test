@@ -217,25 +217,6 @@ body {
     }
   }
 
-  /* 下一張：僅照片預覽，不顯示文字區，避免切換時重影怪異 */
-  .inspiration-card-back {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    transform: scale(0.97) translateY(0.4rem);
-    opacity: 0.55;
-    box-shadow: 0 10px 28px rgba(120, 100, 80, 0.1);
-  }
-
-  .inspiration-card-back-photo {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    background: #f3f0eb;
-  }
-
   .inspiration-card-stage {
     position: absolute;
     inset: 0;

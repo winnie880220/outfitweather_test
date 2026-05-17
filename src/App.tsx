@@ -638,7 +638,6 @@ const InspirationScreen = ({
   }
 
   const currentCard = cards[0];
-  const nextCard = cards.length > 1 ? cards[1] : null;
 
   return (
     <div className="inspiration-layout app-screen-gradient">
@@ -655,19 +654,6 @@ const InspirationScreen = ({
 
       <div className="inspiration-main app-inset min-h-0">
         <div className="inspiration-cards">
-          {nextCard ? (
-            <div
-              aria-hidden
-              className="inspiration-card inspiration-card-back overflow-hidden rounded-3xl"
-            >
-              <OutfitPhotoDisplay
-                photoUrl={nextCard.photoUrl}
-                emoji={nextCard.emoji}
-                bg={nextCard.bg}
-                className="inspiration-card-back-photo"
-              />
-            </div>
-          ) : null}
           <div className="inspiration-card-stage">
             <AnimatePresence initial={false}>
               <motion.div
