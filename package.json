@@ -26,7 +26,6 @@
     "@notionhq/client": "^2.2.15"
   },
   "devDependencies": {
-    "@vercel/node": "^5.1.14",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",

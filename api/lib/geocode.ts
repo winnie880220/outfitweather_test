@@ -1,9 +1,5 @@
-import type { GeoSearchResult } from "../../src/types/api";
+import type { GeoSearchResult } from "./types";
 
-/**
- * 地點搜尋：Open-Meteo Geocoding
- * 反向定位：BigDataCloud（Vercel 穩定、支援中文）
- */
 export async function searchLocations(query: string): Promise<GeoSearchResult[]> {
   const q = query.trim();
   if (q.length < 2) return [];
@@ -41,9 +37,7 @@ export async function searchLocations(query: string): Promise<GeoSearchResult[]>
   });
 }
 
-/** GET /api/geocode/reverse */
 export async function reverseGeocode(lat: number, lon: number): Promise<string> {
-  // 1) BigDataCloud（免金鑰、支援 zh）
   try {
     const bdcRes = await fetch(
       `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=zh`
@@ -66,7 +60,6 @@ export async function reverseGeocode(lat: number, lon: number): Promise<string> 
     /* fallback */
   }
 
-  // 2) Photon（lang 僅支援 en/de/fr，勿用 zh）
   const photonRes = await fetch(
     `https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}&lang=en`
   );

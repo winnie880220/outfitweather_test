@@ -1,32 +1,29 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-import type { NotionRecordPayload } from "../../src/types/api";
-import { methodNotAllowed, sendJson } from "../../lib/server/http";
-import { createRecordInNotion, updateRecordInNotion } from "../../lib/server/notion/records";
+import type { NotionRecordPayload } from "../lib/types";
+import { jsonResponse } from "../lib/http";
+import { createRecordInNotion, updateRecordInNotion } from "../lib/notion/records";
 
-/**
- * POST   /api/notion/records       — 建立紀錄（穿搭+天氣）
- * PATCH  /api/notion/records       — 更新同一筆（體感），body 需含 pageId
- */
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === "POST") {
-    const body = req.body as NotionRecordPayload | undefined;
+export const config = { runtime: "nodejs" };
+
+/** POST /api/notion/records | PATCH /api/notion/records */
+export default async function handler(request: Request): Promise<Response> {
+  if (request.method === "POST") {
+    const body = (await request.json()) as NotionRecordPayload;
     if (!body?.userName?.trim()) {
-      return sendJson(res, 400, { ok: false, error: "缺少 userName" });
+      return jsonResponse(400, { ok: false, error: "缺少 userName" });
     }
     const result = await createRecordInNotion(body);
-    return sendJson(res, result.ok ? 201 : 502, result);
+    return jsonResponse(result.ok ? 201 : 502, result);
   }
 
-  if (req.method === "PATCH") {
-    const body = req.body as NotionRecordPayload & { pageId?: string };
-    const pageId = body?.pageId;
-    if (!pageId) {
-      return sendJson(res, 400, { ok: false, error: "缺少 pageId" });
+  if (request.method === "PATCH") {
+    const body = (await request.json()) as NotionRecordPayload & { pageId?: string };
+    if (!body?.pageId) {
+      return jsonResponse(400, { ok: false, error: "缺少 pageId" });
     }
-    const { pageId: _, ...payload } = body;
+    const { pageId, ...payload } = body;
     const result = await updateRecordInNotion(pageId, payload);
-    return sendJson(res, result.ok ? 200 : 502, result);
+    return jsonResponse(result.ok ? 200 : 502, result);
   }
 
-  return methodNotAllowed(res);
+  return jsonResponse(405, { ok: false, error: "Method not allowed" });
 }

@@ -1,4 +1,4 @@
-import type { NotionRecordPayload } from "../../../src/types/api";
+import type { NotionRecordPayload } from "../types";
 import { RECORDS_DB } from "./schema";
 
 type NotionProps = Record<string, unknown>;
@@ -11,7 +11,6 @@ const multiSelect = (values: string[]) => ({
   multi_select: values.filter(Boolean).map((name) => ({ name })),
 });
 
-/** 將 App payload 轉成 Notion pages.create / pages.update 的 properties */
 export function toNotionProperties(payload: NotionRecordPayload): NotionProps {
   const props: NotionProps = {};
 

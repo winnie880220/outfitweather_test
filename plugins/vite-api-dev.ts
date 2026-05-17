@@ -3,14 +3,14 @@ import path from "path";
 import { fileURLToPath } from "url";
 import type { Plugin, Connect } from "vite";
 import type { IncomingMessage, ServerResponse } from "http";
+import { getCurrentWeather } from "../api/lib/weather";
+import { reverseGeocode, searchLocations } from "../api/lib/geocode";
+import { createRecordInNotion, updateRecordInNotion } from "../api/lib/notion/records";
+import type { NotionRecordPayload } from "../api/lib/types";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(root, ".env.local") });
 dotenv.config({ path: path.join(root, ".env") });
-import { getCurrentWeather } from "../lib/server/weather";
-import { reverseGeocode, searchLocations } from "../lib/server/geocode";
-import { createRecordInNotion, updateRecordInNotion } from "../lib/server/notion/records";
-import type { NotionRecordPayload } from "../src/types/api";
 
 function readBody(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -97,7 +97,6 @@ async function handleApi(
   }
 }
 
-/** 本機 pnpm dev 時模擬 Vercel /api 路由 */
 export function viteApiDevPlugin(): Plugin {
   return {
     name: "vite-api-dev",

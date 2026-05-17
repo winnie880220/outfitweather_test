@@ -1,4 +1,5 @@
-import type { WeatherData } from "../../src/types/api";
+import type { WeatherData } from "./types";
+import { reverseGeocode } from "./geocode";
 
 const getWeatherCondition = (code: number): string => {
   const mapping: Record<number, string> = {
@@ -22,7 +23,6 @@ const getWeatherCondition = (code: number): string => {
   return mapping[code] || "未知氣候";
 };
 
-/** GET /api/weather — 由 Vercel 代理 Open-Meteo */
 export async function getCurrentWeather(
   lat: number,
   lon: number,
@@ -42,7 +42,6 @@ export async function getCurrentWeather(
 
   let locationName = displayName?.trim() || "";
   if (!locationName) {
-    const { reverseGeocode } = await import("./geocode");
     locationName = await reverseGeocode(lat, lon);
   }
 

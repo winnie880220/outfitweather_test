@@ -1,13 +1,12 @@
 import { Client } from "@notionhq/client";
-import type { ApiResponse, NotionRecordPayload } from "../../../src/types/api";
-import { env, getNotionDatabaseId, isNotionConfigured } from "../env";
+import type { ApiResponse, NotionRecordPayload } from "../types";
+import { getNotionDatabaseId, isNotionConfigured, env } from "../env";
 import { toNotionProperties } from "./properties";
 
 function getClient() {
   return new Client({ auth: env.notionApiKey });
 }
 
-/** POST /api/notion/records — 完成記錄時建立一筆（天氣 + 使用者） */
 export async function createRecordInNotion(
   payload: NotionRecordPayload
 ): Promise<ApiResponse<{ id: string }>> {
@@ -38,7 +37,6 @@ export async function createRecordInNotion(
   }
 }
 
-/** PATCH /api/notion/records — 提交體感時更新同一筆 */
 export async function updateRecordInNotion(
   pageId: string,
   payload: NotionRecordPayload
