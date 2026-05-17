@@ -3,9 +3,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { BottomActionBar } from "./components/BottomActionBar";
+import { FeelMetricsChips } from "./components/FeelMetricsChips";
+import { FEEL_TONES, FEEL_TRACK_EMPTY } from "./lib/feel-metrics";
 import { OutfitPhotoDisplay } from "./components/OutfitPhotoDisplay";
 import { OutfitStatsPanel } from "./components/OutfitStatsPanel";
+import {
+  FeedbackOutfitCard,
+  type FeedbackOutfitContext,
+} from "./components/FeedbackOutfitCard";
+import { PendingFeedbackBanner } from "./components/PendingFeedbackBanner";
+import { ReminderSettingsPanel } from "./components/ReminderSettings";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "motion/react";
 import {
   analyzeOutfit,
@@ -20,6 +29,24 @@ import {
 } from "./lib/api";
 import type { InspirationItem, OutfitInsights } from "./lib/api";
 import { captureVideoFrame, compressDataUrl } from "./lib/image";
+import { buildRecordUrl, clearRecordFromUrl, getRecordIdFromUrl } from "./lib/record-url";
+import {
+  cancelEveningReminder,
+  maybeShowPendingReminderNotification,
+  scheduleEveningReminder,
+} from "./lib/reminder";
+import {
+  clearPendingRecord,
+  DEFAULT_REMINDER,
+  expireStalePending,
+  isPendingValidToday,
+  loadSession,
+  markPendingFeedbackComplete,
+  saveSession,
+  setPendingRecord,
+  formatTimeFromIso,
+  type ReminderSettings,
+} from "./lib/session-storage";
 import type { GeoSearchResult, ParsedOutfitImage, UserLocation, WeatherData } from "./types/api";
 import { 
   Home, 
@@ -53,42 +80,39 @@ const INSPIRATION_CARDS: Outfit[] = [
   {
     id: "1",
     emoji: "🧥",
-    bg: "#e8f4ff",
+    bg: "#ebe6dc",
     match: "97%",
     temp: "26°C・多雲",
     who: "Mei",
     date: "昨天",
     location: "基隆",
-    feel: "略感悶熱",
-    feelColor: "#378ADD",
+    feelMetrics: { breathability: 45, wrapping: 55, stuffiness: 72 },
     tags: ["防曬外套", "T恤"],
     humidity: "78%"
   },
   {
     id: "2",
     emoji: "👗",
-    bg: "#fef3e2",
+    bg: "#f0e8df",
     match: "94%",
     temp: "25°C・多雲",
     who: "小芸",
     date: "3天前",
     location: "台北",
-    feel: "體感剛好",
-    feelColor: "#1D9E75",
+    feelMetrics: { breathability: 68, wrapping: 50, stuffiness: 38 },
     tags: ["薄外套", "連身裙"],
     humidity: "75%"
   },
   {
     id: "3",
     emoji: "🧤",
-    bg: "#f0e8ff",
+    bg: "#e8e4dc",
     match: "88%",
     temp: "24°C・陰",
     who: "Jade",
     date: "2天前",
     location: "新北",
-    feel: "稍感涼意",
-    feelColor: "#534AB7",
+    feelMetrics: { breathability: 55, wrapping: 42, stuffiness: 28 },
     tags: ["薄長袖", "長褲"],
     humidity: "82%"
   }
@@ -98,42 +122,39 @@ const INITIAL_WARDROBE: Outfit[] = [
   {
     id: "w1",
     emoji: "👗",
-    bg: "#fef3e2",
+    bg: "#f0e8df",
     match: "-",
     temp: "22°C",
     who: "我",
     date: "昨天",
     location: "台北",
-    feel: "剛剛好",
-    feelColor: "#1D9E75",
+    feelMetrics: { breathability: 60, wrapping: 50, stuffiness: 40 },
     tags: [],
     humidity: "65%"
   },
   {
     id: "w2",
     emoji: "🧣",
-    bg: "#f0e8ff",
+    bg: "#e8e4dc",
     match: "-",
     temp: "18°C",
     who: "我",
     date: "3天前",
     location: "新北",
-    feel: "有點冷",
-    feelColor: "#378ADD",
+    feelMetrics: { breathability: 40, wrapping: 65, stuffiness: 25 },
     tags: [],
     humidity: "55%"
   },
   {
     id: "w3",
     emoji: "👕",
-    bg: "#e8f5ee",
+    bg: "#e6ebe4",
     match: "-",
     temp: "29°C",
     who: "我",
     date: "上週",
     location: "台北",
-    feel: "非常悶",
-    feelColor: "#D85A30",
+    feelMetrics: { breathability: 30, wrapping: 45, stuffiness: 85 },
     tags: [],
     humidity: "82%"
   }
@@ -152,7 +173,7 @@ const Toast = ({ message, onClear }: { message: string; onClear: () => void }) =
       initial={{ opacity: 0, y: 50 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 50 }}
-      className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-[#0C447C] text-white px-5 py-2.5 rounded-full text-sm font-medium whitespace-nowrap shadow-lg"
+      className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-stone-800 text-white px-5 py-2.5 rounded-full text-sm font-medium whitespace-nowrap shadow-lg"
     >
       {message}
     </motion.div>
@@ -288,21 +309,21 @@ const WelcomeScreen = ({
   };
 
   return (
-  <motion.div className="flex-1 flex flex-col justify-center items-center px-8 bg-slate-50">
+  <motion.div className="flex flex-1 flex-col items-center justify-center px-8">
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="text-center"
     >
-      <h1 className="text-5xl font-medium tracking-tight text-slate-900 leading-none">衣氣象</h1>
-      <p className="text-xs tracking-widest text-slate-400 mt-2 uppercase">Outfit Weather</p>
+      <h1 className="text-5xl font-medium tracking-tight text-stone-800 leading-none">衣氣象</h1>
+      <p className="mt-2 text-xs uppercase tracking-widest text-stone-500">Outfit Weather</p>
     </motion.div>
 
     <motion.div 
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ delay: 0.2 }}
-      className="w-full bg-white border border-slate-200 rounded-2xl p-5 mt-10 shadow-sm"
+      className="glass-card-strong mt-10 w-full rounded-2xl p-5"
     >
       <label className="text-[10px] text-slate-400 uppercase tracking-wider mb-2 block font-semibold">你的名字</label>
       <input 
@@ -318,7 +339,7 @@ const WelcomeScreen = ({
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ delay: 0.3 }}
-      className="w-full bg-white border border-slate-200 rounded-2xl p-5 mt-4 mb-4 shadow-sm relative"
+      className="glass-card-strong relative mb-4 mt-4 w-full rounded-2xl p-5"
       ref={locationWrapRef}
     >
       <label className="text-[10px] text-slate-400 uppercase tracking-wider mb-2 block font-semibold">你的地點</label>
@@ -334,7 +355,7 @@ const WelcomeScreen = ({
         type="button"
         onClick={handleUseCurrentLocation}
         disabled={locating}
-        className="mt-4 flex items-center gap-1.5 text-xs font-medium text-[#378ADD] bg-[#E6F1FB] px-3 py-2 rounded-full hover:bg-[#d4e8f9] transition-colors disabled:opacity-60"
+        className="glass-pill mt-4 flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium text-stone-600 transition-colors hover:bg-white/80 disabled:opacity-60"
       >
         <MapPin size={13} />
         {locating ? "定位中..." : "使用我目前定位"}
@@ -346,7 +367,7 @@ const WelcomeScreen = ({
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
-            className="absolute left-0 right-0 top-full mt-1 z-20 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto"
+            className="app-scroll absolute left-0 right-0 top-full mt-1 z-20 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto"
           >
             {searching && (
               <li className="px-4 py-3 text-sm text-slate-400">搜尋中...</li>
@@ -372,10 +393,10 @@ const WelcomeScreen = ({
     <button
       onClick={startApp}
       disabled={!canStart}
-      className={`w-full py-4 rounded-xl text-base font-medium flex items-center justify-center gap-2 transition-colors shadow-md ${
+      className={`flex w-full items-center justify-center gap-2 rounded-xl py-4 text-base font-medium transition-all ${
         canStart
-          ? "bg-[#0C447C] text-white hover:bg-[#0a3a69]"
-          : "bg-slate-200 text-slate-400 cursor-not-allowed"
+          ? "btn-gradient-primary text-white"
+          : "cursor-not-allowed bg-white/40 text-slate-400"
       }`}
     >
       開始 <ArrowRight size={16} />
@@ -395,6 +416,8 @@ const HomeScreen = ({
   loading,
   insights,
   insightsLoading,
+  showPendingBanner,
+  onContinuePending,
 }: {
   userName: string;
   setScreen: (s: Screen) => void;
@@ -402,69 +425,84 @@ const HomeScreen = ({
   loading: boolean;
   insights: OutfitInsights | null;
   insightsLoading: boolean;
+  showPendingBanner: boolean;
+  onContinuePending: () => void;
 }) => (
-  <div className="flex-1 flex flex-col pt-4 overflow-y-auto pb-32">
-    <header className="px-6 flex justify-between items-center mb-4">
-      <span className="text-sm font-medium text-slate-800">嗨，{userName}！</span>
-      <span className="text-[11px] text-slate-400 flex items-center gap-1">
-        <MapPin size={12} className="text-[#378ADD]" /> {loading ? "定位中..." : weather?.locationName || "定位失敗"}
-      </span>
-    </header>
-    
-    <div className="flex justify-center gap-1.5 px-6 mb-6">
-      {[true, true, false, false, false].map((done, i) => (
-        <div 
-          key={i} 
-          className={`h-1.5 rounded-full ${i === 1 ? "w-6 bg-[#378ADD]" : "w-1.5 bg-slate-200"} ${done && i < 1 ? "bg-[#1D9E75]" : ""}`} 
-        />
-      ))}
-    </div>
+  <div className="flex min-h-0 flex-1 flex-col">
+    <div className="app-scroll min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
+      <div className="app-inset pt-4 pb-2">
+      {showPendingBanner ? (
+        <PendingFeedbackBanner onContinue={onContinuePending} />
+      ) : null}
+      <header className="mb-3 flex items-center justify-between">
+        <span className="text-sm font-medium text-stone-800">嗨，{userName}！</span>
+        <span className="glass-pill flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] text-stone-600">
+          <MapPin size={12} className="text-stone-500" />
+          {loading ? "定位中..." : weather?.locationName || "定位失敗"}
+        </span>
+      </header>
 
-    {loading ? (
-      <div className="mx-4 bg-slate-50 border border-slate-100 rounded-3xl p-12 mb-6 flex flex-col items-center justify-center animate-pulse">
-        <div className="w-12 h-12 bg-slate-200 rounded-full mb-4" />
-        <div className="h-4 w-24 bg-slate-200 rounded" />
-      </div>
-    ) : (
-      <div className="mx-4 bg-[#E6F1FB] border border-[#B5D4F4] rounded-3xl p-6 mb-6 shadow-sm">
-        <div className="flex items-center gap-1.5 text-xs text-[#185FA5] font-medium mb-2">
-          <MapPin size={13} /> {weather?.locationName || "未知地點"}
-        </div>
-        <div className="text-6xl font-medium text-[#0C447C] mb-1">{Math.round(weather?.temp || 0)}°</div>
-        <div className="text-sm text-[#185FA5] mb-4">{weather?.condition}</div>
-        
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            { label: "濕度", val: `${weather?.humidity || 0}%` },
-            { label: "降雨機率", val: `${weather?.rainProb || 0}%` },
-            { label: "體感溫度", val: `${Math.round(weather?.apparentTemp || 0)}°` },
-            { label: "UV 指數", val: `${weather?.uvIndex || 0}` }
-          ].map((item, i) => (
-            <div key={i} className="bg-white/60 rounded-xl p-2.5">
-              <div className="text-[10px] text-[#185FA5] font-semibold uppercase">{item.label}</div>
-              <div className="text-base font-bold text-[#0C447C]">{item.val}</div>
+      {loading ? (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-card-strong mb-3 flex flex-col items-center justify-center rounded-2xl p-10 animate-pulse"
+        >
+          <div className="mb-3 h-10 w-10 rounded-full bg-stone-200/80" />
+          <div className="h-3 w-20 rounded bg-stone-200/80" />
+        </motion.div>
+      ) : (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-card-strong mb-3 flex items-center justify-between gap-3 rounded-2xl px-4 py-3"
+        >
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-light tabular-nums leading-none text-stone-800">
+                {Math.round(weather?.temp || 0)}°
+              </span>
+              <span className="truncate text-sm font-medium text-stone-500">
+                {weather?.condition || "—"}
+              </span>
             </div>
-          ))}
-        </div>
+            <p className="mt-1 truncate text-[10px] font-medium text-stone-400">
+              <MapPin size={10} className="mr-0.5 inline -mt-px" />
+              {weather?.locationName || "未知地點"}
+            </p>
+          </div>
+          <div className="grid shrink-0 grid-cols-2 gap-x-3 gap-y-0.5 text-right">
+            {[
+              { label: "濕度", val: `${weather?.humidity || 0}%` },
+              { label: "降雨", val: `${weather?.rainProb || 0}%` },
+              { label: "體感", val: `${Math.round(weather?.apparentTemp || 0)}°` },
+              { label: "UV", val: `${weather?.uvIndex || 0}` },
+            ].map((item) => (
+              <div key={item.label} className="leading-tight">
+                <div className="text-[10px] font-medium text-stone-400">{item.label}</div>
+                <div className="text-xs font-semibold tabular-nums text-stone-700">{item.val}</div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      <OutfitStatsPanel insights={insights} loading={insightsLoading} />
       </div>
-    )}
-
-    <OutfitStatsPanel insights={insights} loading={insightsLoading} />
-
-    <div className="px-6 mb-2">
-      <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">今天跟你天氣相似的人怎麼穿？</h3>
     </div>
 
-    <div className="flex-1 flex flex-col justify-end p-6">
-      <button 
-        onClick={() => setScreen("inspiration")}
-        className="w-full py-4 bg-[#0C447C] text-white rounded-xl text-base font-medium flex items-center justify-center gap-2 shadow-md"
-      >
-        看大家的穿搭 <ChevronRight size={18} />
-      </button>
+    <div className="sticky bottom-0 z-20 shrink-0 bg-gradient-to-t from-[#f5f1e9]/95 from-[50%] via-[#f5f1e9]/88 to-transparent pb-[6.75rem] pt-6">
+      <div className="app-inset">
+        <BottomActionBar
+          solo
+          primaryLabel="看大家的穿搭"
+          onPrimary={() => setScreen("inspiration")}
+        />
+      </div>
     </div>
   </div>
 );
+
 
 const InspirationScreen = ({
   cards,
@@ -483,11 +521,11 @@ const InspirationScreen = ({
 }) => {
   if (cards.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center pb-32 px-6 text-center">
+      <div className="flex-1 flex flex-col items-center justify-center pad-nav-safe px-6 text-center">
         <p className="text-sm text-slate-500 mb-4">此溫度區間還沒有穿搭靈感</p>
         <button
           onClick={() => setScreen("record")}
-          className="px-6 py-3 bg-[#0C447C] text-white rounded-xl text-sm font-semibold"
+          className="px-6 py-3 bg-stone-800 text-white rounded-xl text-sm font-semibold"
         >
           成為第一筆穿搭記錄
         </button>
@@ -499,39 +537,29 @@ const InspirationScreen = ({
   const nextCard = cards[(inspirationIdx + 1) % cards.length];
   
   return (
-    <div className="flex-1 flex flex-col overflow-hidden pb-32">
-      <header className="px-6 mt-4 flex justify-between items-center mb-4">
-        <span className="font-semibold text-slate-800">今日靈感</span>
-        <span className="text-[11px] text-[#378ADD] bg-[#E6F1FB] px-2.5 py-1 rounded-full font-medium">{insights ? `${insights.tempMin}–${insights.tempMax}°C` : `${Math.round(weather?.temp || 26)}°`} 相似天氣</span>
+    <div className="flex flex-1 flex-col min-h-0 overflow-hidden pad-nav-safe">
+      <header className="mb-2 mt-3 flex shrink-0 items-center justify-between px-6">
+        <span className="font-semibold text-stone-800">今日靈感</span>
+        <span className="glass-pill rounded-full px-2.5 py-1 text-[11px] font-medium text-stone-600">{insights ? `${insights.tempMin}–${insights.tempMax}°C` : `${Math.round(weather?.temp || 26)}°`} 相似天氣</span>
       </header>
 
-      <div className="flex justify-center gap-1.5 px-6 mb-4">
-        {[true, true, true, false, false].map((done, i) => (
-          <div 
-            key={i} 
-            className={`h-1.5 rounded-full ${i === 2 ? "w-6 bg-[#378ADD]" : "w-1.5 bg-slate-200"} ${done && i < 2 ? "bg-[#1D9E75]" : ""}`} 
-          />
-        ))}
-      </div>
-
-      <div className="flex-1 relative flex items-center justify-center p-4 bg-slate-50 overflow-hidden">
+      <div className="relative min-h-0 flex-1 overflow-hidden px-3 py-1">
         {/* Back Card */}
-        <div 
-          className="absolute w-[280px] bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden transform scale-95 translate-y-4 opacity-60 z-0"
-        >
+        <div className="inspiration-card absolute inset-x-0 top-2 bottom-2 z-0 mx-auto flex w-[min(300px,92%)] max-h-full scale-[0.96] flex-col overflow-hidden rounded-3xl opacity-50 translate-y-2">
            <OutfitPhotoDisplay
             photoUrl={nextCard.photoUrl}
             emoji={nextCard.emoji}
             bg={nextCard.bg}
-            className="h-60"
+            className="min-h-[120px] flex-1 basis-0"
           />
-          <div className="p-4">
-            <div className="text-lg font-bold text-slate-900">{nextCard.temp}</div>
-            <div className="text-xs text-slate-400">{nextCard.who}・{nextCard.location}</div>
+          <div className="inspiration-card-content p-3">
+            <div className="text-base font-bold text-stone-800">{nextCard.temp}</div>
+            <div className="text-xs text-stone-500">{nextCard.who}・{nextCard.location}</div>
           </div>
         </div>
 
         {/* Front Card */}
+        <div className="absolute inset-x-0 top-2 bottom-2 z-10 flex items-stretch justify-center">
         <AnimatePresence mode="popLayout">
           <motion.div 
             key={currentCard.id}
@@ -544,55 +572,60 @@ const InspirationScreen = ({
               if (info.offset.x > 100) handleNextInspiration(true);
               else if (info.offset.x < -100) handleNextInspiration(false);
             }}
-            className="relative w-[300px] bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden z-10 cursor-grab active:cursor-grabbing"
+            className="inspiration-card relative flex h-full w-[min(300px,92%)] cursor-grab flex-col overflow-hidden rounded-3xl active:cursor-grabbing"
           >
             <OutfitPhotoDisplay
               photoUrl={currentCard.photoUrl}
               emoji={currentCard.emoji}
               bg={currentCard.bg}
-              className="h-[340px]"
+              className="min-h-[200px] flex-1 basis-0"
             />
-            <div className="absolute top-3 right-3 z-10 bg-[#0C447C] text-white text-[10px] font-bold px-2.5 py-1 rounded-full drop-shadow-sm pointer-events-none">
+            <div className="absolute top-3 right-3 z-10 rounded-full bg-stone-800/90 px-2.5 py-1 text-[10px] font-bold text-white backdrop-blur-sm pointer-events-none">
               {currentCard.match} 匹配
             </div>
-            <div
-              className="absolute bottom-3 left-3 z-10 text-[10px] text-white font-bold px-2.5 py-1 rounded-full shadow-sm pointer-events-none"
-              style={{ backgroundColor: `${currentCard.feelColor}BF` }}
-            >
-              {currentCard.feel}
-            </div>
-            <div className="p-5">
-              <div className="text-xl font-bold text-slate-900">{currentCard.temp}</div>
-              <div className="text-xs text-slate-400 mt-0.5">{currentCard.who}・{currentCard.location}・{currentCard.date}</div>
-              <div className="flex gap-1.5 mt-3">
-                {currentCard.tags.map((tag, i) => (
-                  <span key={i} className="text-[10px] px-2.5 py-1 rounded-full bg-slate-50 border border-slate-100 text-slate-500 font-medium">{tag}</span>
-                ))}
-              </div>
+            <div className="inspiration-card-content flex shrink-0 flex-col p-5">
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.22 }}>
+                <div className="text-xl font-bold text-stone-900">{currentCard.temp}</div>
+                <div className="mt-0.5 text-xs text-stone-500">
+                  {currentCard.who}・{currentCard.location}・{currentCard.date}
+                </div>
+                {currentCard.tags.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {currentCard.tags.map((tag, i) => (
+                      <span
+                        key={i}
+                        className="rounded-full border border-stone-200/80 bg-white/80 px-2.5 py-1 text-[10px] font-medium text-stone-600"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <FeelMetricsChips metrics={currentCard.feelMetrics} compact />
+              </motion.div>
             </div>
           </motion.div>
         </AnimatePresence>
+        </div>
       </div>
 
-      <div className="px-6 py-5 flex items-center justify-between gap-4 bg-white border-t border-slate-100">
-        <button 
-          onClick={() => handleNextInspiration(false)}
-          className="w-14 h-14 rounded-full border border-slate-200 flex items-center justify-center text-slate-400 hover:bg-slate-50 active:scale-95 transition-all"
-        >
-          <X size={24} />
-        </button>
-        <button 
-          onClick={() => setScreen("record")}
-          className="flex-1 h-12 bg-[#0C447C] text-white rounded-full text-sm font-semibold shadow-md active:scale-95 transition-all"
-        >
-          我穿好了，來記錄
-        </button>
-        <button 
-          onClick={() => handleNextInspiration(true)}
-          className="w-14 h-14 rounded-full border border-[#1D9E75] flex items-center justify-center text-[#1D9E75] hover:bg-emerald-50 active:scale-95 transition-all"
-        >
-          <Heart size={24} fill="#1D9E75" />
-        </button>
+      <div className="app-inset shrink-0">
+        <BottomActionBar
+          primaryLabel="我穿好了，來記錄"
+          onPrimary={() => setScreen("record")}
+          left={{
+            icon: <X size={24} />,
+            onClick: () => handleNextInspiration(false),
+            ariaLabel: "略過",
+            className: "border-stone-200 text-stone-400",
+          }}
+          right={{
+            icon: <Heart size={24} fill="#8b7355" />,
+            onClick: () => handleNextInspiration(true),
+            ariaLabel: "喜歡",
+            className: "border-stone-400 text-[#8b7355] hover:bg-stone-50",
+          }}
+        />
       </div>
     </div>
   );
@@ -611,6 +644,8 @@ const RecordScreen = ({
   showActionSheet,
   setShowActionSheet,
   showToast,
+  reminder,
+  onReminderChange,
 }: {
   outfitImage: ParsedOutfitImage | null;
   onImageReady: (img: ParsedOutfitImage) => void;
@@ -624,6 +659,8 @@ const RecordScreen = ({
   showActionSheet: boolean;
   setShowActionSheet: (v: boolean) => void;
   showToast: (msg: string) => void;
+  reminder: ReminderSettings;
+  onReminderChange: (next: ReminderSettings) => void;
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -675,9 +712,11 @@ const RecordScreen = ({
   const hasPhoto = outfitImage !== null;
 
   return (
-    <div className="flex-1 flex flex-col pt-4 overflow-y-auto pb-32 relative">
-      <header className="px-6 mb-4 flex justify-between items-center">
-        <h2 className="font-semibold text-slate-800">記錄今日穿搭</h2>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="app-scroll flex-1 min-h-0 overflow-y-auto overscroll-y-contain">
+      <div className="app-inset pt-4 pb-2">
+      <header className="mb-3 flex justify-between items-center">
+        <h2 className="font-semibold text-stone-800">記錄今日穿搭</h2>
         {isCameraOpen && (
           <button onClick={() => {
             const stream = videoRef.current?.srcObject as MediaStream;
@@ -687,16 +726,37 @@ const RecordScreen = ({
         )}
       </header>
 
-      <div className="flex justify-center gap-1.5 px-6 mb-4">
-        {[true, true, true, true, false].map((done, i) => (
-          <div 
-            key={i} 
-            className={`h-1.5 rounded-full ${i === 3 ? "w-6 bg-[#378ADD]" : "w-1.5 bg-slate-200"} ${done && i < 3 ? "bg-[#1D9E75]" : ""}`} 
-          />
-        ))}
+      <div className="glass-card-strong mb-3 flex w-full items-center justify-between gap-3 rounded-2xl px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2">
+            <span className="text-3xl font-light tabular-nums leading-none text-stone-800">
+              {Math.round(weather?.temp || 0)}°
+            </span>
+            <span className="truncate text-sm font-medium text-stone-500">
+              {weather?.condition || "—"}
+            </span>
+          </div>
+          <p className="mt-1 truncate text-[10px] font-medium text-stone-400">
+            <MapPin size={10} className="mr-0.5 inline -mt-px" />
+            {weather?.locationName || "未知地點"}
+          </p>
+        </div>
+        <div className="grid shrink-0 grid-cols-2 gap-x-3 gap-y-0.5 text-right">
+          {[
+            { label: "濕度", val: `${weather?.humidity || 0}%` },
+            { label: "降雨", val: `${weather?.rainProb || 0}%` },
+            { label: "體感", val: `${Math.round(weather?.apparentTemp || 0)}°` },
+            { label: "時間", val: currentTime || "--:--" },
+          ].map((item) => (
+            <div key={item.label} className="leading-tight">
+              <div className="text-[10px] font-medium text-stone-400">{item.label}</div>
+              <div className="text-xs font-semibold tabular-nums text-stone-700">{item.val}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div className="relative mx-4">
+      <div className="relative mb-3 w-full">
         <motion.div 
           whileTap={{ scale: 0.98 }}
           onClick={() => !hasPhoto && !recordSaving && setShowActionSheet(true)}
@@ -767,7 +827,7 @@ const RecordScreen = ({
               >
                 <button 
                   onClick={startCamera}
-                  className="w-full py-4 bg-[#0C447C] text-white rounded-2xl flex items-center justify-center gap-2 font-bold shadow-lg"
+                  className="w-full py-4 bg-stone-800 text-white rounded-2xl flex items-center justify-center gap-2 font-bold shadow-lg"
                 >
                   <Camera size={20} /> 開啟自拍鏡頭
                 </button>
@@ -790,39 +850,55 @@ const RecordScreen = ({
         </AnimatePresence>
       </div>
 
-      <div className="m-4 bg-[#E6F1FB] border border-[#B5D4F4] rounded-2xl p-5">
-        <h4 className="text-[10px] text-[#185FA5] font-bold uppercase tracking-widest mb-3">自動綁定的氣象數據</h4>
-        <div className="space-y-2.5">
-          {[
-            { icon: <MapPin size={13} />, label: "位置", val: weather?.locationName || "未知地點" },
-            { icon: <Thermometer size={13} />, label: "氣溫", val: `${Math.round(weather?.temp || 0)}°C` },
-            { icon: <Droplets size={13} />, label: "濕度", val: `${weather?.humidity || 0}%` },
-            { icon: <CloudRain size={13} />, label: "降雨機率", val: `${weather?.rainProb || 0}%` },
-            { icon: <Clock size={13} />, label: "記錄時間", val: currentTime || "--:--" }
-          ].map((row, i) => (
-            <div key={i} className="flex justify-between items-center text-xs">
-              <span className="text-[#185FA5] flex items-center gap-1.5">{row.icon} {row.label}</span>
-              <span className="text-[#0C447C] font-bold">{row.val}</span>
-            </div>
-          ))}
-        </div>
+      {hasPhoto && (
+        <ReminderSettingsPanel
+          reminder={reminder}
+          onChange={onReminderChange}
+          showToast={showToast}
+          className="mb-4 mt-0 w-full"
+        />
+      )}
+
+      </div>
       </div>
 
-      <div className="px-4 mt-auto">
-        <button
-          disabled={!hasPhoto || recordSaving}
-          onClick={saveToWardrobe}
-          className={`w-full py-4 rounded-xl text-base font-semibold shadow-md transition-all ${hasPhoto && !recordSaving ? "bg-[#0C447C] text-white" : "bg-slate-200 text-slate-400 cursor-not-allowed opacity-50"}`}
-        >
-          {recordSaving ? "AI 分析並寫入中…" : "完成記錄"}
-        </button>
+      <div className="sticky bottom-0 z-20 shrink-0 bg-gradient-to-t from-[#f5f1e9]/95 from-[50%] via-[#f5f1e9]/88 to-transparent pb-[6.75rem] pt-6">
+        <div className="app-inset">
+          <BottomActionBar
+            solo
+            primaryLabel={recordSaving ? "AI 分析並寫入中…" : "完成記錄"}
+            onPrimary={saveToWardrobe}
+            disabled={!hasPhoto}
+            loading={recordSaving}
+          />
+        </div>
       </div>
     </div>
   );
 };
 
 
-const FeedbackScreen = ({ userName, feedbackDesc, setFeedbackDesc, feelSet, setFeelSet, submitFeedback }: { userName: string, feedbackDesc: string, setFeedbackDesc: (v: string) => void, feelSet: boolean, setFeelSet: (v: boolean) => void, submitFeedback: (metrics: { breathability: number; snugness: number; stuffiness: number }) => void }) => {
+const FeedbackScreen = ({
+  needsFeedback,
+  feedbackOutfit,
+  feedbackDesc,
+  setFeedbackDesc,
+  feelSet,
+  setFeelSet,
+  submitFeedback,
+}: {
+  needsFeedback: boolean;
+  feedbackOutfit: FeedbackOutfitContext;
+  feedbackDesc: string;
+  setFeedbackDesc: (v: string) => void;
+  feelSet: boolean;
+  setFeelSet: (v: boolean) => void;
+  submitFeedback: (metrics: {
+    breathability: number;
+    snugness: number;
+    stuffiness: number;
+  }) => void;
+}) => {
   const [metrics, setMetrics] = useState({
     breathability: 50,
     snugness: 50,
@@ -845,20 +921,24 @@ const FeedbackScreen = ({ userName, feedbackDesc, setFeedbackDesc, feelSet, setF
   const SliderField = ({ label, value, color, onChange, icon }: { label: string, value: number, color: string, onChange: (v: number) => void, icon: React.ReactNode }) => (
     <div className="mb-6 last:mb-0 group">
       <div className="flex justify-between items-center mb-2">
-        <label className="text-sm font-bold text-slate-700 flex items-center gap-2 group-hover:text-slate-900 transition-colors">
-          <div 
-            className="p-1.5 rounded-lg bg-slate-50 text-slate-400 group-hover:bg-slate-100 group-hover:text-slate-600 transition-colors"
-            style={{ color: value > 10 ? color : undefined }}
+        <label className="flex items-center gap-2 text-sm font-bold text-stone-700 transition-colors group-hover:text-stone-900">
+          <div
+            className="rounded-lg p-1.5 text-stone-400 transition-colors"
+            style={{
+              color: value > 10 ? color : undefined,
+              backgroundColor: value > 10 ? `${color}18` : "rgba(255,255,255,0.6)",
+            }}
           >
             {icon}
           </div>
           {label}
         </label>
-        <motion.span 
+        <motion.span
           key={value}
           initial={{ scale: 1.1, opacity: 0.8 }}
           animate={{ scale: 1, opacity: 1 }}
-          className="text-xs font-black font-mono text-slate-400"
+          className="text-xs font-black font-mono tabular-nums"
+          style={{ color: value > 10 ? color : "#a8a29e" }}
         >
           {value}%
         </motion.span>
@@ -870,72 +950,94 @@ const FeedbackScreen = ({ userName, feedbackDesc, setFeedbackDesc, feelSet, setF
           max="100" 
           value={value} 
           onChange={(e) => onChange(parseInt(e.target.value))}
-          className="w-full h-2.5 bg-slate-100 rounded-lg appearance-none cursor-pointer"
-          style={{ 
-            background: `linear-gradient(to right, ${color} ${value}%, #f1f5f9 ${value}%)`,
-            color: color // For the custom thumb's currentColor
+          className="h-2.5 w-full cursor-pointer appearance-none rounded-lg"
+          style={{
+            background: `linear-gradient(to right, ${color} ${value}%, ${FEEL_TRACK_EMPTY} ${value}%)`,
+            color,
           }}
         />
       </div>
     </div>
   );
 
+  if (!needsFeedback) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col pad-nav-safe">
+        <div className="app-inset flex flex-1 flex-col items-center justify-center px-6 py-12 text-center">
+          <div className="glass-card-strong mb-4 flex h-14 w-14 items-center justify-center rounded-2xl text-stone-500">
+            <Smile size={28} strokeWidth={1.5} />
+          </div>
+          <h2 className="text-base font-semibold text-stone-800">今日沒有需要回饋的穿搭了</h2>
+          <p className="mt-2 max-w-[260px] text-sm leading-relaxed text-stone-500">
+            今天的體感已記錄完成，或尚未建立今日穿搭。可先至「記錄」拍照上傳。
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex-1 flex flex-col pt-4 overflow-y-auto pb-32">
-      <header className="px-6 flex justify-between items-baseline mb-4">
-        <h2 className="font-semibold text-slate-800">今日體感回饋</h2>
-        <span className="text-[10px] text-slate-400 font-medium">拖動滑桿調整數值</span>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="app-scroll min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
+      <div className="app-inset pt-4 pb-2">
+      <header className="mb-4 flex items-baseline justify-between">
+        <h2 className="font-semibold text-stone-800">今日體感回饋</h2>
+        <span className="text-[10px] font-medium text-stone-400">拖動滑桿調整數值</span>
       </header>
 
-      <div className="flex justify-center gap-1.5 px-6 mb-4">
-        {[true, true, true, true, true].map((done, i) => (
-          <div 
-            key={i} 
-            className={`h-1.5 rounded-full ${i === 4 ? "w-6 bg-[#378ADD]" : "w-1.5 bg-[#1D9E75]"}`} 
-          />
-        ))}
-      </div>
+      <FeedbackOutfitCard outfit={feedbackOutfit} className="mb-4 w-full" />
 
-      <div className="mx-4 bg-white border border-slate-200 rounded-2xl p-6 mb-5 shadow-sm">
-        <SliderField 
-          label="透氣度" 
-          value={metrics.breathability} 
-          color="#378ADD" 
+      <div className="glass-card-strong mb-5 w-full rounded-2xl p-6">
+        <SliderField
+          label="透氣度"
+          value={metrics.breathability}
+          color={FEEL_TONES.breathability}
           icon={<Wind size={14} />}
-          onChange={(v) => updateMetric("breathability", v)} 
+          onChange={(v) => updateMetric("breathability", v)}
         />
-        <SliderField 
-          label="包裹感" 
-          value={metrics.snugness} 
-          color="#1D9E75" 
+        <SliderField
+          label="包裹感"
+          value={metrics.snugness}
+          color={FEEL_TONES.wrapping}
           icon={<User size={14} />}
-          onChange={(v) => updateMetric("snugness", v)} 
+          onChange={(v) => updateMetric("snugness", v)}
         />
-        <SliderField 
-          label="悶熱感" 
-          value={metrics.stuffiness} 
-          color="#D85A30" 
+        <SliderField
+          label="悶熱感"
+          value={metrics.stuffiness}
+          color={FEEL_TONES.stuffiness}
           icon={<Thermometer size={14} />}
-          onChange={(v) => updateMetric("stuffiness", v)} 
+          onChange={(v) => updateMetric("stuffiness", v)}
         />
       </div>
 
-      <div className={`mx-4 bg-slate-50 border border-slate-100 rounded-xl p-4 mb-8 transition-opacity ${feelSet ? "opacity-100 scale-100" : "opacity-30 scale-[0.98] animate-pulse"}`}>
-        <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">生成的感受標籤</div>
-        <div className="text-sm font-bold text-slate-800 flex items-center gap-2">
-          {feelSet ? <span className="w-2 h-2 rounded-full bg-[#1D9E75]" /> : <span className="w-2 h-2 rounded-full bg-slate-300" />}
+      <div
+        className={`glass-card mb-4 w-full rounded-xl p-4 transition-opacity ${feelSet ? "opacity-100 scale-100" : "opacity-30 scale-[0.98] animate-pulse"}`}
+      >
+        <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-stone-400">
+          生成的感受標籤
+        </div>
+        <div className="flex items-center gap-2 text-sm font-bold text-stone-800">
+          {feelSet ? (
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: FEEL_TONES.wrapping }} />
+          ) : (
+            <span className="h-2 w-2 rounded-full bg-stone-300" />
+          )}
           {feedbackDesc}
         </div>
       </div>
+      </div>
+      </div>
 
-      <div className="px-4">
-        <button 
-          disabled={!feelSet}
-          onClick={() => submitFeedback(metrics)}
-          className={`w-full py-4 rounded-xl text-sm font-bold shadow-md transition-all active:scale-[0.98] ${feelSet ? "bg-[#0C447C] text-white" : "bg-slate-200 text-slate-400 cursor-not-allowed opacity-50"}`}
-        >
-          {feelSet ? "貢獻這份體感數據" : "請先調整下方滑桿"}
-        </button>
+      <div className="sticky bottom-0 z-20 shrink-0 bg-gradient-to-t from-[#f5f1e9]/95 from-[50%] via-[#f5f1e9]/88 to-transparent pb-[6.75rem] pt-6">
+        <div className="app-inset">
+          <BottomActionBar
+            solo
+            primaryLabel={feelSet ? "貢獻這份體感數據" : "請先調整下方滑桿"}
+            onPrimary={() => submitFeedback(metrics)}
+            disabled={!feelSet}
+          />
+        </div>
       </div>
     </div>
   );
@@ -965,6 +1067,9 @@ export default function App() {
   const [notionPageId, setNotionPageId] = useState<string | null>(null);
   const [outfitInsights, setOutfitInsights] = useState<OutfitInsights | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
+  const [reminder, setReminder] = useState<ReminderSettings>(DEFAULT_REMINDER);
+  const [hasPendingFeedback, setHasPendingFeedback] = useState(false);
+  const sessionHydrated = useRef(false);
 
   const toStartedAtIso = (timeHm: string) => {
     const d = new Date();
@@ -1011,6 +1116,117 @@ export default function App() {
     }
   }, [weather?.temp, loadOutfitInsights]);
 
+  useEffect(() => {
+    const expired = expireStalePending();
+    const session = loadSession();
+
+    if (session.userName) setUserName(session.userName);
+    if (session.userLocation) {
+      setUserLocation(session.userLocation);
+      setLocationInput(session.userLocation.name);
+    }
+    setReminder(session.reminder);
+
+    const recordId = getRecordIdFromUrl();
+    if (recordId) {
+      setNotionPageId(recordId);
+      setPendingRecord(recordId);
+      clearRecordFromUrl();
+    } else if (isPendingValidToday(session.pendingRecord)) {
+      setNotionPageId(session.pendingRecord!.pageId);
+    }
+
+    setHasPendingFeedback(isPendingValidToday(loadSession().pendingRecord));
+
+    if (expired) {
+      setTimeout(() => showToast("昨日的紀錄已過期，請重新拍照"), 0);
+    }
+
+    const canAutoStart = Boolean(session.userName.trim() && session.userLocation);
+    if (canAutoStart && session.userLocation) {
+      void loadWeather(
+        session.userLocation.lat,
+        session.userLocation.lon,
+        session.userLocation.name
+      );
+      setScreen(recordId ? "feedback" : "home");
+    }
+
+    sessionHydrated.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 僅在掛載時還原 session
+  }, []);
+
+  useEffect(() => {
+    if (!sessionHydrated.current) return;
+    saveSession({ userName });
+  }, [userName]);
+
+  useEffect(() => {
+    if (!sessionHydrated.current) return;
+    saveSession({ userLocation });
+  }, [userLocation]);
+
+  useEffect(() => {
+    if (!sessionHydrated.current) return;
+    saveSession({ reminder });
+    if (!reminder.enabled) {
+      void cancelEveningReminder();
+    }
+  }, [reminder]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      const session = loadSession();
+      if (
+        isPendingValidToday(session.pendingRecord) &&
+        session.reminder.enabled &&
+        session.pendingRecord
+      ) {
+        void maybeShowPendingReminderNotification(
+          session.pendingRecord.pageId,
+          session.reminder
+        );
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+
+  const handleReminderChange = (next: ReminderSettings) => {
+    setReminder(next);
+  };
+
+  const refreshPendingFeedback = useCallback(() => {
+    setHasPendingFeedback(isPendingValidToday(loadSession().pendingRecord));
+  }, []);
+
+  useEffect(() => {
+    refreshPendingFeedback();
+  }, [screen, refreshPendingFeedback]);
+
+  const continuePendingFeedback = () => {
+    const session = loadSession();
+    if (isPendingValidToday(session.pendingRecord)) {
+      setNotionPageId(session.pendingRecord!.pageId);
+    }
+    setScreen("feedback");
+  };
+
+  const feedbackOutfit = useMemo((): FeedbackOutfitContext => {
+    const pending = loadSession().pendingRecord;
+    return {
+      photoUrl: outfitImage?.previewUrl ?? pending?.photoPreviewUrl,
+      locationName: weather?.locationName ?? pending?.locationName,
+      temp: weather?.temp ?? pending?.temp,
+      condition: weather?.condition ?? pending?.condition,
+      recordedTime:
+        currentTime ||
+        pending?.recordedTime ||
+        (pending?.photoSavedAt ? formatTimeFromIso(pending.photoSavedAt) : undefined),
+    };
+  }, [outfitImage, weather, currentTime]);
+
   const inspirationCards =
     outfitInsights && outfitInsights.inspiration.length > 0
       ? outfitInsights.inspiration
@@ -1018,7 +1234,8 @@ export default function App() {
 
   const startApp = () => {
     if (!userName.trim() || !userLocation) return;
-    loadWeather(userLocation.lat, userLocation.lon, userLocation.name);
+    saveSession({ userName: userName.trim(), userLocation, reminder });
+    void loadWeather(userLocation.lat, userLocation.lon, userLocation.name);
     setScreen("home");
   };
 
@@ -1028,6 +1245,7 @@ export default function App() {
   };
 
   const onOutfitImageReady = (img: ParsedOutfitImage) => {
+    setRecordSaving(false);
     setOutfitImage(img);
     const now = new Date();
     setCurrentTime(
@@ -1037,34 +1255,35 @@ export default function App() {
   };
 
   const clearOutfitImage = () => {
+    setRecordSaving(false);
     setOutfitImage(null);
   };
 
   const saveToWardrobe = async () => {
-    if (!outfitImage || !weather) return;
+    if (!outfitImage || !weather || recordSaving) return;
 
     setRecordSaving(true);
     let upperBodyTags: string[] = [];
     let lowerBodyTags: string[] = [];
 
     try {
-      const analysis = await analyzeOutfit(outfitImage.base64, outfitImage.mimeType);
-      upperBodyTags = analysis.upperBodyTags;
-      lowerBodyTags = analysis.lowerBodyTags;
-      const upper = upperBodyTags.length ? upperBodyTags.join("、") : "—";
-      const lower = lowerBodyTags.length ? lowerBodyTags.join("、") : "—";
-      showToast(`AI 辨識：上著 ${upper}｜下著 ${lower}`);
-    } catch (error) {
-      console.warn("Gemini analyze:", error);
-      const msg = error instanceof Error ? error.message : "";
-      if (msg.includes("額度") || msg.includes("429") || msg.includes("quota")) {
-        showToast("Gemini 額度不足，仍會儲存照片與天氣（無 AI 標籤）");
-      } else {
-        showToast(msg || "AI 辨識失敗，仍會儲存照片與天氣");
+      try {
+        const analysis = await analyzeOutfit(outfitImage.base64, outfitImage.mimeType);
+        upperBodyTags = analysis.upperBodyTags;
+        lowerBodyTags = analysis.lowerBodyTags;
+        const upper = upperBodyTags.length ? upperBodyTags.join("、") : "—";
+        const lower = lowerBodyTags.length ? lowerBodyTags.join("、") : "—";
+        showToast(`AI 辨識：上著 ${upper}｜下著 ${lower}`);
+      } catch (error) {
+        console.warn("Gemini analyze:", error);
+        const msg = error instanceof Error ? error.message : "";
+        if (msg.includes("額度") || msg.includes("429") || msg.includes("quota")) {
+          showToast("Gemini 額度不足，仍會儲存照片與天氣（無 AI 標籤）");
+        } else {
+          showToast(msg || "AI 辨識失敗，仍會儲存照片與天氣");
+        }
       }
-    }
 
-    try {
       const { id } = await createRecord({
         ...buildRecordFromWeather(userName, weather, toStartedAtIso(currentTime)),
         upperBodyTags: upperBodyTags.length ? upperBodyTags : undefined,
@@ -1073,8 +1292,32 @@ export default function App() {
         photoMimeType: outfitImage.mimeType,
       });
       setNotionPageId(id);
+      setPendingRecord(id, {
+        photoPreviewUrl: outfitImage.previewUrl,
+        locationName: weather.locationName,
+        temp: weather.temp,
+        condition: weather.condition,
+        recordedTime: currentTime || formatTimeFromIso(new Date().toISOString()),
+      });
+      setHasPendingFeedback(true);
       void loadOutfitInsights(weather.temp);
-      showToast("穿搭已記錄！接下來填寫今日體感 →");
+
+      const scheduled = await scheduleEveningReminder(id, reminder);
+      const link = buildRecordUrl(id);
+      try {
+        await navigator.clipboard.writeText(link);
+        showToast(
+          scheduled
+            ? "已記錄！晚間會提醒；連結已複製，可晚上開啟填體感"
+            : "已記錄！連結已複製，可晚上開啟填寫體感"
+        );
+      } catch {
+        showToast(
+          scheduled
+            ? "穿搭已記錄！晚間會提醒你填寫體感 →"
+            : "穿搭已記錄！接下來填寫今日體感 →"
+        );
+      }
       setTimeout(() => setScreen("feedback"), 1000);
     } catch (error) {
       console.warn("Notion create record:", error);
@@ -1098,23 +1341,24 @@ export default function App() {
   }) => {
     if (!feelSet) return;
 
-    // PATCH /api/notion/records — 更新同一筆的體感欄位
+    const pageId =
+      notionPageId ?? loadSession().pendingRecord?.pageId ?? null;
+
+    if (!pageId) {
+      showToast("找不到今日穿搭紀錄，請重新拍照或開啟晚間連結");
+      return;
+    }
+
     try {
-      if (notionPageId) {
-        await updateRecord(notionPageId, {
-          breathability: metrics.breathability,
-          wrapping: metrics.snugness,
-          stuffiness: metrics.stuffiness,
-        });
-      } else if (weather) {
-        const { id } = await createRecord({
-          ...buildRecordFromWeather(userName, weather),
-          breathability: metrics.breathability,
-          wrapping: metrics.snugness,
-          stuffiness: metrics.stuffiness,
-        });
-        setNotionPageId(id);
-      }
+      await updateRecord(pageId, {
+        breathability: metrics.breathability,
+        wrapping: metrics.snugness,
+        stuffiness: metrics.stuffiness,
+      });
+      markPendingFeedbackComplete();
+      clearPendingRecord();
+      setHasPendingFeedback(false);
+      void cancelEveningReminder();
     } catch (error) {
       console.warn("Notion update record:", error);
       showToast(
@@ -1122,20 +1366,24 @@ export default function App() {
           ? `Notion 同步失敗：${error.message}`
           : "Notion 同步失敗"
       );
+      return;
     }
     
     // Record outfit data
     const newOutfit: Outfit = {
       id: Date.now().toString(),
       emoji: "🧥",
-      bg: "#e8f4ff",
+      bg: "#ebe6dc",
       match: "-",
       temp: `${Math.round(weather?.temp || 26)}°C`,
       who: userName,
       date: "今天",
       location: weather?.locationName?.split(" ")[1] || weather?.locationName || "台北",
-      feel: feedbackDesc.split("・")[0],
-      feelColor: feedbackDesc.includes("炎熱") ? "#D85A30" : feedbackDesc.includes("涼") ? "#378ADD" : "#1D9E75",
+      feelMetrics: {
+        breathability: metrics.breathability,
+        wrapping: metrics.snugness,
+        stuffiness: metrics.stuffiness,
+      },
       tags: [],
       humidity: `${weather?.humidity || 78}%`
     };
@@ -1146,8 +1394,8 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100 md:py-8 font-sans">
-      <div className="w-[390px] h-[820px] bg-white border border-slate-200 md:rounded-[40px] flex flex-col relative overflow-hidden">
+    <div className="flex h-full w-full items-center justify-center overflow-hidden bg-slate-100 font-sans md:p-4">
+      <motion.div className="relative flex h-full max-h-[820px] w-full max-w-[390px] flex-col overflow-hidden md:rounded-[40px] md:ring-1 md:ring-stone-200/50">
         
         {/* Screen Content */}
         <AnimatePresence mode="wait">
@@ -1157,7 +1405,7 @@ export default function App() {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -10 }}
             transition={{ duration: 0.2 }}
-            className="flex-1 flex flex-col h-full overflow-hidden"
+            className="app-screen-gradient flex min-h-0 flex-1 flex-col overflow-hidden"
           >
             {screen === "welcome" && (
               <WelcomeScreen
@@ -1179,6 +1427,8 @@ export default function App() {
                 loading={weatherLoading}
                 insights={outfitInsights}
                 insightsLoading={insightsLoading}
+                showPendingBanner={hasPendingFeedback}
+                onContinuePending={continuePendingFeedback}
               />
             )}
             {screen === "inspiration" && (
@@ -1205,16 +1455,28 @@ export default function App() {
                 showActionSheet={showActionSheet}
                 setShowActionSheet={setShowActionSheet}
                 showToast={showToast}
+                reminder={reminder}
+                onReminderChange={handleReminderChange}
               />
             )}
-            {screen === "feedback" && <FeedbackScreen userName={userName} feedbackDesc={feedbackDesc} setFeedbackDesc={setFeedbackDesc} feelSet={feelSet} setFeelSet={setFeelSet} submitFeedback={submitFeedback} />}
+            {screen === "feedback" && (
+              <FeedbackScreen
+                needsFeedback={hasPendingFeedback}
+                feedbackOutfit={feedbackOutfit}
+                feedbackDesc={feedbackDesc}
+                setFeedbackDesc={setFeedbackDesc}
+                feelSet={feelSet}
+                setFeelSet={setFeelSet}
+                submitFeedback={submitFeedback}
+              />
+            )}
           </motion.div>
         </AnimatePresence>
 
         {/* Global Nav Bar */}
         {screen !== "welcome" && (
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[90%] z-30">
-            <nav className="bg-white/90 backdrop-blur-xl border border-slate-200/50 rounded-2xl flex py-3 px-2 shadow-[0_10px_30px_-5px_rgba(0,0,0,0.1)]">
+          <div className="absolute bottom-6 left-0 right-0 z-30">
+            <nav className="glass-nav app-inset flex rounded-2xl px-2 py-3">
               {[
                 { id: "home", icon: <Home size={20} />, label: "首頁" },
                 { id: "inspiration", icon: <Sparkles size={20} />, label: "靈感" },
@@ -1224,12 +1486,12 @@ export default function App() {
                 <button 
                   key={tab.id}
                   onClick={() => setScreen(tab.id as Screen)}
-                  className={`flex-1 flex flex-col items-center gap-1 transition-all ${screen === tab.id ? "text-[#0C447C]" : "text-slate-400 hover:text-slate-600"}`}
+                  className={`flex-1 flex flex-col items-center gap-1 transition-all ${screen === tab.id ? "text-stone-800" : "text-stone-400 hover:text-stone-600"}`}
                 >
-                  <div className={`p-1.5 rounded-xl transition-all ${screen === tab.id ? "bg-[#0C447C]/5" : ""}`}>
+                  <div className={`rounded-xl p-1.5 transition-all ${screen === tab.id ? "bg-stone-200/70 shadow-sm" : ""}`}>
                     {tab.icon}
                   </div>
-                  <span className={`text-[9px] font-bold tracking-tight ${screen === tab.id ? "text-[#0C447C]" : "text-slate-400"}`}>{tab.label}</span>
+                  <span className={`text-[9px] font-bold tracking-tight ${screen === tab.id ? "text-stone-800" : "text-stone-400"}`}>{tab.label}</span>
                 </button>
               ))}
             </nav>
@@ -1240,7 +1502,7 @@ export default function App() {
         <AnimatePresence>
           {toastMsg && <Toast message={toastMsg} onClear={() => setToastMsg("")} />}
         </AnimatePresence>
-      </div>
+      </motion.div>
     </div>
   );
 }

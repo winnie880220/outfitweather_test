@@ -2,13 +2,7 @@
  * Notion 串接測試腳本
  * 使用方式：在 .env.local 填入 NOTION_API_KEY、NOTION_DATABASE_ID 後執行 pnpm test:notion
  */
-import dotenv from "dotenv";
-import path from "path";
-import { fileURLToPath } from "url";
-
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-dotenv.config({ path: path.join(root, ".env.local") });
-dotenv.config({ path: path.join(root, ".env") });
+import "./load-env";
 
 import { isNotionConfigured } from "../api/lib/env";
 import { createRecordInNotion, updateRecordInNotion } from "../api/lib/notion/records";

@@ -1,6 +1,4 @@
-import dotenv from "dotenv";
-import path from "path";
-import { fileURLToPath } from "url";
+import "../scripts/load-env";
 import type { Plugin, Connect } from "vite";
 import type { IncomingMessage, ServerResponse } from "http";
 import { getCurrentWeather } from "../api/lib/weather";
@@ -11,10 +9,6 @@ import { getOutfitInsights } from "../api/lib/notion/outfit-insights";
 import { createRecordInNotion, updateRecordInNotion } from "../api/lib/notion/records";
 import { isNotionConfigured as isNotionOk } from "../api/lib/env";
 import type { NotionRecordPayload } from "../api/lib/types";
-
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-dotenv.config({ path: path.join(root, ".env.local") });
-dotenv.config({ path: path.join(root, ".env") });
 
 function readBody(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {

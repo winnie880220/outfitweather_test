@@ -2,7 +2,7 @@
 export function OutfitPhotoDisplay({
   photoUrl,
   emoji,
-  bg = "#e8f4ff",
+  bg = "#ebe6dc",
   className = "",
 }: {
   photoUrl?: string;
@@ -13,7 +13,7 @@ export function OutfitPhotoDisplay({
   return (
     <div
       className={`relative w-full overflow-hidden ${className}`}
-      style={{ backgroundColor: photoUrl ? "#f1f5f9" : bg }}
+      style={{ backgroundColor: photoUrl ? "#f3f0eb" : bg }}
     >
       {photoUrl ? (
         <img

@@ -15,8 +15,11 @@ export type InspirationItem = {
   temp: string;
   who: string;
   date: string;
-  feel: string;
-  feelColor: string;
+  feelMetrics: {
+    breathability?: number;
+    wrapping?: number;
+    stuffiness?: number;
+  };
   tags: string[];
   humidity: string;
   location: string;

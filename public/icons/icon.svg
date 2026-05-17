@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="衣氣象">
+  <rect width="512" height="512" rx="96" fill="#f5f1e9"/>
+  <circle cx="360" cy="120" r="56" fill="#f4c430"/>
+  <path fill="#378ADD" d="M96 380c40-120 120-180 160-180s120 60 160 180H96z"/>
+  <path fill="#5a9fd4" d="M176 280c24-48 56-72 80-72s56 24 80 72"/>
+</svg>

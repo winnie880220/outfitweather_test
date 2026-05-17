@@ -1,4 +1,5 @@
 import type { ParsedNotionRecord } from "./parse-page";
+import type { FeelMetrics } from "./feel-metrics";
 import { queryRecordsByTemperature } from "./query-records";
 
 export type OutfitTagStat = {
@@ -16,8 +17,7 @@ export type InspirationItem = {
   temp: string;
   who: string;
   date: string;
-  feel: string;
-  feelColor: string;
+  feelMetrics: FeelMetrics;
   tags: string[];
   humidity: string;
   location: string;
@@ -114,15 +114,6 @@ function formatRelativeDate(iso?: string): string {
   return d.toLocaleDateString("zh-TW", { month: "short", day: "numeric" });
 }
 
-function feelFromMetrics(record: ParsedNotionRecord): { text: string; color: string } {
-  const s = record.stuffiness;
-  const b = record.breathability;
-  if (s != null && s >= 66) return { text: "略感悶熱", color: "#378ADD" };
-  if (s != null && s <= 33) return { text: "稍感涼意", color: "#534AB7" };
-  if (b != null && b >= 66) return { text: "透氣舒適", color: "#1D9E75" };
-  return { text: "體感剛好", color: "#1D9E75" };
-}
-
 function matchPercent(
   record: ParsedNotionRecord,
   upperTop: OutfitTagStat[],
@@ -146,7 +137,11 @@ function toInspirationCard(
   upperTop: OutfitTagStat[],
   lowerTop: OutfitTagStat[]
 ): InspirationItem {
-  const feel = feelFromMetrics(record);
+  const feelMetrics: FeelMetrics = {
+    breathability: record.breathability,
+    wrapping: record.wrapping,
+    stuffiness: record.stuffiness,
+  };
   const tags = [...record.upperBodyTags, ...record.lowerBodyTags];
   const tempNum = record.temperature ?? 0;
   const emoji =
@@ -160,8 +155,7 @@ function toInspirationCard(
     temp: `${Math.round(tempNum)}°C・${record.weather ?? "—"}`,
     who: record.userName,
     date: formatRelativeDate(record.startedAt),
-    feel: feel.text,
-    feelColor: feel.color,
+    feelMetrics,
     tags: tags.slice(0, 4),
     humidity: record.humidity != null ? `${record.humidity}%` : "—",
     location: record.location?.split(" ")[0] || record.location || "—",
