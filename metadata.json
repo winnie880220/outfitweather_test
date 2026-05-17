@@ -1,0 +1,9 @@
+{
+  "name": "衣氣象 Outfit Weather",
+  "description": "根據天氣靈感穿搭、記錄每日體感與分享風格的互動手冊。",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": []
+}
