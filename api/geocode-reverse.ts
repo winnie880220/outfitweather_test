@@ -1,7 +1,6 @@
 import { reverseGeocode } from "./lib/geocode";
 import { parseLatLonFromQuery, sendJson, type VercelRequest, type VercelResponse } from "./lib/vercel";
 
-/** GET /api/geocode-reverse?lat=25.03&lon=121.56 */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") {
     return sendJson(res, 405, { ok: false, error: "Method not allowed" });
