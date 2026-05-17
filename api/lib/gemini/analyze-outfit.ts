@@ -12,11 +12,12 @@ export type OutfitAnalysisResult = {
   lowerBodyTags: string[];
 };
 
+/** 支援 generateContent + 圖片的模型（v1beta 可用） */
 const DEFAULT_MODELS = [
   "gemini-2.0-flash-lite",
-  "gemini-1.5-flash",
-  "gemini-2.5-flash",
   "gemini-2.0-flash",
+  "gemini-2.5-flash-preview-05-20",
+  "gemini-2.5-flash",
 ];
 
 function getModelCandidates(): string[] {
@@ -30,13 +31,73 @@ function stripBase64(input: string): string {
   return (match ? match[1] : input).replace(/\s/g, "");
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** 配額用盡 → 換下一個模型 */
 function isQuotaError(error: unknown): boolean {
-  const msg = error instanceof Error ? error.message : String(error);
+  const msg = errorMessage(error);
   return (
     msg.includes("429") ||
     msg.includes("RESOURCE_EXHAUSTED") ||
     msg.includes("quota")
   );
+}
+
+/** 模型不存在或不支援 → 換下一個模型 */
+function isModelUnavailableError(error: unknown): boolean {
+  const msg = errorMessage(error);
+  return (
+    msg.includes("404") ||
+    msg.includes("NOT_FOUND") ||
+    msg.includes("is not found") ||
+    msg.includes("not supported for generateContent")
+  );
+}
+
+function shouldTryNextModel(error: unknown): boolean {
+  return isQuotaError(error) || isModelUnavailableError(error);
+}
+
+async function generateWithModel(
+  ai: GoogleGenAI,
+  model: string,
+  base64: string,
+  mimeType: string
+): Promise<OutfitAnalysisResult> {
+  const response = await ai.models.generateContent({
+    model,
+    contents: [
+      {
+        inlineData: {
+          mimeType: mimeType || "image/jpeg",
+          data: base64,
+        },
+      },
+      { text: OUTFIT_ANALYSIS_PROMPT },
+    ],
+    config: {
+      responseMimeType: "application/json",
+    },
+  });
+
+  const text = response.text?.trim();
+  if (!text) {
+    throw new Error("Gemini 未回傳內容");
+  }
+
+  let parsed: { upperBodyTags?: string[]; lowerBodyTags?: string[] };
+  try {
+    parsed = JSON.parse(text) as typeof parsed;
+  } catch {
+    throw new Error("Gemini 回傳格式無法解析");
+  }
+
+  return {
+    upperBodyTags: filterAllowedTags(parsed.upperBodyTags, UPPER_BODY_TAGS),
+    lowerBodyTags: filterAllowedTags(parsed.lowerBodyTags, LOWER_BODY_TAGS).slice(0, 1),
+  };
 }
 
 export async function analyzeOutfitImage(
@@ -54,48 +115,16 @@ export async function analyzeOutfitImage(
 
   const ai = new GoogleGenAI({ apiKey: env.geminiApiKey });
   const models = getModelCandidates();
+  const failures: string[] = [];
   let lastError: unknown;
 
   for (const model of models) {
     try {
-      const response = await ai.models.generateContent({
-        model,
-        contents: [
-          {
-            inlineData: {
-              mimeType: mimeType || "image/jpeg",
-              data: base64,
-            },
-          },
-          { text: OUTFIT_ANALYSIS_PROMPT },
-        ],
-        config: {
-          responseMimeType: "application/json",
-        },
-      });
-
-      const text = response.text?.trim();
-      if (!text) {
-        throw new Error("Gemini 未回傳內容");
-      }
-
-      let parsed: { upperBodyTags?: string[]; lowerBodyTags?: string[] };
-      try {
-        parsed = JSON.parse(text) as typeof parsed;
-      } catch {
-        throw new Error("Gemini 回傳格式無法解析");
-      }
-
-      return {
-        upperBodyTags: filterAllowedTags(parsed.upperBodyTags, UPPER_BODY_TAGS),
-        lowerBodyTags: filterAllowedTags(parsed.lowerBodyTags, LOWER_BODY_TAGS).slice(
-          0,
-          1
-        ),
-      };
+      return await generateWithModel(ai, model, base64, mimeType);
     } catch (error) {
       lastError = error;
-      if (isQuotaError(error)) {
+      failures.push(`${model}: ${errorMessage(error).slice(0, 120)}`);
+      if (shouldTryNextModel(error)) {
         continue;
       }
       throw error;
@@ -104,9 +133,11 @@ export async function analyzeOutfitImage(
 
   if (isQuotaError(lastError)) {
     throw new Error(
-      "Gemini 免費額度已用完或模型暫不可用，請稍後再試或至 Google AI Studio 檢查配額"
+      "Gemini 免費額度已用完，請稍後再試或至 Google AI Studio 檢查配額與帳單"
     );
   }
 
-  throw lastError instanceof Error ? lastError : new Error("穿搭分析失敗");
+  throw new Error(
+    `所有 Gemini 模型皆無法使用。已嘗試：${models.join("、")}。${failures[failures.length - 1] ?? ""}`
+  );
 }
