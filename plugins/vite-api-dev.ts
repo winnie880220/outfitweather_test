@@ -54,7 +54,7 @@ async function handleApi(
       return send(res, 200, { ok: true, data, source: "api" });
     }
 
-    if (url.pathname === "/api/geocode/search" && req.method === "GET") {
+    if (url.pathname === "/api/geocode-search" && req.method === "GET") {
       const q = url.searchParams.get("q") ?? "";
       if (q.trim().length < 2) {
         return send(res, 400, { ok: false, error: "搜尋字串至少 2 個字" });
@@ -63,7 +63,7 @@ async function handleApi(
       return send(res, 200, { ok: true, data, source: "api" });
     }
 
-    if (url.pathname === "/api/geocode/reverse" && req.method === "GET") {
+    if (url.pathname === "/api/geocode-reverse" && req.method === "GET") {
       const lat = parseFloat(url.searchParams.get("lat") ?? "");
       const lon = parseFloat(url.searchParams.get("lon") ?? "");
       if (Number.isNaN(lat) || Number.isNaN(lon)) {
@@ -73,7 +73,7 @@ async function handleApi(
       return send(res, 200, { ok: true, data: { name }, source: "api" });
     }
 
-    if (url.pathname === "/api/notion/records") {
+    if (url.pathname === "/api/notion-records") {
       if (req.method === "POST") {
         const body = (await readBody(req)) as NotionRecordPayload;
         const result = await createRecordInNotion(body);

@@ -12,7 +12,7 @@ export function formatGeoLabel(item: GeoSearchResult): string {
 /** GET /api/geocode/search */
 export async function searchLocations(query: string): Promise<GeoSearchResult[]> {
   const params = new URLSearchParams({ q: query.trim() });
-  return apiGet<GeoSearchResult[]>(`/api/geocode/search?${params}`);
+  return apiGet<GeoSearchResult[]>(`/api/geocode-search?${params}`);
 }
 
 /** GET /api/geocode/reverse */
@@ -21,6 +21,6 @@ export async function reverseGeocode(lat: number, lon: number): Promise<string> 
     lat: String(lat),
     lon: String(lon),
   });
-  const { name } = await apiGet<{ name: string }>(`/api/geocode/reverse?${params}`);
+  const { name } = await apiGet<{ name: string }>(`/api/geocode-reverse?${params}`);
   return name;
 }

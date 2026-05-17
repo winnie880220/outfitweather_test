@@ -4,7 +4,7 @@ import type { OutfitRecord } from "../../types/api";
 
 /** POST /api/notion/records — 建立（天氣 + 使用者） */
 export async function createRecord(payload: NotionRecordPayload): Promise<{ id: string }> {
-  return apiPost<{ id: string }>("/api/notion/records", payload);
+  return apiPost<{ id: string }>("/api/notion-records", payload);
 }
 
 /** PATCH /api/notion/records — 更新體感等欄位 */
@@ -12,7 +12,7 @@ export async function updateRecord(
   pageId: string,
   payload: NotionRecordPayload
 ): Promise<{ id: string }> {
-  return apiPatch<{ id: string }>("/api/notion/records", { pageId, ...payload });
+  return apiPatch<{ id: string }>("/api/notion-records", { pageId, ...payload });
 }
 
 /** 從天氣資料組 Notion 欄位 */
