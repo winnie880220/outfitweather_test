@@ -470,7 +470,7 @@ const HomeScreen = ({
               {weather?.locationName || "未知地點"}
             </p>
           </div>
-          <div className="grid shrink-0 grid-cols-2 gap-x-3 gap-y-0.5 text-right">
+          <div className="grid shrink-0 grid-cols-2 gap-x-3 gap-y-1.5 text-right">
             {[
               { label: "濕度", val: `${weather?.humidity || 0}%` },
               { label: "降雨", val: `${weather?.rainProb || 0}%` },
@@ -534,24 +534,25 @@ const InspirationScreen = ({
   
   return (
     <div className="inspiration-layout app-screen-gradient">
-      <div className="inspiration-scroll app-scroll">
-        <header className="mb-2 mt-3 flex items-center justify-between px-6">
+      <div className="inspiration-body">
+        <header className="mb-1 mt-3 flex shrink-0 items-center justify-between px-6">
           <span className="font-semibold text-stone-800">今日靈感</span>
           <span className="glass-pill rounded-full px-2.5 py-1 text-[11px] font-medium text-stone-600">
             {insights ? `${insights.tempMin}–${insights.tempMax}°C` : `${Math.round(weather?.temp || 26)}°`} 相似天氣
           </span>
         </header>
 
-        <div className="app-inset pb-4 pt-1">
+        <div className="app-inset inspiration-card-fill">
           <div className="inspiration-cards">
-            <div aria-hidden
-              className="inspiration-card pointer-events-none absolute inset-x-0 top-2 z-0 w-full scale-[0.96] overflow-hidden rounded-3xl opacity-45 translate-y-2"
+            <div
+              aria-hidden
+              className="inspiration-card inspiration-card-active pointer-events-none absolute inset-0 z-0 scale-[0.96] overflow-hidden rounded-3xl opacity-45 translate-y-2"
             >
               <OutfitPhotoDisplay
                 photoUrl={nextCard.photoUrl}
                 emoji={nextCard.emoji}
                 bg={nextCard.bg}
-                className="aspect-[4/5] min-h-[200px] w-full"
+                className="inspiration-card-photo"
               />
               <div className="inspiration-card-content p-3">
                 <div className="text-base font-bold text-stone-800">{nextCard.temp}</div>
@@ -570,25 +571,25 @@ const InspirationScreen = ({
                   if (info.offset.x > 100) handleNextInspiration(true);
                   else if (info.offset.x < -100) handleNextInspiration(false);
                 }}
-                className="inspiration-card relative z-10 flex w-full cursor-grab flex-col overflow-hidden rounded-3xl active:cursor-grabbing"
+                className="inspiration-card inspiration-card-active absolute inset-0 z-10 cursor-grab overflow-hidden rounded-3xl active:cursor-grabbing"
               >
                 <OutfitPhotoDisplay
                   photoUrl={currentCard.photoUrl}
                   emoji={currentCard.emoji}
                   bg={currentCard.bg}
-                  className="aspect-[4/5] min-h-[220px] w-full shrink-0"
+                  className="inspiration-card-photo"
                 />
                 <div className="absolute top-3 right-3 z-10 rounded-full bg-stone-800/90 px-2.5 py-1 text-[10px] font-bold text-white backdrop-blur-sm pointer-events-none">
                   {currentCard.match} 匹配
                 </div>
-                <div className="inspiration-card-content shrink-0 p-5">
+                <div className="inspiration-card-content shrink-0 p-4">
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.22 }}>
                     <div className="text-xl font-bold text-stone-900">{currentCard.temp}</div>
                     <div className="mt-0.5 text-xs text-stone-500">
                       {currentCard.who}・{currentCard.location}・{currentCard.date}
                     </div>
                     {currentCard.tags.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
+                      <div className="mt-2 flex flex-wrap gap-1.5">
                         {currentCard.tags.map((tag, i) => (
                           <span
                             key={i}
@@ -741,7 +742,7 @@ const RecordScreen = ({
             {weather?.locationName || "未知地點"}
           </p>
         </div>
-        <div className="grid shrink-0 grid-cols-2 gap-x-3 gap-y-0.5 text-right">
+        <div className="grid shrink-0 grid-cols-2 gap-x-3 gap-y-1.5 text-right">
           {[
             { label: "濕度", val: `${weather?.humidity || 0}%` },
             { label: "降雨", val: `${weather?.rainProb || 0}%` },
