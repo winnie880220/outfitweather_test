@@ -123,6 +123,15 @@ export function clearPendingRecord(): void {
   saveSession({ pendingRecord: null });
 }
 
+/** 回到初始頁：清除名稱、地點、待回饋等 session 資料 */
+export function resetAppSession(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (e) {
+    console.warn("session-storage reset failed:", e);
+  }
+}
+
 export function expireStalePending(): boolean {
   const session = loadSession();
   if (!session.pendingRecord) return false;

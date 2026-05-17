@@ -36,12 +36,23 @@ import {
   scheduleEveningReminder,
 } from "./lib/reminder";
 import {
+  buildInspirationDeck,
+  buildInspirationRangeKey,
+  clearInspirationSwipe,
+  loadInspirationSwipe,
+  isInspirationCardSaved,
+  recordInspirationSwipe,
+  syncInspirationSwipeRange,
+  type InspirationSwipeState,
+} from "./lib/inspiration-swipe";
+import {
   clearPendingRecord,
   DEFAULT_REMINDER,
   expireStalePending,
   isPendingValidToday,
   loadSession,
   markPendingFeedbackComplete,
+  resetAppSession,
   saveSession,
   setPendingRecord,
   formatTimeFromIso,
@@ -67,7 +78,8 @@ import {
   Sun,
   Upload,
   Wind,
-  User
+  User,
+  LogOut,
 } from "lucide-react";
 
 // --- Types ---
@@ -179,6 +191,75 @@ const Toast = ({ message, onClear }: { message: string; onClear: () => void }) =
     </motion.div>
   );
 };
+
+const ExitConfirmDialog = ({
+  open,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) => (
+  <AnimatePresence>
+    {open ? (
+      <motion.div
+        className="fixed inset-0 z-[60] flex items-center justify-center p-6"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        role="presentation"
+        onClick={onCancel}
+      >
+        <motion.div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="exit-dialog-title"
+          aria-describedby="exit-dialog-desc"
+          initial={{ opacity: 0, scale: 0.96, y: 8 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.96, y: 8 }}
+          transition={{ duration: 0.18 }}
+          className="w-full max-w-[300px] rounded-2xl bg-white p-5 shadow-xl ring-1 ring-stone-200/80"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-stone-100 text-stone-600">
+            <LogOut size={22} strokeWidth={1.75} />
+          </div>
+          <h2 id="exit-dialog-title" className="text-center text-base font-semibold text-stone-800">
+            確定要離開嗎？
+          </h2>
+          <p id="exit-dialog-desc" className="mt-2 text-center text-sm leading-relaxed text-stone-500">
+            離開後將回到初始頁面，你的名稱與地點等身分資料<strong className="font-semibold text-stone-700">無法保留</strong>，需重新設定。
+          </p>
+          <div className="mt-5 flex gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="flex-1 rounded-xl border border-stone-200 bg-white py-2.5 text-sm font-semibold text-stone-600 transition-colors hover:bg-stone-50"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              className="flex-1 rounded-xl bg-stone-800 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-stone-900 active:scale-[0.98]"
+            >
+              確定離開
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+    ) : null}
+  </AnimatePresence>
+);
+
+const AppExitButton = ({ onClick }: { onClick: () => void }) => (
+  <button type="button" onClick={onClick} className="app-exit-btn" aria-label="離開並返回初始頁">
+    <LogOut size={12} strokeWidth={2} />
+    離開
+  </button>
+);
 
 // --- Sub-screens ---
 
@@ -418,6 +499,7 @@ const HomeScreen = ({
   insightsLoading,
   showPendingBanner,
   onContinuePending,
+  onRequestExit,
 }: {
   userName: string;
   setScreen: (s: Screen) => void;
@@ -427,18 +509,24 @@ const HomeScreen = ({
   insightsLoading: boolean;
   showPendingBanner: boolean;
   onContinuePending: () => void;
+  onRequestExit: () => void;
 }) => (
   <div className="screen-scroll app-scroll app-screen-gradient">
     <div className="app-inset pt-4 pb-[var(--nav-safe-bottom)]">
       {showPendingBanner ? (
         <PendingFeedbackBanner onContinue={onContinuePending} />
       ) : null}
-      <header className="mb-3 flex items-center justify-between">
-        <span className="text-sm font-medium text-stone-800">嗨，{userName}！</span>
-        <span className="glass-pill flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] text-stone-600">
-          <MapPin size={12} className="text-stone-500" />
-          {loading ? "定位中..." : weather?.locationName || "定位失敗"}
-        </span>
+      <header className="mb-3 flex items-center justify-between gap-2">
+        <span className="min-w-0 shrink text-sm font-medium text-stone-800">嗨，{userName}！</span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className="glass-pill flex max-w-[11rem] items-center gap-1 truncate rounded-full px-2.5 py-1 text-[11px] text-stone-600">
+            <MapPin size={12} className="shrink-0 text-stone-500" />
+            <span className="truncate">
+              {loading ? "定位中..." : weather?.locationName || "定位失敗"}
+            </span>
+          </span>
+          <AppExitButton onClick={onRequestExit} />
+        </div>
       </header>
 
       {loading ? (
@@ -499,47 +587,92 @@ const HomeScreen = ({
   </div>
 );
 
+const InspirationEmptyState = ({
+  variant,
+  onRecord,
+  onRequestExit,
+}: {
+  variant: "no-data" | "exhausted";
+  onRecord: () => void;
+  onRequestExit: () => void;
+}) => (
+  <div className="inspiration-layout app-screen-gradient">
+    <div className="flex justify-end px-6 pt-3">
+      <AppExitButton onClick={onRequestExit} />
+    </div>
+    <div className="inspiration-body flex flex-col items-center justify-center px-6 pb-[var(--nav-safe-bottom)] pt-12 text-center">
+      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/70 text-stone-500 ring-1 ring-stone-200/70">
+        {variant === "exhausted" ? (
+          <Sparkles size={28} strokeWidth={1.5} className="text-[#8b7355]" />
+        ) : (
+          <Shirt size={28} strokeWidth={1.5} />
+        )}
+      </div>
+      <h2 className="text-base font-semibold text-stone-800">
+        {variant === "exhausted" ? "本區間靈感已瀏覽完畢" : "此溫度區間還沒有穿搭靈感"}
+      </h2>
+      <p className="mx-auto mt-2 max-w-[280px] text-sm leading-relaxed text-stone-500">
+        {variant === "exhausted"
+          ? "溫度變化後會推薦新穿搭。收藏過的穿搭會排在堆疊最後，再次略過則會移除。"
+          : "成為第一筆相似天氣的穿搭記錄，幫助大家找到靈感。"}
+      </p>
+      {variant === "no-data" ? (
+        <button
+          type="button"
+          onClick={onRecord}
+          className="mt-6 px-6 py-3 bg-stone-800 text-white rounded-xl text-sm font-semibold transition-transform active:scale-[0.98]"
+        >
+          成為第一筆穿搭記錄
+        </button>
+      ) : null}
+    </div>
+  </div>
+);
 
 const InspirationScreen = ({
   cards,
-  inspirationIdx,
+  deckExhausted,
+  currentCardIsSaved,
   handleNextInspiration,
   setScreen,
   weather,
   insights,
+  onRequestExit,
 }: {
   cards: Outfit[];
-  inspirationIdx: number;
-  handleNextInspiration: (l: boolean) => void;
+  deckExhausted?: boolean;
+  currentCardIsSaved?: boolean;
+  handleNextInspiration: (liked: boolean) => void;
   setScreen: (s: Screen) => void;
   weather: WeatherData | null;
   insights: OutfitInsights | null;
+  onRequestExit: () => void;
 }) => {
   if (cards.length === 0) {
     return (
-      <div className="screen-scroll app-scroll app-screen-gradient flex flex-col items-center justify-center px-6 pb-[var(--nav-safe-bottom)] pt-16 text-center">
-        <p className="text-sm text-slate-500 mb-4">此溫度區間還沒有穿搭靈感</p>
-        <button
-          onClick={() => setScreen("record")}
-          className="px-6 py-3 bg-stone-800 text-white rounded-xl text-sm font-semibold"
-        >
-          成為第一筆穿搭記錄
-        </button>
-      </div>
+      <InspirationEmptyState
+        variant={deckExhausted ? "exhausted" : "no-data"}
+        onRecord={() => setScreen("record")}
+        onRequestExit={onRequestExit}
+      />
     );
   }
 
-  const currentCard = cards[inspirationIdx % cards.length];
-  const nextCard = cards[(inspirationIdx + 1) % cards.length];
+  const currentCard = cards[0];
+  const nextCard = cards[1] ?? cards[0];
   
   return (
     <div className="inspiration-layout app-screen-gradient">
       <div className="inspiration-body">
-        <header className="mb-1 mt-3 flex shrink-0 items-center justify-between px-6">
+        <header className="mb-1 mt-3 flex shrink-0 items-center justify-between gap-2 px-6">
           <span className="font-semibold text-stone-800">今日靈感</span>
-          <span className="glass-pill rounded-full px-2.5 py-1 text-[11px] font-medium text-stone-600">
-            {insights ? `${insights.tempMin}–${insights.tempMax}°C` : `${Math.round(weather?.temp || 26)}°`} 相似天氣
-          </span>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <span className="glass-pill rounded-full px-2.5 py-1 text-[11px] font-medium text-stone-600">
+              {insights ? `${insights.tempMin}–${insights.tempMax}°C` : `${Math.round(weather?.temp || 26)}°`}{" "}
+              相似天氣
+            </span>
+            <AppExitButton onClick={onRequestExit} />
+          </div>
         </header>
 
         <div className="app-inset inspiration-card-fill">
@@ -621,10 +754,19 @@ const InspirationScreen = ({
               className: "border-stone-200 text-stone-400",
             }}
             right={{
-              icon: <Heart size={24} fill="#8b7355" />,
+              icon: (
+                <Heart
+                  size={24}
+                  fill={currentCardIsSaved ? "#e11d48" : "none"}
+                  stroke={currentCardIsSaved ? "#e11d48" : "currentColor"}
+                  strokeWidth={2}
+                />
+              ),
               onClick: () => handleNextInspiration(true),
-              ariaLabel: "喜歡",
-              className: "border-stone-400 text-[#8b7355] hover:bg-stone-50",
+              ariaLabel: currentCardIsSaved ? "已收藏" : "喜歡",
+              className: currentCardIsSaved
+                ? "border-rose-300 bg-rose-50 text-rose-500 hover:bg-rose-100"
+                : "border-stone-400 text-[#8b7355] hover:bg-stone-50",
             }}
           />
         </div>
@@ -648,6 +790,7 @@ const RecordScreen = ({
   showToast,
   reminder,
   onReminderChange,
+  onRequestExit,
 }: {
   outfitImage: ParsedOutfitImage | null;
   onImageReady: (img: ParsedOutfitImage) => void;
@@ -663,6 +806,7 @@ const RecordScreen = ({
   showToast: (msg: string) => void;
   reminder: ReminderSettings;
   onReminderChange: (next: ReminderSettings) => void;
+  onRequestExit: () => void;
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -716,15 +860,24 @@ const RecordScreen = ({
   return (
     <div className="screen-scroll app-scroll app-screen-gradient">
       <div className="app-inset pt-4 pb-[var(--nav-safe-bottom)]">
-      <header className="mb-3 flex justify-between items-center">
+      <header className="mb-3 flex items-center justify-between gap-2">
         <h2 className="font-semibold text-stone-800">記錄今日穿搭</h2>
-        {isCameraOpen && (
-          <button onClick={() => {
-            const stream = videoRef.current?.srcObject as MediaStream;
-            stream?.getTracks().forEach(track => track.stop());
-            setIsCameraOpen(false);
-          }} className="text-xs text-slate-400 font-medium italic underline">取消</button>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {isCameraOpen ? (
+            <button
+              type="button"
+              onClick={() => {
+                const stream = videoRef.current?.srcObject as MediaStream;
+                stream?.getTracks().forEach((track) => track.stop());
+                setIsCameraOpen(false);
+              }}
+              className="text-xs font-medium italic text-slate-400 underline"
+            >
+              取消
+            </button>
+          ) : null}
+          <AppExitButton onClick={onRequestExit} />
+        </div>
       </header>
 
       <div className="glass-card-strong mb-3 flex w-full items-center justify-between gap-3 rounded-2xl px-4 py-3">
@@ -883,6 +1036,7 @@ const FeedbackScreen = ({
   feelSet,
   setFeelSet,
   submitFeedback,
+  onRequestExit,
 }: {
   needsFeedback: boolean;
   feedbackOutfit: FeedbackOutfitContext;
@@ -895,6 +1049,7 @@ const FeedbackScreen = ({
     snugness: number;
     stuffiness: number;
   }) => void;
+  onRequestExit: () => void;
 }) => {
   const [metrics, setMetrics] = useState({
     breathability: 50,
@@ -960,7 +1115,10 @@ const FeedbackScreen = ({
   if (!needsFeedback) {
     return (
       <div className="screen-scroll app-scroll app-screen-gradient">
-        <div className="app-inset px-6 pb-[var(--nav-safe-bottom)] pt-20 text-center">
+        <div className="app-inset flex justify-end px-4 pt-4">
+          <AppExitButton onClick={onRequestExit} />
+        </div>
+        <div className="app-inset px-6 pb-[var(--nav-safe-bottom)] pt-8 text-center">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/70 text-stone-500 ring-1 ring-stone-200/70">
             <Smile size={28} strokeWidth={1.5} />
           </div>
@@ -976,9 +1134,12 @@ const FeedbackScreen = ({
   return (
     <div className="screen-scroll app-scroll app-screen-gradient">
       <div className="app-inset pt-4 pb-[var(--nav-safe-bottom)]">
-      <header className="mb-4 flex items-baseline justify-between">
-        <h2 className="font-semibold text-stone-800">今日體感回饋</h2>
-        <span className="text-[10px] font-medium text-stone-400">拖動滑桿調整數值</span>
+      <header className="mb-4 flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="font-semibold text-stone-800">今日體感回饋</h2>
+          <span className="text-[10px] font-medium text-stone-400">拖動滑桿調整數值</span>
+        </div>
+        <AppExitButton onClick={onRequestExit} />
       </header>
 
       <FeedbackOutfitCard outfit={feedbackOutfit} className="mb-4 w-full" />
@@ -1040,7 +1201,9 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>("welcome");
   const [userName, setUserName] = useState("");
   const [outfitList, setOutfitList] = useState<Outfit[]>(INITIAL_WARDROBE);
-  const [inspirationIdx, setInspirationIdx] = useState(0);
+  const [inspirationSwipe, setInspirationSwipe] = useState<InspirationSwipeState | null>(() =>
+    loadInspirationSwipe()
+  );
   const [outfitImage, setOutfitImage] = useState<ParsedOutfitImage | null>(null);
   const [recordSaving, setRecordSaving] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -1048,6 +1211,7 @@ export default function App() {
   const [feelSet, setFeelSet] = useState(false);
   const [feedbackDesc, setFeedbackDesc] = useState("尚未標記");
   const [toastMsg, setToastMsg] = useState("");
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [currentTime, setCurrentTime] = useState("");
 
   const showToast = (msg: string) => setToastMsg(msg);
@@ -1093,7 +1257,6 @@ export default function App() {
       setInsightsLoading(true);
       const data = await fetchOutfitInsights(temp, 1);
       setOutfitInsights(data);
-      setInspirationIdx(0);
     } catch (error) {
       console.warn("Outfit insights:", error);
       setOutfitInsights(null);
@@ -1224,6 +1387,21 @@ export default function App() {
       ? outfitInsights.inspiration
       : INSPIRATION_CARDS;
 
+  const inspirationRangeKey = useMemo(
+    () => buildInspirationRangeKey(outfitInsights, weather?.temp),
+    [outfitInsights, weather?.temp]
+  );
+
+  useEffect(() => {
+    if (!inspirationRangeKey) return;
+    setInspirationSwipe(syncInspirationSwipeRange(inspirationRangeKey));
+  }, [inspirationRangeKey]);
+
+  const visibleInspirationCards = useMemo(
+    () => buildInspirationDeck(inspirationCards, inspirationSwipe, inspirationRangeKey),
+    [inspirationCards, inspirationSwipe, inspirationRangeKey]
+  );
+
   const startApp = () => {
     if (!userName.trim() || !userLocation) return;
     saveSession({ userName: userName.trim(), userLocation, reminder });
@@ -1232,8 +1410,38 @@ export default function App() {
   };
 
   const handleNextInspiration = (liked: boolean) => {
-    showToast(liked ? "已收藏這套穿搭 ♡" : "略過");
-    setInspirationIdx((prev) => (prev + 1) % Math.max(inspirationCards.length, 1));
+    const current = visibleInspirationCards[0];
+    if (!current || !inspirationRangeKey) return;
+    const wasSaved = isInspirationCardSaved(inspirationSwipe, current.id);
+    const next = recordInspirationSwipe(current.id, liked, inspirationRangeKey);
+    setInspirationSwipe(next);
+    if (liked) {
+      showToast(wasSaved ? "已在收藏中，已移至堆疊最後 ♡" : "已收藏，移至堆疊最後 ♡");
+    } else if (wasSaved) {
+      showToast("已從收藏移除並略過");
+    } else {
+      showToast("已略過這套穿搭");
+    }
+  };
+
+  const performExitApp = () => {
+    resetAppSession();
+    clearInspirationSwipe();
+    void cancelEveningReminder();
+
+    setUserName("");
+    setUserLocation(null);
+    setLocationInput("");
+    setWeather(null);
+    setOutfitInsights(null);
+    setInspirationSwipe(null);
+    setOutfitImage(null);
+    setNotionPageId(null);
+    setHasPendingFeedback(false);
+    setReminder(DEFAULT_REMINDER);
+    setScreen("welcome");
+    setShowExitConfirm(false);
+    showToast("已返回初始頁面");
   };
 
   const onOutfitImageReady = (img: ParsedOutfitImage) => {
@@ -1400,15 +1608,24 @@ export default function App() {
                 insightsLoading={insightsLoading}
                 showPendingBanner={hasPendingFeedback}
                 onContinuePending={continuePendingFeedback}
+                onRequestExit={() => setShowExitConfirm(true)}
               />
             ) : screen === "inspiration" ? (
               <InspirationScreen
-                cards={inspirationCards}
-                inspirationIdx={inspirationIdx}
+                cards={visibleInspirationCards}
+                deckExhausted={
+                  inspirationCards.length > 0 && visibleInspirationCards.length === 0
+                }
+                currentCardIsSaved={
+                  visibleInspirationCards[0]
+                    ? isInspirationCardSaved(inspirationSwipe, visibleInspirationCards[0].id)
+                    : false
+                }
                 handleNextInspiration={handleNextInspiration}
                 setScreen={setScreen}
                 weather={weather}
                 insights={outfitInsights}
+                onRequestExit={() => setShowExitConfirm(true)}
               />
             ) : (
         <AnimatePresence mode="wait" initial={false}>
@@ -1449,6 +1666,7 @@ export default function App() {
                 showToast={showToast}
                 reminder={reminder}
                 onReminderChange={handleReminderChange}
+                onRequestExit={() => setShowExitConfirm(true)}
               />
             )}
             {screen === "feedback" && (
@@ -1460,6 +1678,7 @@ export default function App() {
                 feelSet={feelSet}
                 setFeelSet={setFeelSet}
                 submitFeedback={submitFeedback}
+                onRequestExit={() => setShowExitConfirm(true)}
               />
             )}
           </motion.div>
@@ -1497,6 +1716,12 @@ export default function App() {
         <AnimatePresence>
           {toastMsg && <Toast message={toastMsg} onClear={() => setToastMsg("")} />}
         </AnimatePresence>
+
+        <ExitConfirmDialog
+          open={showExitConfirm}
+          onCancel={() => setShowExitConfirm(false)}
+          onConfirm={performExitApp}
+        />
       </div>
     </div>
   );

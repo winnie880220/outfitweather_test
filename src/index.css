@@ -84,6 +84,33 @@ body {
     overflow: hidden;
   }
 
+  /* 與 glass-pill 並排的離開按鈕 */
+  .app-exit-btn {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.2rem;
+    border-radius: 999px;
+    border: 1px solid rgba(231, 229, 228, 0.9);
+    background: rgba(255, 255, 255, 0.72);
+    padding: 0.25rem 0.5rem 0.25rem 0.4rem;
+    font-size: 10px;
+    font-weight: 600;
+    color: #78716c;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    transition: color 0.15s ease, background-color 0.15s ease, transform 0.1s ease;
+  }
+
+  .app-exit-btn:hover {
+    color: #44403c;
+    background: rgba(255, 255, 255, 0.95);
+  }
+
+  .app-exit-btn:active {
+    transform: scale(0.96);
+  }
+
   @media (min-width: 768px) {
     .app-frame {
       flex: none;
