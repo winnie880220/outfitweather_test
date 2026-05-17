@@ -7,7 +7,9 @@ import { getCurrentWeather } from "../api/lib/weather";
 import { reverseGeocode, searchLocations } from "../api/lib/geocode";
 import { analyzeOutfitImage } from "../api/lib/gemini/analyze-outfit";
 import { isGeminiConfigured } from "../api/lib/env";
+import { getOutfitInsights } from "../api/lib/notion/outfit-insights";
 import { createRecordInNotion, updateRecordInNotion } from "../api/lib/notion/records";
+import { isNotionConfigured as isNotionOk } from "../api/lib/env";
 import type { NotionRecordPayload } from "../api/lib/types";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -88,6 +90,19 @@ async function handleApi(
         body.mimeType ?? "image/jpeg"
       );
       return send(res, 200, { ok: true, data, source: "gemini" });
+    }
+
+    if (url.pathname === "/api/outfit-insights" && req.method === "GET") {
+      if (!isNotionOk()) {
+        return send(res, 503, { ok: false, error: "Notion 未設定" });
+      }
+      const temp = parseFloat(url.searchParams.get("temp") ?? "");
+      if (Number.isNaN(temp)) {
+        return send(res, 400, { ok: false, error: "請提供有效的 temp" });
+      }
+      const delta = parseFloat(url.searchParams.get("delta") ?? "1") || 1;
+      const data = await getOutfitInsights(temp, delta);
+      return send(res, 200, { ok: true, data, source: "notion" });
     }
 
     if (url.pathname === "/api/notion-records") {

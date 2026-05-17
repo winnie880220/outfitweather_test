@@ -3,18 +3,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { OutfitStatsPanel } from "./components/OutfitStatsPanel";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "motion/react";
 import {
   analyzeOutfit,
   buildRecordFromWeather,
   createRecord,
   fetchCurrentWeather,
+  fetchOutfitInsights,
   formatGeoLabel,
   reverseGeocode,
   searchLocations,
   updateRecord,
 } from "./lib/api";
+import type { InspirationItem, OutfitInsights } from "./lib/api";
 import { captureVideoFrame, compressDataUrl } from "./lib/image";
 import type { GeoSearchResult, ParsedOutfitImage, UserLocation, WeatherData } from "./types/api";
 import { 
@@ -42,20 +45,7 @@ import {
 // --- Types ---
 type Screen = "welcome" | "home" | "inspiration" | "record" | "feedback";
 
-interface Outfit {
-  id: string;
-  emoji: string;
-  bg: string;
-  match: string;
-  temp: string;
-  who: string;
-  date: string;
-  feel: string;
-  feelColor: string;
-  tags: string[];
-  humidity: string;
-  location: string;
-}
+type Outfit = InspirationItem;
 
 // --- Mock Data ---
 const INSPIRATION_CARDS: Outfit[] = [
@@ -397,7 +387,21 @@ const WelcomeScreen = ({
   );
 };
 
-const HomeScreen = ({ userName, setScreen, weather, loading }: { userName: string, setScreen: (s: Screen) => void, weather: WeatherData | null, loading: boolean }) => (
+const HomeScreen = ({
+  userName,
+  setScreen,
+  weather,
+  loading,
+  insights,
+  insightsLoading,
+}: {
+  userName: string;
+  setScreen: (s: Screen) => void;
+  weather: WeatherData | null;
+  loading: boolean;
+  insights: OutfitInsights | null;
+  insightsLoading: boolean;
+}) => (
   <div className="flex-1 flex flex-col pt-4 overflow-y-auto pb-32">
     <header className="px-6 flex justify-between items-center mb-4">
       <span className="text-sm font-medium text-slate-800">嗨，{userName}！</span>
@@ -444,47 +448,7 @@ const HomeScreen = ({ userName, setScreen, weather, loading }: { userName: strin
       </div>
     )}
 
-    <div className="px-4 mb-6">
-      <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm">
-        <h4 className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-3 text-center">當前氣候穿搭率最高 (TOP 3)</h4>
-        <div className="grid grid-cols-2 gap-3">
-          {/* Left: Upper */}
-          <div className="space-y-1.5">
-            <div className="text-[9px] text-slate-300 font-bold uppercase tracking-widest text-center mb-1">上著</div>
-            {[
-              { emoji: "🧥", name: "薄外套", rate: "72%" },
-              { emoji: "👕", name: "長袖 Tee", rate: "48%" },
-              { emoji: "👔", name: "襯衫", rate: "35%" }
-            ].map((item, i) => (
-              <div key={i} className="bg-slate-50 rounded-xl p-2 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="text-lg">{item.emoji}</div>
-                  <div className="text-[10px] font-bold text-slate-700 truncate max-w-[45px]">{item.name}</div>
-                </div>
-                <div className="text-[9px] font-black text-[#1D9E75]">{item.rate}</div>
-              </div>
-            ))}
-          </div>
-          {/* Right: Lower */}
-          <div className="space-y-1.5">
-            <div className="text-[9px] text-slate-300 font-bold uppercase tracking-widest text-center mb-1">下著</div>
-            {[
-              { emoji: "👖", name: "九分褲", rate: "65%" },
-              { emoji: "👖", name: "牛仔褲", rate: "52%" },
-              { emoji: "👗", name: "長裙", rate: "28%" }
-            ].map((item, i) => (
-              <div key={i} className="bg-slate-50 rounded-xl p-2 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="text-lg">{item.emoji}</div>
-                  <div className="text-[10px] font-bold text-slate-700 truncate max-w-[45px]">{item.name}</div>
-                </div>
-                <div className="text-[9px] font-black text-[#1D9E75]">{item.rate}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
+    <OutfitStatsPanel insights={insights} loading={insightsLoading} />
 
     <div className="px-6 mb-2">
       <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">今天跟你天氣相似的人怎麼穿？</h3>
@@ -501,15 +465,43 @@ const HomeScreen = ({ userName, setScreen, weather, loading }: { userName: strin
   </div>
 );
 
-const InspirationScreen = ({ inspirationIdx, handleNextInspiration, setScreen, weather }: { inspirationIdx: number, handleNextInspiration: (l: boolean) => void, setScreen: (s: Screen) => void, weather: WeatherData | null }) => {
-  const currentCard = INSPIRATION_CARDS[inspirationIdx];
-  const nextCard = INSPIRATION_CARDS[(inspirationIdx + 1) % INSPIRATION_CARDS.length];
+const InspirationScreen = ({
+  cards,
+  inspirationIdx,
+  handleNextInspiration,
+  setScreen,
+  weather,
+  insights,
+}: {
+  cards: Outfit[];
+  inspirationIdx: number;
+  handleNextInspiration: (l: boolean) => void;
+  setScreen: (s: Screen) => void;
+  weather: WeatherData | null;
+  insights: OutfitInsights | null;
+}) => {
+  if (cards.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center pb-32 px-6 text-center">
+        <p className="text-sm text-slate-500 mb-4">此溫度區間還沒有穿搭靈感</p>
+        <button
+          onClick={() => setScreen("record")}
+          className="px-6 py-3 bg-[#0C447C] text-white rounded-xl text-sm font-semibold"
+        >
+          成為第一筆穿搭記錄
+        </button>
+      </div>
+    );
+  }
+
+  const currentCard = cards[inspirationIdx % cards.length];
+  const nextCard = cards[(inspirationIdx + 1) % cards.length];
   
   return (
     <div className="flex-1 flex flex-col overflow-hidden pb-32">
       <header className="px-6 mt-4 flex justify-between items-center mb-4">
         <span className="font-semibold text-slate-800">今日靈感</span>
-        <span className="text-[11px] text-[#378ADD] bg-[#E6F1FB] px-2.5 py-1 rounded-full font-medium">{Math.round(weather?.temp || 26)}° 相似天氣</span>
+        <span className="text-[11px] text-[#378ADD] bg-[#E6F1FB] px-2.5 py-1 rounded-full font-medium">{insights ? `${insights.tempMin}–${insights.tempMax}°C` : `${Math.round(weather?.temp || 26)}°`} 相似天氣</span>
       </header>
 
       <div className="flex justify-center gap-1.5 px-6 mb-4">
@@ -526,8 +518,12 @@ const InspirationScreen = ({ inspirationIdx, handleNextInspiration, setScreen, w
         <div 
           className="absolute w-[280px] bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden transform scale-95 translate-y-4 opacity-60 z-0"
         >
-           <div className="h-60 flex items-center justify-center text-8xl" style={{ backgroundColor: nextCard.bg }}>
-            {nextCard.emoji}
+           <div className="h-60 flex items-center justify-center text-8xl overflow-hidden" style={{ backgroundColor: nextCard.bg }}>
+            {nextCard.photoUrl ? (
+              <img src={nextCard.photoUrl} alt="穿搭" className="w-full h-full object-cover" />
+            ) : (
+              nextCard.emoji
+            )}
           </div>
           <div className="p-4">
             <div className="text-lg font-bold text-slate-900">{nextCard.temp}</div>
@@ -550,8 +546,12 @@ const InspirationScreen = ({ inspirationIdx, handleNextInspiration, setScreen, w
             }}
             className="relative w-[300px] bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden z-10 cursor-grab active:cursor-grabbing"
           >
-            <div className="h-72 flex items-center justify-center text-8xl relative" style={{ backgroundColor: currentCard.bg }}>
-              {currentCard.emoji}
+            <div className="h-72 flex items-center justify-center text-8xl relative overflow-hidden" style={{ backgroundColor: currentCard.bg }}>
+              {currentCard.photoUrl ? (
+                <img src={currentCard.photoUrl} alt="穿搭" className="w-full h-full object-cover" />
+              ) : (
+                currentCard.emoji
+              )}
               <div className="absolute top-3 right-3 bg-[#0C447C] text-white text-[10px] font-bold px-2.5 py-1 rounded-full drop-shadow-sm">
                 {currentCard.match} 匹配
               </div>
@@ -964,6 +964,8 @@ export default function App() {
   const [locationInput, setLocationInput] = useState("");
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
   const [notionPageId, setNotionPageId] = useState<string | null>(null);
+  const [outfitInsights, setOutfitInsights] = useState<OutfitInsights | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
 
   const toStartedAtIso = (timeHm: string) => {
     const d = new Date();
@@ -989,6 +991,32 @@ export default function App() {
     }
   };
 
+
+  const loadOutfitInsights = useCallback(async (temp: number) => {
+    try {
+      setInsightsLoading(true);
+      const data = await fetchOutfitInsights(temp, 1);
+      setOutfitInsights(data);
+      setInspirationIdx(0);
+    } catch (error) {
+      console.warn("Outfit insights:", error);
+      setOutfitInsights(null);
+    } finally {
+      setInsightsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (weather) {
+      void loadOutfitInsights(weather.temp);
+    }
+  }, [weather?.temp, loadOutfitInsights]);
+
+  const inspirationCards =
+    outfitInsights && outfitInsights.inspiration.length > 0
+      ? outfitInsights.inspiration
+      : INSPIRATION_CARDS;
+
   const startApp = () => {
     if (!userName.trim() || !userLocation) return;
     loadWeather(userLocation.lat, userLocation.lon, userLocation.name);
@@ -997,7 +1025,7 @@ export default function App() {
 
   const handleNextInspiration = (liked: boolean) => {
     showToast(liked ? "已收藏這套穿搭 ♡" : "略過");
-    setInspirationIdx((prev) => (prev + 1) % INSPIRATION_CARDS.length);
+    setInspirationIdx((prev) => (prev + 1) % Math.max(inspirationCards.length, 1));
   };
 
   const onOutfitImageReady = (img: ParsedOutfitImage) => {
@@ -1046,6 +1074,7 @@ export default function App() {
         photoMimeType: outfitImage.mimeType,
       });
       setNotionPageId(id);
+      void loadOutfitInsights(weather.temp);
       showToast("穿搭已記錄！接下來填寫今日體感 →");
       setTimeout(() => setScreen("feedback"), 1000);
     } catch (error) {
@@ -1143,8 +1172,26 @@ export default function App() {
                 showToast={showToast}
               />
             )}
-            {screen === "home" && <HomeScreen userName={userName} setScreen={setScreen} weather={weather} loading={weatherLoading} />}
-            {screen === "inspiration" && <InspirationScreen inspirationIdx={inspirationIdx} handleNextInspiration={handleNextInspiration} setScreen={setScreen} weather={weather} />}
+            {screen === "home" && (
+              <HomeScreen
+                userName={userName}
+                setScreen={setScreen}
+                weather={weather}
+                loading={weatherLoading}
+                insights={outfitInsights}
+                insightsLoading={insightsLoading}
+              />
+            )}
+            {screen === "inspiration" && (
+              <InspirationScreen
+                cards={inspirationCards}
+                inspirationIdx={inspirationIdx}
+                handleNextInspiration={handleNextInspiration}
+                setScreen={setScreen}
+                weather={weather}
+                insights={outfitInsights}
+              />
+            )}
             {screen === "record" && (
               <RecordScreen
                 outfitImage={outfitImage}

@@ -1,31 +1,8 @@
 import type { ApiResponse, NotionRecordPayload } from "../types";
-import { env, getNotionDatabaseId, isNotionConfigured } from "../env";
+import { getNotionDatabaseId, isNotionConfigured } from "../env";
+import { notionRequest } from "./client";
 import { toNotionProperties } from "./properties";
 import { uploadImageToNotion } from "./upload-photo";
-
-const NOTION_VERSION = "2022-06-28";
-
-async function notionRequest<T>(path: string, init: RequestInit): Promise<T> {
-  const res = await fetch(`https://api.notion.com/v1${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${env.notionApiKey}`,
-      "Notion-Version": NOTION_VERSION,
-      "Content-Type": "application/json",
-      ...(init.headers ?? {}),
-    },
-  });
-
-  const data = (await res.json()) as T & { message?: string };
-  if (!res.ok) {
-    const message =
-      typeof data === "object" && data && "message" in data && data.message
-        ? String(data.message)
-        : `Notion API ${res.status}`;
-    throw new Error(message);
-  }
-  return data;
-}
 
 export async function createRecordInNotion(
   payload: NotionRecordPayload
