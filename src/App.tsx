@@ -685,7 +685,6 @@ const InspirationScreen = ({
                 photoUrl={nextCard.photoUrl}
                 emoji={nextCard.emoji}
                 bg={nextCard.bg}
-                objectFit="cover"
                 className="inspiration-card-photo-flex"
               />
               </div>
@@ -715,7 +714,6 @@ const InspirationScreen = ({
                     photoUrl={currentCard.photoUrl}
                     emoji={currentCard.emoji}
                     bg={currentCard.bg}
-                    objectFit="cover"
                     className="inspiration-card-photo-flex"
                   />
                   <div className="pointer-events-none absolute top-3 right-3 z-10 rounded-full bg-stone-800/90 px-2.5 py-1 text-[10px] font-bold text-white backdrop-blur-sm">

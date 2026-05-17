@@ -250,6 +250,7 @@ body {
     position: relative;
     min-height: 0;
     overflow: hidden;
+    background: #f3f0eb;
   }
 
   .inspiration-card-photo-flex {
