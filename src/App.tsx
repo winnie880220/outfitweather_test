@@ -600,7 +600,7 @@ const InspirationEmptyState = ({
     <div className="flex justify-end px-6 pt-3">
       <AppExitButton onClick={onRequestExit} />
     </div>
-    <div className="inspiration-body flex flex-col items-center justify-center px-6 pb-[var(--nav-safe-bottom)] pt-12 text-center">
+    <div className="inspiration-empty-body">
       <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/70 text-stone-500 ring-1 ring-stone-200/70">
         {variant === "exhausted" ? (
           <Sparkles size={28} strokeWidth={1.5} className="text-[#8b7355]" />
@@ -663,8 +663,7 @@ const InspirationScreen = ({
   
   return (
     <div className="inspiration-layout app-screen-gradient">
-      <div className="inspiration-body">
-        <header className="mb-1 mt-3 flex shrink-0 items-center justify-between gap-2 px-6">
+      <header className="inspiration-header mb-1 mt-3 flex items-center justify-between gap-2 px-6">
           <span className="font-semibold text-stone-800">今日靈感</span>
           <div className="flex shrink-0 items-center gap-1.5">
             <span className="glass-pill rounded-full px-2.5 py-1 text-[11px] font-medium text-stone-600">
@@ -675,19 +674,19 @@ const InspirationScreen = ({
           </div>
         </header>
 
-        <div className="app-inset inspiration-card-fill">
-          <div className="inspiration-cards">
+      <div className="inspiration-main app-inset min-h-0">
+        <div className="inspiration-cards">
             <div
               aria-hidden
-              className="inspiration-card inspiration-card-active pointer-events-none absolute inset-0 z-0 scale-[0.96] overflow-hidden rounded-3xl opacity-45 translate-y-2"
+              className="inspiration-card inspiration-card-fill pointer-events-none absolute inset-0 z-0 scale-[0.96] overflow-hidden rounded-3xl opacity-45 translate-y-2"
             >
               <OutfitPhotoDisplay
                 photoUrl={nextCard.photoUrl}
                 emoji={nextCard.emoji}
                 bg={nextCard.bg}
-                className="inspiration-card-photo"
+                className="inspiration-card-photo-flex"
               />
-              <div className="inspiration-card-content p-3">
+              <div className="inspiration-card-content shrink-0 p-3">
                 <div className="text-base font-bold text-stone-800">{nextCard.temp}</div>
                 <div className="text-xs text-stone-500">{nextCard.who}・{nextCard.location}</div>
               </div>
@@ -704,13 +703,13 @@ const InspirationScreen = ({
                   if (info.offset.x > 100) handleNextInspiration(true);
                   else if (info.offset.x < -100) handleNextInspiration(false);
                 }}
-                className="inspiration-card inspiration-card-active absolute inset-0 z-10 cursor-grab overflow-hidden rounded-3xl active:cursor-grabbing"
+                className="inspiration-card inspiration-card-fill relative z-10 h-full w-full cursor-grab overflow-hidden rounded-3xl active:cursor-grabbing"
               >
                 <OutfitPhotoDisplay
                   photoUrl={currentCard.photoUrl}
                   emoji={currentCard.emoji}
                   bg={currentCard.bg}
-                  className="inspiration-card-photo"
+                  className="inspiration-card-photo-flex"
                 />
                 <div className="absolute top-3 right-3 z-10 rounded-full bg-stone-800/90 px-2.5 py-1 text-[10px] font-bold text-white backdrop-blur-sm pointer-events-none">
                   {currentCard.match} 匹配
@@ -738,7 +737,6 @@ const InspirationScreen = ({
                 </div>
               </motion.div>
             </AnimatePresence>
-          </div>
         </div>
       </div>
 

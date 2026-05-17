@@ -21,19 +21,26 @@
   --nav-safe-bottom: calc(
     var(--nav-dock-height) + env(safe-area-inset-bottom, 0px)
   );
+  --inspiration-action-height: 4.75rem;
+  --inspiration-stack-bottom: calc(
+    var(--nav-safe-bottom) + var(--inspiration-action-height) + 0.35rem
+  );
+  --app-content-max: 430px;
+  --app-frame-radius: 2.25rem;
 }
 
 html {
   height: 100%;
+  height: 100dvh;
   height: -webkit-fill-available;
 }
 
 body {
   margin: 0;
   padding: 0;
-  min-height: 100vh;
-  min-height: 100dvh;
-  min-height: -webkit-fill-available;
+  height: 100%;
+  height: 100dvh;
+  height: -webkit-fill-available;
   overflow: hidden;
   background: #f5f1e9;
   color: var(--ink);
@@ -43,13 +50,14 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
-  min-height: 100dvh;
-  min-height: -webkit-fill-available;
+  height: 100dvh;
+  height: -webkit-fill-available;
+  min-height: 0;
   overflow: hidden;
 }
 
 @layer components {
-  /* 手機：全螢幕；桌面：置中手機框預覽 */
+  /* 全螢幕單一版面：寬窄螢幕一致，不做桌面手機框預覽 */
   .app-shell {
     display: flex;
     width: 100%;
@@ -57,30 +65,22 @@ body {
     min-height: 0;
     height: 100%;
     flex-direction: column;
+    align-items: center;
     overflow: hidden;
     background: #f5f1e9;
     padding-top: env(safe-area-inset-top, 0px);
-  }
-
-  @media (min-width: 768px) {
-    .app-shell {
-      height: 100%;
-      min-height: 0;
-      align-items: center;
-      justify-content: center;
-      background: #f1f5f9;
-      padding: 1rem;
-    }
   }
 
   .app-frame {
     position: relative;
     display: flex;
     width: 100%;
+    max-width: var(--app-content-max);
     height: 100%;
     min-height: 0;
     flex: 1;
     flex-direction: column;
+    margin-inline: auto;
     overflow: hidden;
   }
 
@@ -111,100 +111,118 @@ body {
     transform: scale(0.96);
   }
 
-  @media (min-width: 768px) {
-    .app-frame {
-      flex: none;
-      max-height: 820px;
-      max-width: 390px;
-      border-radius: 40px;
-      box-shadow: 0 25px 50px -12px rgba(120, 113, 108, 0.15);
-    }
-  }
-
   /* 外層固定高度，內層負責捲動（避免 AnimatePresence 吃掉 scrollHeight） */
   .app-screen-host {
+    display: flex;
     flex: 1;
     width: 100%;
     min-height: 0;
-    height: calc(100dvh - env(safe-area-inset-top, 0px));
+    flex-direction: column;
     overflow: hidden;
-  }
-
-  @media (min-width: 768px) {
-    .app-screen-host {
-      height: 100%;
-    }
   }
 
   .app-screen-flow {
-    height: 100%;
+    display: flex;
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+    flex-direction: column;
     overflow: hidden;
+  }
+
+  /* 各頁根節點填滿剩餘高度，捲動區才能算出 overflow */
+  .app-screen-flow > * {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
   }
 
   .app-screen-page {
     position: relative;
+    display: flex;
     width: 100%;
-    height: 100%;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    overflow: hidden;
   }
 
-  /* 首頁／記錄／回饋：各自獨立捲動（避開 AnimatePresence 干擾） */
+  /* 首頁／記錄／回饋：內容超出時可捲動 */
   .screen-scroll {
     box-sizing: border-box;
+    display: flex;
+    width: 100%;
     height: 100%;
-    max-height: calc(100dvh - env(safe-area-inset-top, 0px));
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
     overflow-x: hidden;
-    overflow-y: scroll;
+    overflow-y: auto;
     overscroll-behavior-y: contain;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
   }
 
-  @media (min-width: 768px) {
-    .screen-scroll {
-      max-height: 100%;
-    }
-  }
-
-  /* 靈感頁：一屏顯示、不捲動；矮螢幕照片區壓縮 */
+  /* 靈感頁：固定高度卡片，僅圖片區彈性縮放；操作列貼在導覽上方 */
   .inspiration-layout {
     position: relative;
     box-sizing: border-box;
     display: flex;
-    height: calc(100dvh - env(safe-area-inset-top, 0px));
-    max-height: calc(100dvh - env(safe-area-inset-top, 0px));
-    flex-direction: column;
-    overflow: hidden;
-    padding-bottom: var(--nav-safe-bottom);
-  }
-
-  @media (min-width: 768px) {
-    .inspiration-layout {
-      height: 100%;
-      max-height: 100%;
-    }
-  }
-
-  .inspiration-body {
-    display: flex;
+    width: 100%;
     min-height: 0;
     flex: 1;
     flex-direction: column;
     overflow: hidden;
+    padding-bottom: var(--inspiration-stack-bottom);
   }
 
-  .inspiration-card-fill {
+  .inspiration-header {
+    z-index: 2;
+    flex-shrink: 0;
+  }
+
+  .inspiration-main {
     display: flex;
+    width: 100%;
     min-height: 0;
     flex: 1;
     flex-direction: column;
     padding-top: 0.25rem;
   }
 
+  .inspiration-cards {
+    position: relative;
+    margin-inline: auto;
+    width: 100%;
+    min-height: 0;
+    flex: 1;
+  }
+
+  .inspiration-card-fill {
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .inspiration-card-photo-flex {
+    position: relative;
+    width: 100%;
+    min-height: 0;
+    flex: 1 1 0%;
+  }
+
   .inspiration-action-dock {
+    position: absolute;
+    right: 0;
+    bottom: var(--nav-safe-bottom);
+    left: 0;
     z-index: 45;
-    flex-shrink: 0;
-    padding-top: 0.5rem;
-    padding-bottom: 0.25rem;
+    padding-top: 0.35rem;
+    padding-bottom: 0.15rem;
     pointer-events: none;
   }
 
@@ -212,45 +230,15 @@ body {
     pointer-events: auto;
   }
 
-  @media (min-width: 768px) {
-    .inspiration-action-dock {
-      position: absolute;
-      right: 0;
-      bottom: var(--nav-safe-bottom);
-      left: 0;
-      padding-bottom: 0.25rem;
-    }
-  }
-
-  .inspiration-cards {
-    position: relative;
-    margin-left: auto;
-    margin-right: auto;
-    width: 100%;
-    min-height: 0;
-    max-width: min(300px, 92%);
-    flex: 1;
-  }
-
-  .inspiration-card-active {
+  .inspiration-empty-body {
     display: flex;
-    height: 100%;
     min-height: 0;
+    flex: 1;
     flex-direction: column;
-    overflow: hidden;
-  }
-
-  .inspiration-card-photo {
-    width: 100%;
-    flex: 1 1 0%;
-    min-height: 0;
-    max-height: 100%;
-  }
-
-  @media (min-width: 768px) {
-    .inspiration-body {
-      padding-bottom: 4.75rem;
-    }
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 1.5rem var(--nav-safe-bottom);
+    text-align: center;
   }
 
   @media (max-height: 700px) {
@@ -270,12 +258,11 @@ body {
     }
   }
 
-  /* 手機：fixed 貼底；桌面預覽框內：absolute */
   .app-nav-dock {
-    position: fixed;
-    left: 0;
+    position: absolute;
     right: 0;
     bottom: 0;
+    left: 0;
     z-index: 50;
     padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
     pointer-events: none;
@@ -285,11 +272,35 @@ body {
     pointer-events: auto;
   }
 
+  /* 寬螢幕：置中手機框（如記錄頁預覽） */
   @media (min-width: 768px) {
-    .app-nav-dock {
-      position: absolute;
-      bottom: 1.5rem;
-      padding-bottom: 0;
+    :root {
+      --app-content-max: 390px;
+    }
+
+    body {
+      background: #ded8cf;
+    }
+
+    .app-shell {
+      justify-content: center;
+      box-sizing: border-box;
+      height: 100dvh;
+      padding: max(0.75rem, env(safe-area-inset-top, 0px)) 1rem
+        max(0.75rem, env(safe-area-inset-bottom, 0px));
+      background: #ded8cf;
+    }
+
+    .app-frame {
+      flex: 0 1 auto;
+      width: 100%;
+      max-width: var(--app-content-max);
+      height: 100%;
+      max-height: min(852px, calc(100dvh - 1.5rem));
+      border-radius: var(--app-frame-radius);
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.55),
+        0 28px 72px rgba(44, 40, 37, 0.16);
     }
   }
 }
@@ -306,11 +317,11 @@ body {
     );
   }
 
-  /* 與底部導覽同寬（90% 置中） */
+  /* 與底部導覽同寬（90% 置中，且不超過全站 max-width） */
   .app-inset {
-    width: 90%;
-    margin-left: auto;
-    margin-right: auto;
+    width: min(90%, var(--app-content-max));
+    max-width: var(--app-content-max);
+    margin-inline: auto;
   }
 
   /* 避開底部 fixed 導覽 */
