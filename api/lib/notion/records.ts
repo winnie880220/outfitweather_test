@@ -1,6 +1,7 @@
 import type { ApiResponse, NotionRecordPayload } from "../types";
 import { env, getNotionDatabaseId, isNotionConfigured } from "../env";
 import { toNotionProperties } from "./properties";
+import { uploadImageToNotion } from "./upload-photo";
 
 const NOTION_VERSION = "2022-06-28";
 
@@ -41,11 +42,29 @@ export async function createRecordInNotion(
   }
 
   try {
+    const notionPayload: NotionRecordPayload = { ...payload };
+
+    if (payload.photoBase64) {
+      try {
+        notionPayload.photoFileUploadId = await uploadImageToNotion(
+          payload.photoBase64,
+          payload.photoMimeType ?? "image/jpeg"
+        );
+      } catch (uploadError) {
+        const msg =
+          uploadError instanceof Error ? uploadError.message : "照片上傳失敗";
+        return { ok: false, error: `Notion 照片：${msg}` };
+      }
+    }
+
+    delete notionPayload.photoBase64;
+    delete notionPayload.photoMimeType;
+
     const page = await notionRequest<{ id: string }>("/pages", {
       method: "POST",
       body: JSON.stringify({
         parent: { database_id: getNotionDatabaseId() },
-        properties: toNotionProperties(payload),
+        properties: toNotionProperties(notionPayload),
       }),
     });
 

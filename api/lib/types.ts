@@ -42,4 +42,9 @@ export interface NotionRecordPayload {
   wrapping?: number;
   stuffiness?: number;
   photoUrl?: string;
+  /** 前端傳入，伺服器上傳至 Notion Photo 後不寫入 properties */
+  photoBase64?: string;
+  photoMimeType?: string;
+  /** 伺服器內部：Notion file_upload id */
+  photoFileUploadId?: string;
 }

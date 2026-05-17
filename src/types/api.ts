@@ -71,7 +71,16 @@ export interface NotionRecordPayload {
   wrapping?: number;
   stuffiness?: number;
   photoUrl?: string;
+  /** 上傳至 Notion Photo（伺服器端處理，勿含 data: 前綴亦可） */
+  photoBase64?: string;
+  photoMimeType?: string;
 }
+
+export type ParsedOutfitImage = {
+  base64: string;
+  mimeType: string;
+  previewUrl: string;
+};
 
 /** @deprecated 請改用 NotionRecordPayload */
 export type CreateOutfitPayload = NotionRecordPayload & { userName: string };

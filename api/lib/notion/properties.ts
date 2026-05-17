@@ -68,7 +68,17 @@ export function toNotionProperties(payload: NotionRecordPayload): NotionProps {
   if (payload.stuffiness !== undefined) {
     props[RECORDS_DB.stuffiness] = { number: payload.stuffiness };
   }
-  if (payload.photoUrl) {
+  if (payload.photoFileUploadId) {
+    props[RECORDS_DB.photo] = {
+      files: [
+        {
+          type: "file_upload",
+          name: "outfit.jpg",
+          file_upload: { id: payload.photoFileUploadId },
+        },
+      ],
+    };
+  } else if (payload.photoUrl) {
     props[RECORDS_DB.photo] = {
       files: [{ type: "external", name: "outfit", external: { url: payload.photoUrl } }],
     };

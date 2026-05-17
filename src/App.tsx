@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "motion/react";
 import {
+  analyzeOutfit,
   buildRecordFromWeather,
   createRecord,
   fetchCurrentWeather,
@@ -14,7 +15,8 @@ import {
   searchLocations,
   updateRecord,
 } from "./lib/api";
-import type { GeoSearchResult, UserLocation, WeatherData } from "./types/api";
+import { captureVideoFrame, compressDataUrl } from "./lib/image";
+import type { GeoSearchResult, ParsedOutfitImage, UserLocation, WeatherData } from "./types/api";
 import { 
   Home, 
   Sparkles, 
@@ -597,28 +599,32 @@ const InspirationScreen = ({ inspirationIdx, handleNextInspiration, setScreen, w
   );
 };
 
-const RecordScreen = ({ 
-  photoUploaded, 
-  handleUpload, 
-  currentTime, 
-  saveToWardrobe, 
+const RecordScreen = ({
+  outfitImage,
+  onImageReady,
+  onClearImage,
+  currentTime,
+  saveToWardrobe,
+  recordSaving,
   weather,
   isCameraOpen,
   setIsCameraOpen,
   showActionSheet,
   setShowActionSheet,
-  setPhotoUploaded
-}: { 
-  photoUploaded: boolean, 
-  handleUpload: () => void, 
-  currentTime: string, 
-  saveToWardrobe: () => void, 
-  weather: WeatherData | null,
-  isCameraOpen: boolean,
-  setIsCameraOpen: (v: boolean) => void,
-  showActionSheet: boolean,
-  setShowActionSheet: (v: boolean) => void,
-  setPhotoUploaded: (v: boolean) => void
+  showToast,
+}: {
+  outfitImage: ParsedOutfitImage | null;
+  onImageReady: (img: ParsedOutfitImage) => void;
+  onClearImage: () => void;
+  currentTime: string;
+  saveToWardrobe: () => void;
+  recordSaving: boolean;
+  weather: WeatherData | null;
+  isCameraOpen: boolean;
+  setIsCameraOpen: (v: boolean) => void;
+  showActionSheet: boolean;
+  setShowActionSheet: (v: boolean) => void;
+  showToast: (msg: string) => void;
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -637,21 +643,37 @@ const RecordScreen = ({
     }
   };
 
-  const capturePhoto = () => {
-    if (videoRef.current) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => track.stop());
-      setIsCameraOpen(false);
-      handleUpload();
+  const capturePhoto = async () => {
+    if (!videoRef.current) return;
+    const stream = videoRef.current.srcObject as MediaStream;
+    stream?.getTracks().forEach((track) => track.stop());
+    setIsCameraOpen(false);
+    try {
+      const img = await captureVideoFrame(videoRef.current);
+      onImageReady(img);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "拍照失敗");
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      handleUpload();
-      setShowActionSheet(false);
-    }
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setShowActionSheet(false);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const img = await compressDataUrl(reader.result as string);
+        onImageReady(img);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "圖片讀取失敗");
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
   };
+
+  const hasPhoto = outfitImage !== null;
 
   return (
     <div className="flex-1 flex flex-col pt-4 overflow-y-auto pb-32 relative">
@@ -678,8 +700,8 @@ const RecordScreen = ({
       <div className="relative mx-4">
         <motion.div 
           whileTap={{ scale: 0.98 }}
-          onClick={() => !photoUploaded && setShowActionSheet(true)}
-          className={`h-56 rounded-3xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all ${photoUploaded ? "bg-[#E1F5EE] border-[#1D9E75]" : isCameraOpen ? "bg-black border-none overflow-hidden" : "bg-slate-50 border-slate-200 hover:border-[#378ADD]"}`}
+          onClick={() => !hasPhoto && !recordSaving && setShowActionSheet(true)}
+          className={`h-56 rounded-3xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden ${hasPhoto ? "bg-[#E1F5EE] border-[#1D9E75]" : isCameraOpen ? "bg-black border-none" : "bg-slate-50 border-slate-200 hover:border-[#378ADD]"}`}
         >
           {isCameraOpen ? (
             <div className="relative w-full h-full">
@@ -696,12 +718,26 @@ const RecordScreen = ({
                 <div className="w-8 h-8 bg-slate-100 rounded-full border border-slate-200" />
               </button>
             </div>
-          ) : photoUploaded ? (
-            <div className="text-center">
-              <div className="text-6xl mb-2">🧥</div>
-              <div className="text-sm font-bold text-[#0F6E56]">照片已選取</div>
-              <div className="text-[11px] text-[#1D9E75] mt-1">氣象數據自動綁定 ✓</div>
-              <button onClick={(e) => { e.stopPropagation(); setPhotoUploaded(false); }} className="mt-2 text-[10px] text-slate-400 underline">重新拍攝</button>
+          ) : hasPhoto && outfitImage ? (
+            <div className="relative w-full h-full">
+              <img
+                src={outfitImage.previewUrl}
+                alt="今日穿搭"
+                className="w-full h-full object-cover rounded-3xl"
+              />
+              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/50 to-transparent p-3 text-center">
+                <div className="text-xs font-bold text-white">照片已選取 · 氣象已綁定</div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClearImage();
+                  }}
+                  className="mt-1 text-[10px] text-white/90 underline"
+                >
+                  重新拍攝
+                </button>
+              </div>
             </div>
           ) : (
             <div className="text-center">
@@ -774,12 +810,12 @@ const RecordScreen = ({
       </div>
 
       <div className="px-4 mt-auto">
-        <button 
-          disabled={!photoUploaded}
+        <button
+          disabled={!hasPhoto || recordSaving}
           onClick={saveToWardrobe}
-          className={`w-full py-4 rounded-xl text-base font-semibold shadow-md transition-all ${photoUploaded ? "bg-[#0C447C] text-white" : "bg-slate-200 text-slate-400 cursor-not-allowed opacity-50"}`}
+          className={`w-full py-4 rounded-xl text-base font-semibold shadow-md transition-all ${hasPhoto && !recordSaving ? "bg-[#0C447C] text-white" : "bg-slate-200 text-slate-400 cursor-not-allowed opacity-50"}`}
         >
-          完成記錄
+          {recordSaving ? "AI 分析並寫入中…" : "完成記錄"}
         </button>
       </div>
     </div>
@@ -912,7 +948,8 @@ export default function App() {
   const [userName, setUserName] = useState("");
   const [outfitList, setOutfitList] = useState<Outfit[]>(INITIAL_WARDROBE);
   const [inspirationIdx, setInspirationIdx] = useState(0);
-  const [photoUploaded, setPhotoUploaded] = useState(false);
+  const [outfitImage, setOutfitImage] = useState<ParsedOutfitImage | null>(null);
+  const [recordSaving, setRecordSaving] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [showActionSheet, setShowActionSheet] = useState(false);
   const [feelSet, setFeelSet] = useState(false);
@@ -963,35 +1000,61 @@ export default function App() {
     setInspirationIdx((prev) => (prev + 1) % INSPIRATION_CARDS.length);
   };
 
-  const handleUpload = () => {
-    setPhotoUploaded(true);
+  const onOutfitImageReady = (img: ParsedOutfitImage) => {
+    setOutfitImage(img);
     const now = new Date();
-    setCurrentTime(`${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`);
+    setCurrentTime(
+      `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`
+    );
     showToast("照片上傳成功");
   };
 
-  const saveToWardrobe = async () => {
-    if (!photoUploaded) return;
+  const clearOutfitImage = () => {
+    setOutfitImage(null);
+  };
 
-    // POST /api/notion/records — 寫入 Notion（天氣 + 使用者）
-    if (weather) {
-      try {
-        const { id } = await createRecord(
-          buildRecordFromWeather(userName, weather, toStartedAtIso(currentTime))
-        );
-        setNotionPageId(id);
-      } catch (error) {
-        console.warn("Notion create record:", error);
-        showToast(
-          error instanceof Error && error.message
-            ? `Notion 同步失敗：${error.message}`
-            : "Notion 同步失敗，請檢查 Vercel 環境變數"
-        );
-      }
+  const saveToWardrobe = async () => {
+    if (!outfitImage || !weather) return;
+
+    setRecordSaving(true);
+    let upperBodyTags: string[] = [];
+    let lowerBodyTags: string[] = [];
+
+    try {
+      const analysis = await analyzeOutfit(outfitImage.base64, outfitImage.mimeType);
+      upperBodyTags = analysis.upperBodyTags;
+      lowerBodyTags = analysis.lowerBodyTags;
+      const upper = upperBodyTags.length ? upperBodyTags.join("、") : "—";
+      const lower = lowerBodyTags.length ? lowerBodyTags.join("、") : "—";
+      showToast(`AI 辨識：上著 ${upper}｜下著 ${lower}`);
+    } catch (error) {
+      console.warn("Gemini analyze:", error);
+      showToast(
+        error instanceof Error ? error.message : "AI 辨識失敗，仍會儲存照片與天氣"
+      );
     }
 
-    showToast("穿搭已記錄！接下來填寫今日體感 →");
-    setTimeout(() => setScreen("feedback"), 1000);
+    try {
+      const { id } = await createRecord({
+        ...buildRecordFromWeather(userName, weather, toStartedAtIso(currentTime)),
+        upperBodyTags,
+        lowerBodyTags,
+        photoBase64: outfitImage.base64,
+        photoMimeType: outfitImage.mimeType,
+      });
+      setNotionPageId(id);
+      showToast("穿搭已記錄！接下來填寫今日體感 →");
+      setTimeout(() => setScreen("feedback"), 1000);
+    } catch (error) {
+      console.warn("Notion create record:", error);
+      showToast(
+        error instanceof Error && error.message
+          ? `Notion 同步失敗：${error.message}`
+          : "Notion 同步失敗，請檢查 Vercel 環境變數"
+      );
+    } finally {
+      setRecordSaving(false);
+    }
   };
 
   const submitFeedback = async (metrics: {
@@ -1076,18 +1139,22 @@ export default function App() {
             )}
             {screen === "home" && <HomeScreen userName={userName} setScreen={setScreen} weather={weather} loading={weatherLoading} />}
             {screen === "inspiration" && <InspirationScreen inspirationIdx={inspirationIdx} handleNextInspiration={handleNextInspiration} setScreen={setScreen} weather={weather} />}
-            {screen === "record" && <RecordScreen 
-              photoUploaded={photoUploaded} 
-              handleUpload={handleUpload} 
-              currentTime={currentTime} 
-              saveToWardrobe={saveToWardrobe} 
-              weather={weather} 
-              isCameraOpen={isCameraOpen}
-              setIsCameraOpen={setIsCameraOpen}
-              showActionSheet={showActionSheet}
-              setShowActionSheet={setShowActionSheet}
-              setPhotoUploaded={setPhotoUploaded}
-            />}
+            {screen === "record" && (
+              <RecordScreen
+                outfitImage={outfitImage}
+                onImageReady={onOutfitImageReady}
+                onClearImage={clearOutfitImage}
+                currentTime={currentTime}
+                saveToWardrobe={saveToWardrobe}
+                recordSaving={recordSaving}
+                weather={weather}
+                isCameraOpen={isCameraOpen}
+                setIsCameraOpen={setIsCameraOpen}
+                showActionSheet={showActionSheet}
+                setShowActionSheet={setShowActionSheet}
+                showToast={showToast}
+              />
+            )}
             {screen === "feedback" && <FeedbackScreen userName={userName} feedbackDesc={feedbackDesc} setFeedbackDesc={setFeedbackDesc} feelSet={feelSet} setFeelSet={setFeelSet} submitFeedback={submitFeedback} />}
           </motion.div>
         </AnimatePresence>

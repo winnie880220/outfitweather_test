@@ -5,6 +5,8 @@ import type { Plugin, Connect } from "vite";
 import type { IncomingMessage, ServerResponse } from "http";
 import { getCurrentWeather } from "../api/lib/weather";
 import { reverseGeocode, searchLocations } from "../api/lib/geocode";
+import { analyzeOutfitImage } from "../api/lib/gemini/analyze-outfit";
+import { isGeminiConfigured } from "../api/lib/env";
 import { createRecordInNotion, updateRecordInNotion } from "../api/lib/notion/records";
 import type { NotionRecordPayload } from "../api/lib/types";
 
@@ -71,6 +73,21 @@ async function handleApi(
       }
       const name = await reverseGeocode(lat, lon);
       return send(res, 200, { ok: true, data: { name }, source: "api" });
+    }
+
+    if (url.pathname === "/api/analyze-outfit" && req.method === "POST") {
+      if (!isGeminiConfigured()) {
+        return send(res, 503, { ok: false, error: "GEMINI_API_KEY 尚未設定" });
+      }
+      const body = (await readBody(req)) as { imageBase64?: string; mimeType?: string };
+      if (!body?.imageBase64?.trim()) {
+        return send(res, 400, { ok: false, error: "缺少 imageBase64" });
+      }
+      const data = await analyzeOutfitImage(
+        body.imageBase64,
+        body.mimeType ?? "image/jpeg"
+      );
+      return send(res, 200, { ok: true, data, source: "gemini" });
     }
 
     if (url.pathname === "/api/notion-records") {
