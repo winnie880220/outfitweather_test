@@ -221,8 +221,8 @@ const WelcomeScreen = ({
         const results = await searchLocations(q);
         setSuggestions(results);
         setShowDropdown(results.length > 0);
-        if (results.length === 0) {
-          showToast("找不到相符地點，請換關鍵字試試");
+        if (results.length === 0 && q.length >= 2) {
+          showToast("找不到相符地點，請換關鍵字或按右側定位");
         }
       } catch (error) {
         setSuggestions([]);
@@ -982,6 +982,11 @@ export default function App() {
         setNotionPageId(id);
       } catch (error) {
         console.warn("Notion create record:", error);
+        showToast(
+          error instanceof Error && error.message
+            ? `Notion 同步失敗：${error.message}`
+            : "Notion 同步失敗，請檢查 Vercel 環境變數"
+        );
       }
     }
 
@@ -1015,6 +1020,11 @@ export default function App() {
       }
     } catch (error) {
       console.warn("Notion update record:", error);
+      showToast(
+        error instanceof Error && error.message
+          ? `Notion 同步失敗：${error.message}`
+          : "Notion 同步失敗"
+      );
     }
     
     // Record outfit data

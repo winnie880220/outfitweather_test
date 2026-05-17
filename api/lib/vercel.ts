@@ -12,7 +12,9 @@ export type VercelResponse = {
 };
 
 export function sendJson(res: VercelResponse, status: number, body: unknown) {
-  res.status(status).json(body);
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.status(status);
+  res.json(body);
 }
 
 export function getQueryString(

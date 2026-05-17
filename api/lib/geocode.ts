@@ -1,11 +1,53 @@
 import type { GeoSearchResult } from "./types";
 
+/** Photon 支援中文「台北」；Open-Meteo 常無結果 */
+export async function searchLocationsPhoton(query: string): Promise<GeoSearchResult[]> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+
+  const res = await fetch(
+    `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=12&lang=default`
+  );
+  if (!res.ok) return [];
+
+  const data = (await res.json()) as {
+    features?: Array<{
+      properties?: {
+        osm_id?: number;
+        name?: string;
+        city?: string;
+        state?: string;
+        country?: string;
+        countrycode?: string;
+      };
+      geometry?: { coordinates?: [number, number] };
+    }>;
+  };
+
+  const features = data.features ?? [];
+  const tw = features.filter((f) => f.properties?.countrycode === "TW");
+  const list = (tw.length ? tw : features).slice(0, 6);
+
+  return list.map((f, i) => {
+    const p = f.properties ?? {};
+    const [lon, lat] = f.geometry?.coordinates ?? [0, 0];
+    const display_name = [p.name, p.city, p.state, p.country].filter(Boolean).join(", ");
+    return {
+      place_id: p.osm_id ?? i,
+      lat: String(lat),
+      lon: String(lon),
+      display_name,
+      name: p.name || p.city || display_name,
+    };
+  });
+}
+
 export async function searchLocations(query: string): Promise<GeoSearchResult[]> {
   const q = query.trim();
   if (q.length < 2) return [];
 
   const res = await fetch(
-    `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&language=zh`
+    `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=10&language=zh`
   );
 
   if (!res.ok) {
@@ -20,12 +62,18 @@ export async function searchLocations(query: string): Promise<GeoSearchResult[]>
       longitude: number;
       admin1?: string;
       country?: string;
+      country_code?: string;
     }>;
   };
 
-  if (!data.results?.length) return [];
+  if (!data.results?.length) {
+    return searchLocationsPhoton(q);
+  }
 
-  return data.results.map((r, i) => {
+  const twFirst = data.results.filter((r) => r.country_code === "TW");
+  const list = (twFirst.length ? twFirst : data.results).slice(0, 6);
+
+  return list.map((r, i) => {
     const display_name = [r.name, r.admin1, r.country].filter(Boolean).join(", ");
     return {
       place_id: r.id ?? i,
