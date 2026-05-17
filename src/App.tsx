@@ -6,12 +6,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "motion/react";
 import {
-  createFeedback,
-  createOutfit,
+  buildRecordFromWeather,
+  createRecord,
   fetchCurrentWeather,
   formatGeoLabel,
   reverseGeocode,
   searchLocations,
+  updateRecord,
 } from "./lib/api";
 import type { GeoSearchResult, UserLocation, WeatherData } from "./types/api";
 import { 
@@ -220,9 +221,14 @@ const WelcomeScreen = ({
         const results = await searchLocations(q);
         setSuggestions(results);
         setShowDropdown(results.length > 0);
-      } catch {
+        if (results.length === 0) {
+          showToast("找不到相符地點，請換關鍵字試試");
+        }
+      } catch (error) {
         setSuggestions([]);
         setShowDropdown(false);
+        const msg = error instanceof Error ? error.message : "地點搜尋失敗";
+        showToast(msg.includes("fetch") ? "地點服務連線失敗，請稍後再試" : msg);
       } finally {
         setSearching(false);
       }
@@ -262,17 +268,29 @@ const WelcomeScreen = ({
           setUserLocation({ name, lat, lon });
           setShowDropdown(false);
           setSuggestions([]);
-        } catch {
-          showToast("無法解析目前位置，請手動輸入地點");
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : "";
+          showToast(
+            msg
+              ? `無法解析位置：${msg}`
+              : "無法解析目前位置，請手動輸入地點"
+          );
         } finally {
           setLocating(false);
         }
       },
-      () => {
-        showToast("無法取得定位，請允許權限或手動輸入");
+      (err) => {
+        const code = (err as GeolocationPositionError)?.code;
+        if (code === 1) {
+          showToast("請在瀏覽器允許定位權限後再試");
+        } else if (code === 3) {
+          showToast("定位逾時，請到戶外或改用手動輸入");
+        } else {
+          showToast("無法取得定位，請允許權限或手動輸入");
+        }
         setLocating(false);
       },
-      { enableHighAccuracy: true, timeout: 12000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
     );
   };
 
@@ -908,6 +926,18 @@ export default function App() {
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [locationInput, setLocationInput] = useState("");
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
+  const [notionPageId, setNotionPageId] = useState<string | null>(null);
+
+  const toStartedAtIso = (timeHm: string) => {
+    const d = new Date();
+    if (timeHm) {
+      const [h, m] = timeHm.split(":").map(Number);
+      if (!Number.isNaN(h) && !Number.isNaN(m)) {
+        d.setHours(h, m, 0, 0);
+      }
+    }
+    return d.toISOString();
+  };
 
   const loadWeather = async (lat: number, lon: number, displayName?: string) => {
     try {
@@ -943,20 +973,16 @@ export default function App() {
   const saveToWardrobe = async () => {
     if (!photoUploaded) return;
 
-    // POST /api/notion/outfits — 之後寫入 Notion Database
-    try {
-      await createOutfit({
-        userName,
-        location: weather?.locationName ?? "",
-        temp: Math.round(weather?.temp ?? 0),
-        humidity: weather?.humidity ?? 0,
-        rainProb: weather?.rainProb ?? 0,
-        feel: "待填寫體感",
-        feelColor: "#1D9E75",
-        recordedAt: currentTime,
-      });
-    } catch (error) {
-      console.warn("Notion outfit sync:", error);
+    // POST /api/notion/records — 寫入 Notion（天氣 + 使用者）
+    if (weather) {
+      try {
+        const { id } = await createRecord(
+          buildRecordFromWeather(userName, weather, toStartedAtIso(currentTime))
+        );
+        setNotionPageId(id);
+      } catch (error) {
+        console.warn("Notion create record:", error);
+      }
     }
 
     showToast("穿搭已記錄！接下來填寫今日體感 →");
@@ -970,18 +996,25 @@ export default function App() {
   }) => {
     if (!feelSet) return;
 
-    // POST /api/notion/feedback — 之後寫入 Notion Database
+    // PATCH /api/notion/records — 更新同一筆的體感欄位
     try {
-      await createFeedback({
-        userName,
-        description: feedbackDesc,
-        breathability: metrics.breathability,
-        snugness: metrics.snugness,
-        stuffiness: metrics.stuffiness,
-        weatherSnapshot: weather ?? undefined,
-      });
+      if (notionPageId) {
+        await updateRecord(notionPageId, {
+          breathability: metrics.breathability,
+          wrapping: metrics.snugness,
+          stuffiness: metrics.stuffiness,
+        });
+      } else if (weather) {
+        const { id } = await createRecord({
+          ...buildRecordFromWeather(userName, weather),
+          breathability: metrics.breathability,
+          wrapping: metrics.snugness,
+          stuffiness: metrics.stuffiness,
+        });
+        setNotionPageId(id);
+      }
     } catch (error) {
-      console.warn("Notion feedback sync:", error);
+      console.warn("Notion update record:", error);
     }
     
     // Record outfit data
