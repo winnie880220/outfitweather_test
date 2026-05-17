@@ -1029,16 +1029,19 @@ export default function App() {
       showToast(`AI 辨識：上著 ${upper}｜下著 ${lower}`);
     } catch (error) {
       console.warn("Gemini analyze:", error);
-      showToast(
-        error instanceof Error ? error.message : "AI 辨識失敗，仍會儲存照片與天氣"
-      );
+      const msg = error instanceof Error ? error.message : "";
+      if (msg.includes("額度") || msg.includes("429") || msg.includes("quota")) {
+        showToast("Gemini 額度不足，仍會儲存照片與天氣（無 AI 標籤）");
+      } else {
+        showToast(msg || "AI 辨識失敗，仍會儲存照片與天氣");
+      }
     }
 
     try {
       const { id } = await createRecord({
         ...buildRecordFromWeather(userName, weather, toStartedAtIso(currentTime)),
-        upperBodyTags,
-        lowerBodyTags,
+        upperBodyTags: upperBodyTags.length ? upperBodyTags : undefined,
+        lowerBodyTags: lowerBodyTags.length ? lowerBodyTags : undefined,
         photoBase64: outfitImage.base64,
         photoMimeType: outfitImage.mimeType,
       });
@@ -1047,11 +1050,14 @@ export default function App() {
       setTimeout(() => setScreen("feedback"), 1000);
     } catch (error) {
       console.warn("Notion create record:", error);
-      showToast(
-        error instanceof Error && error.message
-          ? `Notion 同步失敗：${error.message}`
-          : "Notion 同步失敗，請檢查 Vercel 環境變數"
-      );
+      const msg = error instanceof Error ? error.message : "";
+      if (msg.includes("expected to be")) {
+        showToast(
+          "Notion 欄位類型不符：請確認 Upper Body Tags 為 Multi-select、Lower Body Tags 為 Select"
+        );
+      } else {
+        showToast(msg ? `Notion 同步失敗：${msg}` : "Notion 同步失敗");
+      }
     } finally {
       setRecordSaving(false);
     }

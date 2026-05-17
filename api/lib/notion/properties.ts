@@ -56,8 +56,12 @@ export function toNotionProperties(payload: NotionRecordPayload): NotionProps {
   if (payload.upperBodyTags !== undefined) {
     props[RECORDS_DB.upperBodyTags] = multiSelect(payload.upperBodyTags);
   }
+  // Notion 資料庫「Lower Body Tags」為 Select（單選），非 Multi-select
   if (payload.lowerBodyTags !== undefined) {
-    props[RECORDS_DB.lowerBodyTags] = multiSelect(payload.lowerBodyTags);
+    const lower = payload.lowerBodyTags.filter(Boolean);
+    if (lower.length > 0) {
+      props[RECORDS_DB.lowerBodyTags] = { select: { name: lower[0] } };
+    }
   }
   if (payload.breathability !== undefined) {
     props[RECORDS_DB.breathability] = { number: payload.breathability };

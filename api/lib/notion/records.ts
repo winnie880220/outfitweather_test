@@ -44,6 +44,7 @@ export async function createRecordInNotion(
   try {
     const notionPayload: NotionRecordPayload = { ...payload };
 
+    let photoWarning: string | undefined;
     if (payload.photoBase64) {
       try {
         notionPayload.photoFileUploadId = await uploadImageToNotion(
@@ -51,9 +52,10 @@ export async function createRecordInNotion(
           payload.photoMimeType ?? "image/jpeg"
         );
       } catch (uploadError) {
-        const msg =
-          uploadError instanceof Error ? uploadError.message : "照片上傳失敗";
-        return { ok: false, error: `Notion 照片：${msg}` };
+        photoWarning =
+          uploadError instanceof Error
+            ? uploadError.message
+            : "照片上傳失敗，已略過 Photo 欄位";
       }
     }
 
@@ -68,7 +70,12 @@ export async function createRecordInNotion(
       }),
     });
 
-    return { ok: true, data: { id: page.id }, source: "notion" };
+    return {
+      ok: true,
+      data: { id: page.id },
+      source: "notion",
+      ...(photoWarning ? { error: `照片未寫入：${photoWarning}` } : {}),
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Notion 建立失敗";
     return { ok: false, error: message };
