@@ -47,18 +47,36 @@ export interface OutfitRecord {
   location: string;
 }
 
-export interface CreateOutfitPayload {
-  userName: string;
-  location: string;
-  temp: number;
-  humidity: number;
-  rainProb: number;
-  feel: string;
-  feelColor: string;
-  tags?: string[];
-  recordedAt?: string;
+/**
+ * 單一 Notion Database 一筆紀錄（欄位名見 lib/server/notion/schema.ts）
+ * 建立時填天氣；提交體感時 PATCH 補上 Breathability / Wrapping / Stuffiness 等
+ */
+export interface NotionRecordPayload {
+  userName?: string;
+  location?: string;
+  /** ISO 8601，對應 Started At */
+  startedAt?: string;
+  /** 對應 Weather（Select 選項名稱須與 Notion 一致，如「多雲」） */
+  weather?: string;
+  temperature?: number;
+  maxTemp?: string;
+  minTemp?: number;
+  apparentTemp?: string | number;
+  humidity?: number;
+  rainProb?: number;
+  uvIndex?: number;
+  upperBodyTags?: string[];
+  lowerBodyTags?: string[];
+  breathability?: number;
+  wrapping?: number;
+  stuffiness?: number;
+  photoUrl?: string;
 }
 
+/** @deprecated 請改用 NotionRecordPayload */
+export type CreateOutfitPayload = NotionRecordPayload & { userName: string };
+
+/** @deprecated 請改用 NotionRecordPayload */
 export interface CreateFeedbackPayload {
   userName: string;
   description: string;

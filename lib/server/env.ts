@@ -2,13 +2,14 @@
 
 export const env = {
   notionApiKey: process.env.NOTION_API_KEY ?? "",
-  notionDatabaseOutfits: process.env.NOTION_DATABASE_ID_OUTFITS ?? "",
-  notionDatabaseFeedback: process.env.NOTION_DATABASE_ID_FEEDBACK ?? "",
-  notionDatabaseInspiration: process.env.NOTION_DATABASE_ID_INSPIRATION ?? "",
+  /** 單一穿搭+體感資料庫（優先使用 NOTION_DATABASE_ID） */
+  notionDatabaseId:
+    process.env.NOTION_DATABASE_ID ??
+    process.env.NOTION_DATABASE_ID_OUTFITS ??
+    "",
 };
 
-export const isNotionConfigured = () =>
-  Boolean(env.notionApiKey && env.notionDatabaseOutfits);
+export const getNotionDatabaseId = () => env.notionDatabaseId;
 
-export const isNotionFeedbackConfigured = () =>
-  Boolean(env.notionApiKey && env.notionDatabaseFeedback);
+export const isNotionConfigured = () =>
+  Boolean(env.notionApiKey && env.notionDatabaseId);

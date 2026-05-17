@@ -1,10 +1,16 @@
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 import type { Plugin, Connect } from "vite";
 import type { IncomingMessage, ServerResponse } from "http";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+dotenv.config({ path: path.join(root, ".env.local") });
+dotenv.config({ path: path.join(root, ".env") });
 import { getCurrentWeather } from "../lib/server/weather";
 import { reverseGeocode, searchLocations } from "../lib/server/geocode";
-import { createOutfitInNotion, listOutfitsFromNotion } from "../lib/server/notion/outfits";
-import { createFeedbackInNotion } from "../lib/server/notion/feedback";
-import { listInspirationFromNotion } from "../lib/server/notion/inspiration";
+import { createRecordInNotion, updateRecordInNotion } from "../lib/server/notion/records";
+import type { NotionRecordPayload } from "../src/types/api";
 
 function readBody(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -67,27 +73,21 @@ async function handleApi(
       return send(res, 200, { ok: true, data: { name }, source: "api" });
     }
 
-    if (url.pathname === "/api/notion/outfits") {
-      if (req.method === "GET") {
-        const result = await listOutfitsFromNotion();
-        return send(res, result.ok ? 200 : 501, result);
-      }
+    if (url.pathname === "/api/notion/records") {
       if (req.method === "POST") {
-        const body = await readBody(req);
-        const result = await createOutfitInNotion(body as Parameters<typeof createOutfitInNotion>[0]);
-        return send(res, result.ok ? 201 : 501, result);
+        const body = (await readBody(req)) as NotionRecordPayload;
+        const result = await createRecordInNotion(body);
+        return send(res, result.ok ? 201 : 502, result);
       }
-    }
-
-    if (url.pathname === "/api/notion/feedback" && req.method === "POST") {
-      const body = await readBody(req);
-      const result = await createFeedbackInNotion(body as Parameters<typeof createFeedbackInNotion>[0]);
-      return send(res, result.ok ? 201 : 501, result);
-    }
-
-    if (url.pathname === "/api/notion/inspiration" && req.method === "GET") {
-      const result = await listInspirationFromNotion();
-      return send(res, result.ok ? 200 : 501, result);
+      if (req.method === "PATCH") {
+        const body = (await readBody(req)) as NotionRecordPayload & { pageId?: string };
+        if (!body?.pageId) {
+          return send(res, 400, { ok: false, error: "缺少 pageId" });
+        }
+        const { pageId, ...payload } = body;
+        const result = await updateRecordInNotion(pageId, payload);
+        return send(res, result.ok ? 200 : 502, result);
+      }
     }
 
     return send(res, 404, { ok: false, error: "API route not found" });

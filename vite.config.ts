@@ -7,7 +7,12 @@ import { viteApiDevPlugin } from './plugins/vite-api-dev';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
-    plugins: [react(), tailwindcss(), viteApiDevPlugin()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      // 僅本機 dev 需要；避免 production build 載入 server 程式碼
+      ...(mode === 'development' ? [viteApiDevPlugin()] : []),
+    ],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
     },

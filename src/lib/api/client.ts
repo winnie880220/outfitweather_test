@@ -42,3 +42,12 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   });
   return parseResponse<T>(res);
 }
+
+export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return parseResponse<T>(res);
+}

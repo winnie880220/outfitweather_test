@@ -1,26 +1,93 @@
-import type {
-  CreateFeedbackPayload,
-  CreateOutfitPayload,
-  OutfitRecord,
-} from "../../types/api";
-import { apiGet, apiPost } from "./client";
+import type { NotionRecordPayload } from "../../types/api";
+import { apiPatch, apiPost } from "./client";
+import type { OutfitRecord } from "../../types/api";
 
-/** GET /api/notion/outfits */
+/** POST /api/notion/records — 建立（天氣 + 使用者） */
+export async function createRecord(payload: NotionRecordPayload): Promise<{ id: string }> {
+  return apiPost<{ id: string }>("/api/notion/records", payload);
+}
+
+/** PATCH /api/notion/records — 更新體感等欄位 */
+export async function updateRecord(
+  pageId: string,
+  payload: NotionRecordPayload
+): Promise<{ id: string }> {
+  return apiPatch<{ id: string }>("/api/notion/records", { pageId, ...payload });
+}
+
+/** 從天氣資料組 Notion 欄位 */
+export function buildRecordFromWeather(
+  userName: string,
+  weather: {
+    locationName: string;
+    temp: number;
+    condition: string;
+    humidity: number;
+    rainProb: number;
+    apparentTemp: number;
+    uvIndex: number;
+  },
+  startedAt?: string
+): NotionRecordPayload {
+  return {
+    userName,
+    location: weather.locationName,
+    startedAt: startedAt ?? new Date().toISOString(),
+    weather: weather.condition,
+    temperature: Math.round(weather.temp),
+    apparentTemp: String(Math.round(weather.apparentTemp)),
+    humidity: weather.humidity,
+    rainProb: weather.rainProb,
+    uvIndex: Math.round(weather.uvIndex),
+  };
+}
+
+/** @deprecated 改用 createRecord */
+export const createOutfit = createRecord;
+
+/** @deprecated 改用 updateRecord */
+export async function createFeedback(payload: {
+  userName: string;
+  description: string;
+  breathability: number;
+  snugness: number;
+  stuffiness: number;
+  weatherSnapshot?: Partial<{
+    locationName: string;
+    temp: number;
+    condition: string;
+    humidity: number;
+    rainProb: number;
+    apparentTemp: number;
+    uvIndex: number;
+  }>;
+}): Promise<{ id: string }> {
+  return createRecord({
+    userName: payload.userName,
+    breathability: payload.breathability,
+    wrapping: payload.snugness,
+    stuffiness: payload.stuffiness,
+    ...(payload.weatherSnapshot && {
+      location: payload.weatherSnapshot.locationName,
+      temperature: payload.weatherSnapshot.temp
+        ? Math.round(payload.weatherSnapshot.temp)
+        : undefined,
+      weather: payload.weatherSnapshot.condition,
+      humidity: payload.weatherSnapshot.humidity,
+      rainProb: payload.weatherSnapshot.rainProb,
+      apparentTemp: payload.weatherSnapshot.apparentTemp
+        ? String(Math.round(payload.weatherSnapshot.apparentTemp))
+        : undefined,
+      uvIndex: payload.weatherSnapshot.uvIndex
+        ? Math.round(payload.weatherSnapshot.uvIndex)
+        : undefined,
+    }),
+  });
+}
+
+/** @deprecated 尚未實作從 Notion 讀取列表 */
 export async function listOutfits(): Promise<OutfitRecord[]> {
-  return apiGet<OutfitRecord[]>("/api/notion/outfits");
+  return [];
 }
 
-/** POST /api/notion/outfits */
-export async function createOutfit(payload: CreateOutfitPayload): Promise<{ id: string }> {
-  return apiPost<{ id: string }>("/api/notion/outfits", payload);
-}
-
-/** GET /api/notion/inspiration */
-export async function listInspiration(): Promise<OutfitRecord[]> {
-  return apiGet<OutfitRecord[]>("/api/notion/inspiration");
-}
-
-/** POST /api/notion/feedback */
-export async function createFeedback(payload: CreateFeedbackPayload): Promise<{ id: string }> {
-  return apiPost<{ id: string }>("/api/notion/feedback", payload);
-}
+export const listInspiration = listOutfits;
