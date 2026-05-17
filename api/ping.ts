@@ -1,8 +1,5 @@
-export const config = { runtime: "edge" as const };
+import { sendJson, type VercelRequest, type VercelResponse } from "./lib/vercel";
 
-export default function handler() {
-  return new Response(JSON.stringify({ ok: true, pong: true }), {
-    status: 200,
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-  });
+export default function handler(_req: VercelRequest, res: VercelResponse) {
+  sendJson(res, 200, { ok: true, pong: true });
 }

@@ -2,7 +2,6 @@
   "name": "react-example",
   "private": true,
   "version": "0.0.0",
-  "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "dev:vercel": "vercel dev",
@@ -13,6 +12,7 @@
     "test:notion": "tsx scripts/test-notion.ts"
   },
   "dependencies": {
+    "@vercel/node": "^5.0.0",
     "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
