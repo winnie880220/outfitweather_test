@@ -1,15 +1,19 @@
-/** 穿搭照片：完整顯示（不裁切），無照片時顯示 emoji */
+/** 穿搭照片：預設完整顯示；靈感卡可用 cover 填滿圖片區 */
 export function OutfitPhotoDisplay({
   photoUrl,
   emoji,
   bg = "#ebe6dc",
+  objectFit = "contain",
   className = "",
 }: {
   photoUrl?: string;
   emoji: string;
   bg?: string;
+  objectFit?: "contain" | "cover";
   className?: string;
 }) {
+  const imgFitClass = objectFit === "cover" ? "object-cover" : "object-contain";
+
   return (
     <div
       className={`relative w-full overflow-hidden ${className}`}
@@ -19,7 +23,7 @@ export function OutfitPhotoDisplay({
         <img
           src={photoUrl}
           alt="穿搭"
-          className="absolute inset-0 w-full h-full object-contain object-center"
+          className={`absolute inset-0 h-full w-full ${imgFitClass} object-center`}
           loading="lazy"
         />
       ) : (
@@ -30,3 +34,4 @@ export function OutfitPhotoDisplay({
     </div>
   );
 }
+

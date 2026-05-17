@@ -678,14 +678,17 @@ const InspirationScreen = ({
         <div className="inspiration-cards">
             <div
               aria-hidden
-              className="inspiration-card inspiration-card-stack pointer-events-none absolute inset-0 z-0 scale-[0.96] overflow-hidden rounded-3xl opacity-45 translate-y-2"
+              className="inspiration-card inspiration-card-stack inspiration-card-back overflow-hidden rounded-3xl"
             >
+              <div className="inspiration-card-photo-cell">
               <OutfitPhotoDisplay
                 photoUrl={nextCard.photoUrl}
                 emoji={nextCard.emoji}
                 bg={nextCard.bg}
+                objectFit="cover"
                 className="inspiration-card-photo-flex"
               />
+              </div>
               <div className="inspiration-card-content shrink-0 p-3">
                 <div className="text-base font-bold text-stone-800">{nextCard.temp}</div>
                 <div className="text-xs text-stone-500">{nextCard.who}・{nextCard.location}</div>
@@ -705,12 +708,14 @@ const InspirationScreen = ({
                   else if (info.offset.x < -100) handleNextInspiration(false);
                 }}
                 className="inspiration-card inspiration-card-stack h-full w-full cursor-grab overflow-hidden rounded-3xl active:cursor-grabbing"
+                style={{ height: "100%" }}
               >
-                <div className="relative min-h-0 overflow-hidden">
+                <div className="inspiration-card-photo-cell">
                   <OutfitPhotoDisplay
                     photoUrl={currentCard.photoUrl}
                     emoji={currentCard.emoji}
                     bg={currentCard.bg}
+                    objectFit="cover"
                     className="inspiration-card-photo-flex"
                   />
                   <div className="pointer-events-none absolute top-3 right-3 z-10 rounded-full bg-stone-800/90 px-2.5 py-1 text-[10px] font-bold text-white backdrop-blur-sm">
