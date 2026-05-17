@@ -1,7 +1,8 @@
-import { edgeConfig, jsonResponse } from "./lib/edge";
-
-export const config = edgeConfig;
+export const config = { runtime: "edge" as const };
 
 export default function handler() {
-  return jsonResponse(200, { ok: true, pong: true });
+  return new Response(JSON.stringify({ ok: true, pong: true }), {
+    status: 200,
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+  });
 }
