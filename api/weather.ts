@@ -1,24 +1,27 @@
 import { getCurrentWeather } from "./lib/weather";
-import { getQueryString, parseLatLonFromQuery, sendJson, type VercelRequest, type VercelResponse } from "./lib/vercel";
+import { edgeConfig, getSearchParams, jsonResponse, parseLatLon } from "./lib/edge";
+
+export const config = edgeConfig;
 
 /** GET /api/weather?lat=25.03&lon=121.56&name=台北市 */
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== "GET") {
-    return sendJson(res, 405, { ok: false, error: "Method not allowed" });
+export default async function handler(request: Request) {
+  if (request.method !== "GET") {
+    return jsonResponse(405, { ok: false, error: "Method not allowed" });
   }
 
-  const coords = parseLatLonFromQuery(req.query);
+  const params = getSearchParams(request);
+  const coords = parseLatLon(params);
   if (!coords) {
-    return sendJson(res, 400, { ok: false, error: "請提供有效的 lat、lon 參數" });
+    return jsonResponse(400, { ok: false, error: "請提供有效的 lat、lon 參數" });
   }
 
-  const displayName = getQueryString(req.query, "name") || undefined;
+  const displayName = params.get("name")?.trim() || undefined;
 
   try {
     const data = await getCurrentWeather(coords.lat, coords.lon, displayName);
-    return sendJson(res, 200, { ok: true, data, source: "api" });
+    return jsonResponse(200, { ok: true, data, source: "api" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "天氣取得失敗";
-    return sendJson(res, 500, { ok: false, error: message });
+    return jsonResponse(500, { ok: false, error: message });
   }
 }

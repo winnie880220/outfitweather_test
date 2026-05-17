@@ -1,5 +1,7 @@
-import { sendJson, type VercelRequest, type VercelResponse } from "./lib/vercel";
+import { edgeConfig, jsonResponse } from "./lib/edge";
 
-export default function handler(_req: VercelRequest, res: VercelResponse) {
-  sendJson(res, 200, { ok: true, pong: true });
+export const config = edgeConfig;
+
+export default function handler() {
+  return jsonResponse(200, { ok: true, pong: true });
 }
