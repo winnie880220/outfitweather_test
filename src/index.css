@@ -17,31 +17,216 @@
   --ink: #2c2825;
   --ink-muted: #78716c;
   --accent: #8b7355;
+  --nav-dock-height: 5.5rem;
+  --nav-safe-bottom: calc(
+    var(--nav-dock-height) + env(safe-area-inset-bottom, 0px)
+  );
 }
 
-html,
-body,
-#root {
+html {
   height: 100%;
-  overflow: hidden;
+  height: -webkit-fill-available;
 }
 
 body {
-  background: linear-gradient(165deg, #e8e2d8 0%, #f5f1e9 45%, #faf8f5 100%);
   margin: 0;
   padding: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  min-height: -webkit-fill-available;
+  overflow: hidden;
+  background: #f5f1e9;
   color: var(--ink);
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 100dvh;
+  min-height: -webkit-fill-available;
+  overflow: hidden;
+}
+
+@layer components {
+  /* 手機：全螢幕；桌面：置中手機框預覽 */
+  .app-shell {
+    display: flex;
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+    flex-direction: column;
+    overflow: hidden;
+    background: #f5f1e9;
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  @media (min-width: 768px) {
+    .app-shell {
+      height: 100%;
+      min-height: 0;
+      align-items: center;
+      justify-content: center;
+      background: #f1f5f9;
+      padding: 1rem;
+    }
+  }
+
+  .app-frame {
+    position: relative;
+    display: flex;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  @media (min-width: 768px) {
+    .app-frame {
+      flex: none;
+      max-height: 820px;
+      max-width: 390px;
+      border-radius: 40px;
+      box-shadow: 0 25px 50px -12px rgba(120, 113, 108, 0.15);
+    }
+  }
+
+  /* 外層固定高度，內層負責捲動（避免 AnimatePresence 吃掉 scrollHeight） */
+  .app-screen-host {
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+    height: calc(100dvh - env(safe-area-inset-top, 0px));
+    overflow: hidden;
+  }
+
+  @media (min-width: 768px) {
+    .app-screen-host {
+      height: 100%;
+    }
+  }
+
+  .app-screen-flow {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .app-screen-page {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* 首頁／記錄／回饋：各自獨立捲動（避開 AnimatePresence 干擾） */
+  .screen-scroll {
+    box-sizing: border-box;
+    height: 100%;
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px));
+    overflow-x: hidden;
+    overflow-y: scroll;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+  }
+
+  @media (min-width: 768px) {
+    .screen-scroll {
+      max-height: 100%;
+    }
+  }
+
+  /* 靈感頁：內容區捲動 + 操作列 fixed 在導覽上方 */
+  .inspiration-layout {
+    position: relative;
+    display: flex;
+    height: calc(100dvh - env(safe-area-inset-top, 0px));
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px));
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  @media (min-width: 768px) {
+    .inspiration-layout {
+      height: 100%;
+      max-height: 100%;
+    }
+  }
+
+  .inspiration-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    padding-bottom: calc(5rem + var(--nav-safe-bottom));
+  }
+
+  .inspiration-action-dock {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: var(--nav-safe-bottom);
+    z-index: 45;
+    pointer-events: none;
+  }
+
+  .inspiration-action-dock > * {
+    pointer-events: auto;
+  }
+
+  @media (min-width: 768px) {
+    .inspiration-action-dock {
+      position: absolute;
+      bottom: var(--nav-safe-bottom);
+    }
+  }
+
+  .inspiration-cards {
+    position: relative;
+    margin-left: auto;
+    margin-right: auto;
+    width: 100%;
+    max-width: min(300px, 92%);
+  }
+
+  /* 手機：fixed 貼底；桌面預覽框內：absolute */
+  .app-nav-dock {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+    pointer-events: none;
+  }
+
+  .app-nav-dock > * {
+    pointer-events: auto;
+  }
+
+  @media (min-width: 768px) {
+    .app-nav-dock {
+      position: absolute;
+      bottom: 1.5rem;
+      padding-bottom: 0;
+    }
+  }
 }
 
 @layer components {
   /* 米色簡約主背景 */
   .app-screen-gradient {
-    background: linear-gradient(
+    background-color: #f5f1e9;
+    background-image: linear-gradient(
       180deg,
       #ebe6dc 0%,
-      #f0ebe3 18%,
-      #f5f1e9 50%,
-      #faf8f5 100%
+      #f0ebe3 22%,
+      #f5f1e9 100%
     );
   }
 
@@ -52,9 +237,13 @@ body {
     margin-right: auto;
   }
 
-  /* 避開底部浮動導覽（bottom-6 + 導覽高度） */
+  /* 避開底部 fixed 導覽 */
   .pad-nav-safe {
-    padding-bottom: 6.75rem;
+    padding-bottom: var(--nav-safe-bottom);
+  }
+
+  .sticky-nav-cta {
+    padding-bottom: calc(6.75rem + env(safe-area-inset-bottom, 0px));
   }
 
   .glass-card {

@@ -309,7 +309,7 @@ const WelcomeScreen = ({
   };
 
   return (
-  <motion.div className="flex flex-1 flex-col items-center justify-center px-8">
+  <div className="flex min-h-min flex-col items-center justify-center px-8 py-10 pb-16">
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
@@ -405,7 +405,7 @@ const WelcomeScreen = ({
     {!canStart && (
       <p className="text-center text-xs text-slate-400 mt-3">請先填寫名字和地點</p>
     )}
-  </motion.div>
+  </div>
   );
 };
 
@@ -428,9 +428,8 @@ const HomeScreen = ({
   showPendingBanner: boolean;
   onContinuePending: () => void;
 }) => (
-  <div className="flex min-h-0 flex-1 flex-col">
-    <div className="app-scroll min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
-      <div className="app-inset pt-4 pb-2">
+  <div className="screen-scroll app-scroll app-screen-gradient">
+    <div className="app-inset pt-4 pb-[var(--nav-safe-bottom)]">
       {showPendingBanner ? (
         <PendingFeedbackBanner onContinue={onContinuePending} />
       ) : null}
@@ -488,11 +487,8 @@ const HomeScreen = ({
       )}
 
       <OutfitStatsPanel insights={insights} loading={insightsLoading} />
-      </div>
-    </div>
 
-    <div className="sticky bottom-0 z-20 shrink-0 bg-gradient-to-t from-[#f5f1e9]/95 from-[50%] via-[#f5f1e9]/88 to-transparent pb-[6.75rem] pt-6">
-      <div className="app-inset">
+      <div className="pt-6 pb-2">
         <BottomActionBar
           solo
           primaryLabel="看大家的穿搭"
@@ -521,7 +517,7 @@ const InspirationScreen = ({
 }) => {
   if (cards.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center pad-nav-safe px-6 text-center">
+      <div className="screen-scroll app-scroll app-screen-gradient flex flex-col items-center justify-center px-6 pb-[var(--nav-safe-bottom)] pt-16 text-center">
         <p className="text-sm text-slate-500 mb-4">此溫度區間還沒有穿搭靈感</p>
         <button
           onClick={() => setScreen("record")}
@@ -537,95 +533,100 @@ const InspirationScreen = ({
   const nextCard = cards[(inspirationIdx + 1) % cards.length];
   
   return (
-    <div className="flex flex-1 flex-col min-h-0 overflow-hidden pad-nav-safe">
-      <header className="mb-2 mt-3 flex shrink-0 items-center justify-between px-6">
-        <span className="font-semibold text-stone-800">今日靈感</span>
-        <span className="glass-pill rounded-full px-2.5 py-1 text-[11px] font-medium text-stone-600">{insights ? `${insights.tempMin}–${insights.tempMax}°C` : `${Math.round(weather?.temp || 26)}°`} 相似天氣</span>
-      </header>
+    <div className="inspiration-layout app-screen-gradient">
+      <div className="inspiration-scroll app-scroll">
+        <header className="mb-2 mt-3 flex items-center justify-between px-6">
+          <span className="font-semibold text-stone-800">今日靈感</span>
+          <span className="glass-pill rounded-full px-2.5 py-1 text-[11px] font-medium text-stone-600">
+            {insights ? `${insights.tempMin}–${insights.tempMax}°C` : `${Math.round(weather?.temp || 26)}°`} 相似天氣
+          </span>
+        </header>
 
-      <div className="relative min-h-0 flex-1 overflow-hidden px-3 py-1">
-        {/* Back Card */}
-        <div className="inspiration-card absolute inset-x-0 top-2 bottom-2 z-0 mx-auto flex w-[min(300px,92%)] max-h-full scale-[0.96] flex-col overflow-hidden rounded-3xl opacity-50 translate-y-2">
-           <OutfitPhotoDisplay
-            photoUrl={nextCard.photoUrl}
-            emoji={nextCard.emoji}
-            bg={nextCard.bg}
-            className="min-h-[120px] flex-1 basis-0"
-          />
-          <div className="inspiration-card-content p-3">
-            <div className="text-base font-bold text-stone-800">{nextCard.temp}</div>
-            <div className="text-xs text-stone-500">{nextCard.who}・{nextCard.location}</div>
-          </div>
-        </div>
-
-        {/* Front Card */}
-        <div className="absolute inset-x-0 top-2 bottom-2 z-10 flex items-stretch justify-center">
-        <AnimatePresence mode="popLayout">
-          <motion.div 
-            key={currentCard.id}
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ x: 300, rotate: 20, opacity: 0 }}
-            drag="x"
-            dragConstraints={{ left: 0, right: 0 }}
-            onDragEnd={(_, info) => {
-              if (info.offset.x > 100) handleNextInspiration(true);
-              else if (info.offset.x < -100) handleNextInspiration(false);
-            }}
-            className="inspiration-card relative flex h-full w-[min(300px,92%)] cursor-grab flex-col overflow-hidden rounded-3xl active:cursor-grabbing"
-          >
-            <OutfitPhotoDisplay
-              photoUrl={currentCard.photoUrl}
-              emoji={currentCard.emoji}
-              bg={currentCard.bg}
-              className="min-h-[200px] flex-1 basis-0"
-            />
-            <div className="absolute top-3 right-3 z-10 rounded-full bg-stone-800/90 px-2.5 py-1 text-[10px] font-bold text-white backdrop-blur-sm pointer-events-none">
-              {currentCard.match} 匹配
+        <div className="app-inset pb-4 pt-1">
+          <div className="inspiration-cards">
+            <div aria-hidden
+              className="inspiration-card pointer-events-none absolute inset-x-0 top-2 z-0 w-full scale-[0.96] overflow-hidden rounded-3xl opacity-45 translate-y-2"
+            >
+              <OutfitPhotoDisplay
+                photoUrl={nextCard.photoUrl}
+                emoji={nextCard.emoji}
+                bg={nextCard.bg}
+                className="aspect-[4/5] min-h-[200px] w-full"
+              />
+              <div className="inspiration-card-content p-3">
+                <div className="text-base font-bold text-stone-800">{nextCard.temp}</div>
+                <div className="text-xs text-stone-500">{nextCard.who}・{nextCard.location}</div>
+              </div>
             </div>
-            <div className="inspiration-card-content flex shrink-0 flex-col p-5">
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.22 }}>
-                <div className="text-xl font-bold text-stone-900">{currentCard.temp}</div>
-                <div className="mt-0.5 text-xs text-stone-500">
-                  {currentCard.who}・{currentCard.location}・{currentCard.date}
+            <AnimatePresence mode="popLayout">
+              <motion.div
+                key={currentCard.id}
+                initial={{ scale: 0.96, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ x: 300, rotate: 12, opacity: 0 }}
+                drag="x"
+                dragConstraints={{ left: 0, right: 0 }}
+                onDragEnd={(_, info) => {
+                  if (info.offset.x > 100) handleNextInspiration(true);
+                  else if (info.offset.x < -100) handleNextInspiration(false);
+                }}
+                className="inspiration-card relative z-10 flex w-full cursor-grab flex-col overflow-hidden rounded-3xl active:cursor-grabbing"
+              >
+                <OutfitPhotoDisplay
+                  photoUrl={currentCard.photoUrl}
+                  emoji={currentCard.emoji}
+                  bg={currentCard.bg}
+                  className="aspect-[4/5] min-h-[220px] w-full shrink-0"
+                />
+                <div className="absolute top-3 right-3 z-10 rounded-full bg-stone-800/90 px-2.5 py-1 text-[10px] font-bold text-white backdrop-blur-sm pointer-events-none">
+                  {currentCard.match} 匹配
                 </div>
-                {currentCard.tags.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {currentCard.tags.map((tag, i) => (
-                      <span
-                        key={i}
-                        className="rounded-full border border-stone-200/80 bg-white/80 px-2.5 py-1 text-[10px] font-medium text-stone-600"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <FeelMetricsChips metrics={currentCard.feelMetrics} compact />
+                <div className="inspiration-card-content shrink-0 p-5">
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.22 }}>
+                    <div className="text-xl font-bold text-stone-900">{currentCard.temp}</div>
+                    <div className="mt-0.5 text-xs text-stone-500">
+                      {currentCard.who}・{currentCard.location}・{currentCard.date}
+                    </div>
+                    {currentCard.tags.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {currentCard.tags.map((tag, i) => (
+                          <span
+                            key={i}
+                            className="rounded-full border border-stone-200/80 bg-white/80 px-2.5 py-1 text-[10px] font-medium text-stone-600"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <FeelMetricsChips metrics={currentCard.feelMetrics} compact />
+                  </motion.div>
+                </div>
               </motion.div>
-            </div>
-          </motion.div>
-        </AnimatePresence>
+            </AnimatePresence>
+          </div>
         </div>
       </div>
 
-      <div className="app-inset shrink-0">
-        <BottomActionBar
-          primaryLabel="我穿好了，來記錄"
-          onPrimary={() => setScreen("record")}
-          left={{
-            icon: <X size={24} />,
-            onClick: () => handleNextInspiration(false),
-            ariaLabel: "略過",
-            className: "border-stone-200 text-stone-400",
-          }}
-          right={{
-            icon: <Heart size={24} fill="#8b7355" />,
-            onClick: () => handleNextInspiration(true),
-            ariaLabel: "喜歡",
-            className: "border-stone-400 text-[#8b7355] hover:bg-stone-50",
-          }}
-        />
+      <div className="inspiration-action-dock">
+        <div className="app-inset">
+          <BottomActionBar
+            primaryLabel="我穿好了，來記錄"
+            onPrimary={() => setScreen("record")}
+            left={{
+              icon: <X size={24} />,
+              onClick: () => handleNextInspiration(false),
+              ariaLabel: "略過",
+              className: "border-stone-200 text-stone-400",
+            }}
+            right={{
+              icon: <Heart size={24} fill="#8b7355" />,
+              onClick: () => handleNextInspiration(true),
+              ariaLabel: "喜歡",
+              className: "border-stone-400 text-[#8b7355] hover:bg-stone-50",
+            }}
+          />
+        </div>
       </div>
     </div>
   );
@@ -712,9 +713,8 @@ const RecordScreen = ({
   const hasPhoto = outfitImage !== null;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="app-scroll flex-1 min-h-0 overflow-y-auto overscroll-y-contain">
-      <div className="app-inset pt-4 pb-2">
+    <div className="screen-scroll app-scroll app-screen-gradient">
+      <div className="app-inset pt-4 pb-[var(--nav-safe-bottom)]">
       <header className="mb-3 flex justify-between items-center">
         <h2 className="font-semibold text-stone-800">記錄今日穿搭</h2>
         {isCameraOpen && (
@@ -859,19 +859,15 @@ const RecordScreen = ({
         />
       )}
 
+      <div className="pt-6 pb-2">
+        <BottomActionBar
+          solo
+          primaryLabel={recordSaving ? "AI 分析並寫入中…" : "完成記錄"}
+          onPrimary={saveToWardrobe}
+          disabled={!hasPhoto}
+          loading={recordSaving}
+        />
       </div>
-      </div>
-
-      <div className="sticky bottom-0 z-20 shrink-0 bg-gradient-to-t from-[#f5f1e9]/95 from-[50%] via-[#f5f1e9]/88 to-transparent pb-[6.75rem] pt-6">
-        <div className="app-inset">
-          <BottomActionBar
-            solo
-            primaryLabel={recordSaving ? "AI 分析並寫入中…" : "完成記錄"}
-            onPrimary={saveToWardrobe}
-            disabled={!hasPhoto}
-            loading={recordSaving}
-          />
-        </div>
       </div>
     </div>
   );
@@ -962,13 +958,13 @@ const FeedbackScreen = ({
 
   if (!needsFeedback) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col pad-nav-safe">
-        <div className="app-inset flex flex-1 flex-col items-center justify-center px-6 py-12 text-center">
-          <div className="glass-card-strong mb-4 flex h-14 w-14 items-center justify-center rounded-2xl text-stone-500">
+      <div className="screen-scroll app-scroll app-screen-gradient">
+        <div className="app-inset px-6 pb-[var(--nav-safe-bottom)] pt-20 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/70 text-stone-500 ring-1 ring-stone-200/70">
             <Smile size={28} strokeWidth={1.5} />
           </div>
           <h2 className="text-base font-semibold text-stone-800">今日沒有需要回饋的穿搭了</h2>
-          <p className="mt-2 max-w-[260px] text-sm leading-relaxed text-stone-500">
+          <p className="mx-auto mt-2 max-w-[260px] text-sm leading-relaxed text-stone-500">
             今天的體感已記錄完成，或尚未建立今日穿搭。可先至「記錄」拍照上傳。
           </p>
         </div>
@@ -977,9 +973,8 @@ const FeedbackScreen = ({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="app-scroll min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
-      <div className="app-inset pt-4 pb-2">
+    <div className="screen-scroll app-scroll app-screen-gradient">
+      <div className="app-inset pt-4 pb-[var(--nav-safe-bottom)]">
       <header className="mb-4 flex items-baseline justify-between">
         <h2 className="font-semibold text-stone-800">今日體感回饋</h2>
         <span className="text-[10px] font-medium text-stone-400">拖動滑桿調整數值</span>
@@ -1026,18 +1021,14 @@ const FeedbackScreen = ({
           {feedbackDesc}
         </div>
       </div>
+      <div className="pt-6 pb-2">
+        <BottomActionBar
+          solo
+          primaryLabel={feelSet ? "貢獻這份體感數據" : "請先調整下方滑桿"}
+          onPrimary={() => submitFeedback(metrics)}
+          disabled={!feelSet}
+        />
       </div>
-      </div>
-
-      <div className="sticky bottom-0 z-20 shrink-0 bg-gradient-to-t from-[#f5f1e9]/95 from-[50%] via-[#f5f1e9]/88 to-transparent pb-[6.75rem] pt-6">
-        <div className="app-inset">
-          <BottomActionBar
-            solo
-            primaryLabel={feelSet ? "貢獻這份體感數據" : "請先調整下方滑桿"}
-            onPrimary={() => submitFeedback(metrics)}
-            disabled={!feelSet}
-          />
-        </div>
       </div>
     </div>
   );
@@ -1394,18 +1385,40 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-full w-full items-center justify-center overflow-hidden bg-slate-100 font-sans md:p-4">
-      <motion.div className="relative flex h-full max-h-[820px] w-full max-w-[390px] flex-col overflow-hidden md:rounded-[40px] md:ring-1 md:ring-stone-200/50">
-        
-        {/* Screen Content */}
-        <AnimatePresence mode="wait">
+    <div className="app-shell font-sans">
+      <div className="app-frame">
+        <div className="app-screen-host">
+        <div className="app-screen-flow">
+            {screen === "home" ? (
+              <HomeScreen
+                userName={userName}
+                setScreen={setScreen}
+                weather={weather}
+                loading={weatherLoading}
+                insights={outfitInsights}
+                insightsLoading={insightsLoading}
+                showPendingBanner={hasPendingFeedback}
+                onContinuePending={continuePendingFeedback}
+              />
+            ) : screen === "inspiration" ? (
+              <InspirationScreen
+                cards={inspirationCards}
+                inspirationIdx={inspirationIdx}
+                handleNextInspiration={handleNextInspiration}
+                setScreen={setScreen}
+                weather={weather}
+                insights={outfitInsights}
+              />
+            ) : (
+        <AnimatePresence mode="wait" initial={false}>
           <motion.div 
             key={screen}
             initial={{ opacity: 0, x: 10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -10 }}
             transition={{ duration: 0.2 }}
-            className="app-screen-gradient flex min-h-0 flex-1 flex-col overflow-hidden"
+            className="app-screen-gradient app-screen-page"
+            style={{ position: "relative" }}
           >
             {screen === "welcome" && (
               <WelcomeScreen
@@ -1417,28 +1430,6 @@ export default function App() {
                 setUserLocation={setUserLocation}
                 startApp={startApp}
                 showToast={showToast}
-              />
-            )}
-            {screen === "home" && (
-              <HomeScreen
-                userName={userName}
-                setScreen={setScreen}
-                weather={weather}
-                loading={weatherLoading}
-                insights={outfitInsights}
-                insightsLoading={insightsLoading}
-                showPendingBanner={hasPendingFeedback}
-                onContinuePending={continuePendingFeedback}
-              />
-            )}
-            {screen === "inspiration" && (
-              <InspirationScreen
-                cards={inspirationCards}
-                inspirationIdx={inspirationIdx}
-                handleNextInspiration={handleNextInspiration}
-                setScreen={setScreen}
-                weather={weather}
-                insights={outfitInsights}
               />
             )}
             {screen === "record" && (
@@ -1472,10 +1463,13 @@ export default function App() {
             )}
           </motion.div>
         </AnimatePresence>
+            )}
+        </div>
+        </div>
 
         {/* Global Nav Bar */}
         {screen !== "welcome" && (
-          <div className="absolute bottom-6 left-0 right-0 z-30">
+          <div className="app-nav-dock">
             <nav className="glass-nav app-inset flex rounded-2xl px-2 py-3">
               {[
                 { id: "home", icon: <Home size={20} />, label: "首頁" },
@@ -1502,7 +1496,7 @@ export default function App() {
         <AnimatePresence>
           {toastMsg && <Toast message={toastMsg} onClear={() => setToastMsg("")} />}
         </AnimatePresence>
-      </motion.div>
+      </div>
     </div>
   );
 }
