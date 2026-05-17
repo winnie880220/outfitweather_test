@@ -15,6 +15,7 @@ import {
 } from "./components/FeedbackOutfitCard";
 import { PendingFeedbackBanner } from "./components/PendingFeedbackBanner";
 import { ReminderSettingsPanel } from "./components/ReminderSettings";
+import { WeatherSummaryCard } from "./components/WeatherSummaryCard";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "motion/react";
 import {
   analyzeOutfit,
@@ -540,38 +541,16 @@ const HomeScreen = ({
           <div className="h-3 w-20 rounded bg-stone-200/80" />
         </motion.div>
       ) : (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="glass-card-strong flex items-center justify-between gap-3 rounded-2xl px-4 py-3"
-        >
-          <div className="min-w-0 flex-1">
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-light tabular-nums leading-none text-stone-800">
-                {Math.round(weather?.temp || 0)}°
-              </span>
-              <span className="truncate text-sm font-medium text-stone-500">
-                {weather?.condition || "—"}
-              </span>
-            </div>
-            <p className="mt-1 truncate text-[10px] font-medium text-stone-400">
-              <MapPin size={10} className="mr-0.5 inline -mt-px" />
-              {weather?.locationName || "未知地點"}
-            </p>
-          </div>
-          <div className="grid shrink-0 grid-cols-2 gap-x-3 gap-y-1.5 text-right">
-            {[
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+          <WeatherSummaryCard
+            weather={weather}
+            metrics={[
               { label: "濕度", val: `${weather?.humidity || 0}%` },
               { label: "降雨", val: `${weather?.rainProb || 0}%` },
               { label: "體感", val: `${Math.round(weather?.apparentTemp || 0)}°` },
               { label: "UV", val: `${weather?.uvIndex || 0}` },
-            ].map((item) => (
-              <div key={item.label} className="leading-tight">
-                <div className="text-[10px] font-medium text-stone-400">{item.label}</div>
-                <div className="text-xs font-semibold tabular-nums text-stone-700">{item.val}</div>
-              </div>
-            ))}
-          </div>
+            ]}
+          />
         </motion.div>
       )}
 
@@ -881,35 +860,16 @@ const RecordScreen = ({
         </div>
       </header>
 
-      <div className="glass-card-strong mb-3 flex w-full items-center justify-between gap-3 rounded-2xl px-4 py-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-light tabular-nums leading-none text-stone-800">
-              {Math.round(weather?.temp || 0)}°
-            </span>
-            <span className="truncate text-sm font-medium text-stone-500">
-              {weather?.condition || "—"}
-            </span>
-          </div>
-          <p className="mt-1 truncate text-[10px] font-medium text-stone-400">
-            <MapPin size={10} className="mr-0.5 inline -mt-px" />
-            {weather?.locationName || "未知地點"}
-          </p>
-        </div>
-        <div className="grid shrink-0 grid-cols-2 gap-x-3 gap-y-1.5 text-right">
-          {[
-            { label: "濕度", val: `${weather?.humidity || 0}%` },
-            { label: "降雨", val: `${weather?.rainProb || 0}%` },
-            { label: "體感", val: `${Math.round(weather?.apparentTemp || 0)}°` },
-            { label: "時間", val: currentTime || "--:--" },
-          ].map((item) => (
-            <div key={item.label} className="leading-tight">
-              <div className="text-[10px] font-medium text-stone-400">{item.label}</div>
-              <div className="text-xs font-semibold tabular-nums text-stone-700">{item.val}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <WeatherSummaryCard
+        className="mb-3"
+        weather={weather}
+        metrics={[
+          { label: "濕度", val: `${weather?.humidity || 0}%` },
+          { label: "降雨", val: `${weather?.rainProb || 0}%` },
+          { label: "體感", val: `${Math.round(weather?.apparentTemp || 0)}°` },
+          { label: "時間", val: currentTime || "--:--" },
+        ]}
+      />
 
       <div className="relative mb-3 w-full">
         <motion.div 
