@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { OutfitPhotoDisplay } from "./components/OutfitPhotoDisplay";
 import { OutfitStatsPanel } from "./components/OutfitStatsPanel";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "motion/react";
 import {
@@ -518,13 +519,12 @@ const InspirationScreen = ({
         <div 
           className="absolute w-[280px] bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden transform scale-95 translate-y-4 opacity-60 z-0"
         >
-           <div className="h-60 flex items-center justify-center text-8xl overflow-hidden" style={{ backgroundColor: nextCard.bg }}>
-            {nextCard.photoUrl ? (
-              <img src={nextCard.photoUrl} alt="穿搭" className="w-full h-full object-cover" />
-            ) : (
-              nextCard.emoji
-            )}
-          </div>
+           <OutfitPhotoDisplay
+            photoUrl={nextCard.photoUrl}
+            emoji={nextCard.emoji}
+            bg={nextCard.bg}
+            className="h-60"
+          />
           <div className="p-4">
             <div className="text-lg font-bold text-slate-900">{nextCard.temp}</div>
             <div className="text-xs text-slate-400">{nextCard.who}・{nextCard.location}</div>
@@ -546,21 +546,20 @@ const InspirationScreen = ({
             }}
             className="relative w-[300px] bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden z-10 cursor-grab active:cursor-grabbing"
           >
-            <div className="h-72 flex items-center justify-center text-8xl relative overflow-hidden" style={{ backgroundColor: currentCard.bg }}>
-              {currentCard.photoUrl ? (
-                <img src={currentCard.photoUrl} alt="穿搭" className="w-full h-full object-cover" />
-              ) : (
-                currentCard.emoji
-              )}
-              <div className="absolute top-3 right-3 bg-[#0C447C] text-white text-[10px] font-bold px-2.5 py-1 rounded-full drop-shadow-sm">
-                {currentCard.match} 匹配
-              </div>
-              <div 
-                className="absolute bottom-3 left-3 text-[10px] text-white font-bold px-2.5 py-1 rounded-full shadow-sm"
-                style={{ backgroundColor: `${currentCard.feelColor}BF` }}
-              >
-                {currentCard.feel}
-              </div>
+            <OutfitPhotoDisplay
+              photoUrl={currentCard.photoUrl}
+              emoji={currentCard.emoji}
+              bg={currentCard.bg}
+              className="h-[340px]"
+            />
+            <div className="absolute top-3 right-3 z-10 bg-[#0C447C] text-white text-[10px] font-bold px-2.5 py-1 rounded-full drop-shadow-sm pointer-events-none">
+              {currentCard.match} 匹配
+            </div>
+            <div
+              className="absolute bottom-3 left-3 z-10 text-[10px] text-white font-bold px-2.5 py-1 rounded-full shadow-sm pointer-events-none"
+              style={{ backgroundColor: `${currentCard.feelColor}BF` }}
+            >
+              {currentCard.feel}
             </div>
             <div className="p-5">
               <div className="text-xl font-bold text-slate-900">{currentCard.temp}</div>
@@ -719,11 +718,11 @@ const RecordScreen = ({
               </button>
             </div>
           ) : hasPhoto && outfitImage ? (
-            <div className="relative w-full h-full">
+            <div className="relative w-full h-full bg-slate-100">
               <img
                 src={outfitImage.previewUrl}
                 alt="今日穿搭"
-                className="w-full h-full object-cover rounded-3xl"
+                className="w-full h-full object-contain object-center rounded-3xl"
               />
               <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/50 to-transparent p-3 text-center">
                 <div className="text-xs font-bold text-white">照片已選取 · 氣象已綁定</div>
