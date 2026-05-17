@@ -188,7 +188,7 @@ body {
     display: flex;
     width: 100%;
     min-height: 0;
-    flex: 1;
+    flex: 1 1 0%;
     flex-direction: column;
     padding-top: 0.25rem;
   }
@@ -197,22 +197,34 @@ body {
     position: relative;
     margin-inline: auto;
     width: 100%;
+    height: 100%;
     min-height: 0;
-    flex: 1;
+    flex: 1 1 0%;
   }
 
-  .inspiration-card-fill {
-    display: flex;
+  /* 填滿卡片區，讓 AnimatePresence 內層能拿到高度（Safari flex 修復） */
+  .inspiration-card-stage {
+    position: relative;
+    z-index: 10;
     height: 100%;
-    flex-direction: column;
+    min-height: 0;
+  }
+
+  /* 上：圖片（可縮）／下：資訊（固定），避免內容疊在照片上 */
+  .inspiration-card-stack {
+    display: grid;
+    grid-template-rows: minmax(5.5rem, 1fr) auto;
+    height: 100%;
+    min-height: 0;
     overflow: hidden;
   }
 
   .inspiration-card-photo-flex {
     position: relative;
     width: 100%;
+    height: 100%;
     min-height: 0;
-    flex: 1 1 0%;
+    overflow: hidden;
   }
 
   .inspiration-action-dock {
@@ -242,9 +254,18 @@ body {
   }
 
   @media (max-height: 700px) {
+    .inspiration-card-stack {
+      grid-template-rows: minmax(4.5rem, 1fr) auto;
+    }
+
     .inspiration-card-content {
       padding-top: 0.75rem;
       padding-bottom: 0.75rem;
+    }
+
+    .inspiration-card-content .text-xl {
+      font-size: 1.125rem;
+      line-height: 1.5rem;
     }
 
     .inspiration-card-content .mt-2.grid {
@@ -372,7 +393,10 @@ body {
   }
 
   .inspiration-card-content {
-    background: rgba(255, 255, 255, 0.72);
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+    background: #fffcfa;
     border-top: 1px solid rgba(245, 241, 235, 0.9);
   }
 

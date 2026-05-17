@@ -529,11 +529,12 @@ const HomeScreen = ({
         </div>
       </header>
 
+      <div className="flex flex-col gap-3">
       {loading ? (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="glass-card-strong mb-3 flex flex-col items-center justify-center rounded-2xl p-10 animate-pulse"
+          className="glass-card-strong flex flex-col items-center justify-center rounded-2xl p-10 animate-pulse"
         >
           <div className="mb-3 h-10 w-10 rounded-full bg-stone-200/80" />
           <div className="h-3 w-20 rounded bg-stone-200/80" />
@@ -542,7 +543,7 @@ const HomeScreen = ({
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="glass-card-strong mb-3 flex items-center justify-between gap-3 rounded-2xl px-4 py-3"
+          className="glass-card-strong flex items-center justify-between gap-3 rounded-2xl px-4 py-3"
         >
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-2">
@@ -574,9 +575,8 @@ const HomeScreen = ({
         </motion.div>
       )}
 
-      <OutfitStatsPanel insights={insights} loading={insightsLoading} />
+        <OutfitStatsPanel insights={insights} loading={insightsLoading} />
 
-      <div className="pt-6 pb-2">
         <BottomActionBar
           solo
           primaryLabel="看大家的穿搭"
@@ -678,7 +678,7 @@ const InspirationScreen = ({
         <div className="inspiration-cards">
             <div
               aria-hidden
-              className="inspiration-card inspiration-card-fill pointer-events-none absolute inset-0 z-0 scale-[0.96] overflow-hidden rounded-3xl opacity-45 translate-y-2"
+              className="inspiration-card inspiration-card-stack pointer-events-none absolute inset-0 z-0 scale-[0.96] overflow-hidden rounded-3xl opacity-45 translate-y-2"
             >
               <OutfitPhotoDisplay
                 photoUrl={nextCard.photoUrl}
@@ -691,7 +691,8 @@ const InspirationScreen = ({
                 <div className="text-xs text-stone-500">{nextCard.who}・{nextCard.location}</div>
               </div>
             </div>
-            <AnimatePresence mode="popLayout">
+            <div className="inspiration-card-stage">
+            <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={currentCard.id}
                 initial={{ scale: 0.96, opacity: 0 }}
@@ -703,18 +704,20 @@ const InspirationScreen = ({
                   if (info.offset.x > 100) handleNextInspiration(true);
                   else if (info.offset.x < -100) handleNextInspiration(false);
                 }}
-                className="inspiration-card inspiration-card-fill relative z-10 h-full w-full cursor-grab overflow-hidden rounded-3xl active:cursor-grabbing"
+                className="inspiration-card inspiration-card-stack h-full w-full cursor-grab overflow-hidden rounded-3xl active:cursor-grabbing"
               >
-                <OutfitPhotoDisplay
-                  photoUrl={currentCard.photoUrl}
-                  emoji={currentCard.emoji}
-                  bg={currentCard.bg}
-                  className="inspiration-card-photo-flex"
-                />
-                <div className="absolute top-3 right-3 z-10 rounded-full bg-stone-800/90 px-2.5 py-1 text-[10px] font-bold text-white backdrop-blur-sm pointer-events-none">
-                  {currentCard.match} 匹配
+                <div className="relative min-h-0 overflow-hidden">
+                  <OutfitPhotoDisplay
+                    photoUrl={currentCard.photoUrl}
+                    emoji={currentCard.emoji}
+                    bg={currentCard.bg}
+                    className="inspiration-card-photo-flex"
+                  />
+                  <div className="pointer-events-none absolute top-3 right-3 z-10 rounded-full bg-stone-800/90 px-2.5 py-1 text-[10px] font-bold text-white backdrop-blur-sm">
+                    {currentCard.match} 匹配
+                  </div>
                 </div>
-                <div className="inspiration-card-content shrink-0 p-4">
+                <div className="inspiration-card-content p-4">
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.22 }}>
                     <div className="text-xl font-bold text-stone-900">{currentCard.temp}</div>
                     <div className="mt-0.5 text-xs text-stone-500">
@@ -737,6 +740,7 @@ const InspirationScreen = ({
                 </div>
               </motion.div>
             </AnimatePresence>
+            </div>
         </div>
       </div>
 

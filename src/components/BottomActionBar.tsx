@@ -40,7 +40,7 @@ export function BottomActionBar({
   if (solo) {
     return (
       <div
-        className={`glass-card-strong mb-1 w-full shrink-0 rounded-2xl border-0 px-4 py-3 ${className}`}
+        className={`glass-card-strong w-full shrink-0 rounded-2xl border-0 px-4 py-3 ${className}`}
       >
         <button
           type="button"
@@ -57,7 +57,7 @@ export function BottomActionBar({
 
   return (
     <div
-      className={`glass-card-strong mb-1 flex w-full shrink-0 items-center justify-between gap-3 rounded-2xl border-0 px-4 py-3 ${className}`}
+      className={`glass-card-strong flex w-full shrink-0 items-center justify-between gap-3 rounded-2xl border-0 px-4 py-3 ${className}`}
     >
       {left ? (
         <button

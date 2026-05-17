@@ -8,7 +8,7 @@ export function OutfitStatsPanel({
   loading: boolean;
 }) {
   return (
-    <div className="w-full pb-2">
+    <div className="w-full">
       <div className="stats-panel w-full rounded-3xl p-5">
         <p className="text-center text-[10px] font-semibold uppercase tracking-[0.2em] text-stone-400">
           此天氣下
