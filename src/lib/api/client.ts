@@ -19,7 +19,21 @@ export class ApiError extends Error {
 }
 
 async function parseResponse<T>(res: Response): Promise<T> {
-  const json = (await res.json()) as ApiResponse<T>;
+  const text = await res.text();
+  let json: ApiResponse<T>;
+
+  try {
+    json = JSON.parse(text) as ApiResponse<T>;
+  } catch {
+    const preview = text.slice(0, 80).replace(/\s+/g, " ");
+    throw new ApiError(
+      preview.startsWith("A server")
+        ? "伺服器暫時無法處理，請稍後再試"
+        : `API 回應格式錯誤：${preview}`,
+      res.status
+    );
+  }
+
   if (!res.ok || !json.ok) {
     throw new ApiError(json.error ?? `請求失敗 (${res.status})`, res.status);
   }

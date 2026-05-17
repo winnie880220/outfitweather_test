@@ -1,8 +1,8 @@
 import type { GeoSearchResult } from "../../src/types/api";
 
 /**
- * 地點搜尋：Open-Meteo Geocoding（與天氣同源，Vercel 上穩定）
- * 反向定位：Photon（Komoot，允許伺服器請求）
+ * 地點搜尋：Open-Meteo Geocoding
+ * 反向定位：BigDataCloud（Vercel 穩定、支援中文）
  */
 export async function searchLocations(query: string): Promise<GeoSearchResult[]> {
   const q = query.trim();
@@ -43,15 +43,39 @@ export async function searchLocations(query: string): Promise<GeoSearchResult[]>
 
 /** GET /api/geocode/reverse */
 export async function reverseGeocode(lat: number, lon: number): Promise<string> {
-  const res = await fetch(
-    `https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}&lang=zh`
-  );
-
-  if (!res.ok) {
-    throw new Error(`反向定位失敗 (${res.status})`);
+  // 1) BigDataCloud（免金鑰、支援 zh）
+  try {
+    const bdcRes = await fetch(
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=zh`
+    );
+    if (bdcRes.ok) {
+      const bdc = (await bdcRes.json()) as {
+        city?: string;
+        locality?: string;
+        principalSubdivision?: string;
+        countryName?: string;
+      };
+      const label = [bdc.principalSubdivision, bdc.city || bdc.locality]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+      if (label) return label;
+      if (bdc.countryName) return bdc.countryName;
+    }
+  } catch {
+    /* fallback */
   }
 
-  const data = (await res.json()) as {
+  // 2) Photon（lang 僅支援 en/de/fr，勿用 zh）
+  const photonRes = await fetch(
+    `https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}&lang=en`
+  );
+
+  if (!photonRes.ok) {
+    throw new Error(`反向定位失敗 (${photonRes.status})`);
+  }
+
+  const data = (await photonRes.json()) as {
     features?: Array<{
       properties?: {
         name?: string;
