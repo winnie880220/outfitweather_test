@@ -1,0 +1,104 @@
+import type { InspirationItem } from "./api/outfit-insights";
+
+const STORAGE_PREFIX = "outfitweather_favorites_";
+
+export type InspirationFavoritesState = {
+  userName: string;
+  /** Notion page id → 卡片快照 */
+  items: Record<string, InspirationItem>;
+};
+
+function storageKey(userName: string): string {
+  return `${STORAGE_PREFIX}${encodeURIComponent(userName.trim())}`;
+}
+
+function emptyState(userName = ""): InspirationFavoritesState {
+  return { userName: userName.trim(), items: {} };
+}
+
+export function loadInspirationFavorites(userName: string): InspirationFavoritesState {
+  const trimmed = userName.trim();
+  if (!trimmed || typeof window === "undefined") return emptyState(trimmed);
+
+  try {
+    const raw = localStorage.getItem(storageKey(trimmed));
+    if (!raw) return emptyState(trimmed);
+    const parsed = JSON.parse(raw) as Partial<InspirationFavoritesState>;
+    const items = parsed.items && typeof parsed.items === "object" ? parsed.items : {};
+    const cleaned: Record<string, InspirationItem> = {};
+    for (const [id, card] of Object.entries(items)) {
+      if (card && typeof card === "object" && typeof card.id === "string") {
+        cleaned[id] = card as InspirationItem;
+      }
+    }
+    return { userName: trimmed, items: cleaned };
+  } catch {
+    return emptyState(trimmed);
+  }
+}
+
+export function saveInspirationFavorites(state: InspirationFavoritesState): void {
+  const trimmed = state.userName.trim();
+  if (!trimmed) return;
+  try {
+    localStorage.setItem(storageKey(trimmed), JSON.stringify({ ...state, userName: trimmed }));
+  } catch (e) {
+    console.warn("inspiration-favorites save failed:", e);
+  }
+}
+
+export function favoritesStateFromCards(
+  userName: string,
+  cards: InspirationItem[]
+): InspirationFavoritesState {
+  const items: Record<string, InspirationItem> = {};
+  for (const card of cards) {
+    items[card.id] = card;
+  }
+  return { userName: userName.trim(), items };
+}
+
+export function listFavoriteCards(state: InspirationFavoritesState): InspirationItem[] {
+  return Object.values(state.items);
+}
+
+export function isInspirationFavorite(
+  state: InspirationFavoritesState,
+  cardId: string
+): boolean {
+  return Boolean(state.items[cardId]);
+}
+
+export function addInspirationFavorite(
+  state: InspirationFavoritesState,
+  card: InspirationItem
+): InspirationFavoritesState {
+  const next = {
+    userName: state.userName,
+    items: { ...state.items, [card.id]: card },
+  };
+  saveInspirationFavorites(next);
+  return next;
+}
+
+export function removeInspirationFavorite(
+  state: InspirationFavoritesState,
+  cardId: string
+): InspirationFavoritesState {
+  if (!state.items[cardId]) return state;
+  const items = { ...state.items };
+  delete items[cardId];
+  const next = { userName: state.userName, items };
+  saveInspirationFavorites(next);
+  return next;
+}
+
+export function clearInspirationFavorites(userName: string): void {
+  const trimmed = userName.trim();
+  if (!trimmed) return;
+  try {
+    localStorage.removeItem(storageKey(trimmed));
+  } catch (e) {
+    console.warn("inspiration-favorites clear failed:", e);
+  }
+}

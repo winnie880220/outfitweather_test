@@ -7,6 +7,12 @@ import { analyzeOutfitImage } from "../api/lib/gemini/analyze-outfit";
 import { isGeminiConfigured } from "../api/lib/env";
 import { getOutfitInsights } from "../api/lib/notion/outfit-insights";
 import { createRecordInNotion, updateRecordInNotion } from "../api/lib/notion/records";
+import {
+  queryFavoritedOutfits,
+  toggleOutfitFavorite,
+} from "../api/lib/notion/favorites";
+import { ensureActiveUserRecord } from "../api/lib/notion/user-active-record";
+import type { ActiveUserRecordState } from "../api/lib/notion/user-active-record";
 import { isNotionConfigured as isNotionOk } from "../api/lib/env";
 import type { NotionRecordPayload } from "../api/lib/types";
 
@@ -112,6 +118,103 @@ async function handleApi(
         }
         const { pageId, ...payload } = body;
         const result = await updateRecordInNotion(pageId, payload);
+        return send(res, result.ok ? 200 : 502, result);
+      }
+    }
+
+    if (url.pathname === "/api/user-record/ensure") {
+      if (!isNotionOk()) {
+        return send(res, 503, { ok: false, error: "Notion 未設定" });
+      }
+      if (req.method === "POST") {
+        const body = (await readBody(req)) as {
+          userName?: string;
+          temp?: number;
+          tempMin?: number;
+          tempMax?: number;
+          location?: string;
+          gender?: string;
+          weather?: string;
+          humidity?: number;
+          rainProb?: number;
+          apparentTemp?: number;
+          uvIndex?: number;
+          activeUserRecord?: ActiveUserRecordState | null;
+        };
+        const userName = (body.userName ?? "").trim();
+        if (!userName) {
+          return send(res, 400, { ok: false, error: "缺少 userName" });
+        }
+        if (typeof body.temp !== "number" || Number.isNaN(body.temp)) {
+          return send(res, 400, { ok: false, error: "缺少 temp（number）" });
+        }
+        const result = await ensureActiveUserRecord(
+          {
+            userName,
+            temp: body.temp,
+            tempMin: typeof body.tempMin === "number" ? body.tempMin : undefined,
+            tempMax: typeof body.tempMax === "number" ? body.tempMax : undefined,
+            location: body.location,
+            gender: body.gender as NotionRecordPayload["gender"],
+            weather: body.weather,
+            humidity: body.humidity,
+            rainProb: body.rainProb,
+            apparentTemp: body.apparentTemp,
+            uvIndex: body.uvIndex,
+          },
+          body.activeUserRecord ?? null
+        );
+        return send(res, result.ok ? 200 : 502, result);
+      }
+    }
+
+    if (url.pathname === "/api/favorites") {
+      if (!isNotionOk()) {
+        return send(res, 503, { ok: false, error: "Notion 未設定" });
+      }
+      if (req.method === "GET") {
+        const favoriterUserName = url.searchParams.get("userName") ?? "";
+        const result = await queryFavoritedOutfits(favoriterUserName);
+        return send(res, result.ok ? 200 : 502, result);
+      }
+      if (req.method === "POST") {
+        const body = (await readBody(req)) as {
+          favoriterUserName?: string;
+          outfitPageId?: string;
+          favorited?: boolean;
+          activeUserRecord?: ActiveUserRecordState | null;
+          userName?: string;
+          location?: string;
+          gender?: string;
+          temp?: number;
+          weather?: string;
+        };
+        const favoriterUserName = (body.favoriterUserName ?? body.userName ?? "").trim();
+        const outfitPageId = (body.outfitPageId ?? "").trim();
+        if (!favoriterUserName) {
+          return send(res, 400, { ok: false, error: "缺少 favoriterUserName（收藏者）" });
+        }
+        if (!outfitPageId) {
+          return send(res, 400, {
+            ok: false,
+            error: "缺少 outfitPageId（被收藏穿搭 page id，伺服器換算 ID 欄位）",
+          });
+        }
+        if (typeof body.favorited !== "boolean") {
+          return send(res, 400, { ok: false, error: "缺少 favorited（boolean）" });
+        }
+        const result = await toggleOutfitFavorite({
+          favoriterUserName,
+          outfitPageId,
+          favorited: body.favorited,
+          activeRecord: body.activeUserRecord ?? null,
+          profile: {
+            location: body.location,
+            gender: body.gender as NotionRecordPayload["gender"],
+            temp: body.temp,
+            weather: body.weather,
+          },
+        });
         return send(res, result.ok ? 200 : 502, result);
       }
     }

@@ -4,6 +4,9 @@ export { fetchOutfitInsights } from "./outfit-insights";
 export type { OutfitInsights, OutfitTagStat, InspirationItem } from "./outfit-insights";
 export { fetchCurrentWeather } from "./weather";
 export { formatGeoLabel, reverseGeocode, searchLocations } from "./geocode";
+export { toggleOutfitFavorite, fetchUserFavorites } from "./favorites";
+export { ensureActiveUserRecordApi } from "./user-record";
+export type { EnsureActiveUserRecordResult } from "./user-record";
 export {
   buildRecordFromWeather,
   createRecord,

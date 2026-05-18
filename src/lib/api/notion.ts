@@ -1,4 +1,4 @@
-import type { NotionRecordPayload } from "../../types/api";
+import type { NotionRecordPayload, UserGender } from "../../types/api";
 import { apiPatch, apiPost } from "./client";
 import type { OutfitRecord } from "../../types/api";
 
@@ -21,20 +21,30 @@ export function buildRecordFromWeather(
   weather: {
     locationName: string;
     temp: number;
+    tempMin?: number;
+    tempMax?: number;
     condition: string;
     humidity: number;
     rainProb: number;
     apparentTemp: number;
     uvIndex: number;
   },
-  startedAt?: string
+  startedAt?: string,
+  gender?: UserGender
 ): NotionRecordPayload {
   return {
     userName,
+    ...(gender ? { gender } : {}),
     location: weather.locationName,
     startedAt: startedAt ?? new Date().toISOString(),
     weather: weather.condition,
     temperature: Math.round(weather.temp),
+    ...(typeof weather.tempMax === "number" && !Number.isNaN(weather.tempMax)
+      ? { maxTemp: Math.round(weather.tempMax) }
+      : {}),
+    ...(typeof weather.tempMin === "number" && !Number.isNaN(weather.tempMin)
+      ? { minTemp: Math.round(weather.tempMin) }
+      : {}),
     apparentTemp: String(Math.round(weather.apparentTemp)),
     humidity: weather.humidity,
     rainProb: weather.rainProb,

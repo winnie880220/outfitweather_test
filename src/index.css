@@ -254,6 +254,177 @@ body {
     min-height: 0;
   }
 
+  /* 靈感／收藏：垂直滾動列表 */
+  .inspiration-feed-layout {
+    display: flex;
+    width: 100%;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: calc(var(--nav-safe-bottom) + 0.75rem);
+  }
+
+  /* 靈感頁底部有「來記錄」浮層，需額外留白 */
+  .inspiration-feed-layout--with-dock {
+    padding-bottom: calc(var(--nav-safe-bottom) + 4.25rem);
+  }
+
+  .inspiration-feed-header {
+    margin-top: 0.75rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .inspiration-gender-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    padding: 0.625rem 1.5rem 0.875rem;
+    margin-bottom: 0.125rem;
+  }
+
+  .inspiration-gender-tab {
+    flex: none;
+    width: auto;
+    white-space: nowrap;
+    border-radius: 999px;
+    border: 1px solid rgba(214, 211, 209, 0.9);
+    background: rgba(255, 255, 255, 0.55);
+    padding: 0.4rem 0.9rem;
+    font-size: 13px;
+    font-weight: 600;
+    color: #78716c;
+    transition:
+      background-color 0.15s ease,
+      color 0.15s ease,
+      border-color 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+
+  .inspiration-gender-tab--active {
+    border-color: rgba(68, 64, 60, 0.85);
+    background: #44403c;
+    color: #fafaf9;
+    box-shadow: 0 2px 8px rgba(44, 40, 37, 0.12);
+  }
+
+  .inspiration-gender-tab:not(.inspiration-gender-tab--active):active {
+    transform: scale(0.98);
+  }
+
+  .inspiration-feed-scroll {
+    box-sizing: border-box;
+    flex: 1;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    padding-top: 0.25rem;
+    padding-bottom: 0.5rem;
+  }
+
+  /* 收藏等純列表：捲動區高度貼合內容，避免卡片下方大片空白 */
+  .inspiration-feed-layout--list .inspiration-feed-scroll {
+    flex: 0 1 auto;
+    max-height: 100%;
+  }
+
+  .inspiration-feed-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding-bottom: 0.25rem;
+  }
+
+  .inspiration-feed-card {
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.95);
+    box-shadow: 0 12px 36px rgba(120, 100, 80, 0.1);
+  }
+
+  .inspiration-feed-card .inspiration-card-photo-cell {
+    position: relative;
+    min-height: 14rem;
+    width: 100%;
+    overflow: hidden;
+    background: #f3f0eb;
+  }
+
+  .inspiration-feed-card .inspiration-card-photo-feed {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    min-height: 14rem;
+  }
+
+  .inspiration-card-photo-feed {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .inspiration-favorite-btn {
+    position: absolute;
+    top: 0.65rem;
+    right: 0.65rem;
+    z-index: 5;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    background: rgba(255, 252, 248, 0.92);
+    color: #78716c;
+    box-shadow: 0 4px 14px rgba(44, 40, 37, 0.12);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transition:
+      transform 0.12s ease,
+      background-color 0.15s ease,
+      color 0.15s ease;
+  }
+
+  .inspiration-favorite-btn:active:not(:disabled) {
+    transform: scale(0.94);
+  }
+
+  .inspiration-favorite-btn--saved {
+    border-color: rgba(251, 113, 133, 0.45);
+    background: rgba(255, 241, 242, 0.95);
+    color: #e11d48;
+  }
+
+  .inspiration-favorite-btn:disabled {
+    opacity: 0.65;
+    cursor: wait;
+  }
+
+  .inspiration-record-dock {
+    position: absolute;
+    right: 0;
+    bottom: var(--nav-safe-bottom);
+    left: 0;
+    z-index: 45;
+    padding-top: 0.35rem;
+    padding-bottom: 0.15rem;
+    pointer-events: none;
+  }
+
+  .inspiration-record-dock > * {
+    pointer-events: auto;
+  }
+
   .inspiration-action-dock {
     position: absolute;
     right: 0;
@@ -566,6 +737,33 @@ body {
   }
 
   .welcome-field-input:focus-visible {
+    outline: 2px solid rgba(139, 115, 85, 0.35);
+    outline-offset: 4px;
+    border-radius: 0.35rem;
+  }
+
+  .welcome-field-select {
+    width: 100%;
+    appearance: none;
+    border: 0;
+    background-color: transparent;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2378716c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.1rem center;
+    padding-right: 1.5rem;
+    font-size: 1.35rem;
+    font-weight: 500;
+    line-height: 1.35;
+    color: var(--ink);
+    outline: none;
+    cursor: pointer;
+  }
+
+  .welcome-field-select:invalid {
+    color: #a8a29e;
+  }
+
+  .welcome-field-select:focus-visible {
     outline: 2px solid rgba(139, 115, 85, 0.35);
     outline-offset: 4px;
     border-radius: 0.35rem;
@@ -892,4 +1090,38 @@ body {
 
 .perspective-1000 {
   perspective: 1000px;
+}
+
+/* 記錄頁：照片分享同意（暖色提示，與 cream 介面一致但仍醒目） */
+.record-photo-consent {
+  border-radius: 1rem;
+  border: 1px solid rgba(139, 115, 85, 0.32);
+  border-left-width: 4px;
+  border-left-color: #8b7355;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 251, 245, 0.98) 0%,
+    rgba(245, 236, 226, 0.95) 100%
+  );
+  box-shadow:
+    0 1px 2px rgba(44, 40, 37, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+.record-photo-consent__text {
+  color: #57534e;
+}
+
+.record-photo-consent__text .font-semibold {
+  color: #44403c;
+}
+
+.record-photo-consent__checkbox {
+  border-color: #d6d3d1;
+  accent-color: #8b7355;
+}
+
+.record-photo-consent__checkbox:focus-visible {
+  outline: 2px solid rgba(139, 115, 85, 0.45);
+  outline-offset: 2px;
 }

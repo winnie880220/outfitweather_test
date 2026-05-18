@@ -1,4 +1,5 @@
-import type { UserLocation } from "../types/api";
+import type { UserGender, UserLocation } from "../types/api";
+import { isUserGender } from "./user-gender";
 
 const STORAGE_KEY = "outfitweather_session";
 
@@ -28,10 +29,19 @@ export interface ReminderSettings {
   minute: number;
 }
 
+/** 當日＋氣溫區間的 active Notion 列（收藏／記錄／回饋寫入此列） */
+export interface ActiveUserRecord {
+  pageId: string;
+  date: string;
+  tempBand: number;
+}
+
 export interface AppSession {
   userName: string;
+  gender: UserGender | null;
   userLocation: UserLocation | null;
   pendingRecord: PendingRecord | null;
+  activeUserRecord: ActiveUserRecord | null;
   reminder: ReminderSettings;
 }
 
@@ -43,8 +53,10 @@ export const DEFAULT_REMINDER: ReminderSettings = {
 
 const EMPTY_SESSION: AppSession = {
   userName: "",
+  gender: null,
   userLocation: null,
   pendingRecord: null,
+  activeUserRecord: null,
   reminder: DEFAULT_REMINDER,
 };
 
@@ -63,8 +75,19 @@ export function loadSession(): AppSession {
     const parsed = JSON.parse(raw) as Partial<AppSession>;
     return {
       userName: typeof parsed.userName === "string" ? parsed.userName : "",
+      gender:
+        typeof parsed.gender === "string" && isUserGender(parsed.gender)
+          ? parsed.gender
+          : null,
       userLocation: parsed.userLocation ?? null,
       pendingRecord: parsed.pendingRecord ?? null,
+      activeUserRecord:
+        parsed.activeUserRecord &&
+        typeof parsed.activeUserRecord.pageId === "string" &&
+        typeof parsed.activeUserRecord.date === "string" &&
+        typeof parsed.activeUserRecord.tempBand === "number"
+          ? parsed.activeUserRecord
+          : null,
       reminder: {
         ...DEFAULT_REMINDER,
         ...(parsed.reminder ?? {}),

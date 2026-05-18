@@ -1,3 +1,4 @@
+import type { UserGender } from "../types";
 import type { ParsedNotionRecord } from "./parse-page";
 import type { FeelMetrics } from "./feel-metrics";
 import { queryRecordsByTemperature } from "./query-records";
@@ -10,7 +11,10 @@ export type OutfitTagStat = {
 };
 
 export type InspirationItem = {
+  /** Notion page id */
   id: string;
+  /** 資料庫「ID」欄位值 */
+  recordId?: string;
   emoji: string;
   bg: string;
   match: string;
@@ -22,6 +26,7 @@ export type InspirationItem = {
   humidity: string;
   location: string;
   photoUrl?: string;
+  gender?: UserGender;
 };
 
 export type OutfitInsights = {
@@ -131,6 +136,10 @@ function matchPercent(
   return `${Math.min(99, score)}%`;
 }
 
+export function recordsToInspirationCards(records: ParsedNotionRecord[]): InspirationItem[] {
+  return records.map((r, i) => toInspirationCard(r, i, [], []));
+}
+
 function toInspirationCard(
   record: ParsedNotionRecord,
   index: number,
@@ -149,6 +158,7 @@ function toInspirationCard(
 
   return {
     id: record.id,
+    ...(record.recordId ? { recordId: record.recordId } : {}),
     emoji,
     bg: CARD_BGS[index % CARD_BGS.length],
     match: matchPercent(record, upperTop, lowerTop),
@@ -160,6 +170,7 @@ function toInspirationCard(
     humidity: record.humidity != null ? `${record.humidity}%` : "—",
     location: record.location?.split(" ")[0] || record.location || "—",
     photoUrl: record.photoUrl,
+    ...(record.gender ? { gender: record.gender } : {}),
   };
 }
 

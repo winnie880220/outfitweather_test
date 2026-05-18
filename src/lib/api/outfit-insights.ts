@@ -1,3 +1,4 @@
+import type { UserGender } from "../../types/api";
 import { apiGet } from "./client";
 
 export type OutfitTagStat = {
@@ -9,6 +10,7 @@ export type OutfitTagStat = {
 
 export type InspirationItem = {
   id: string;
+  recordId?: string;
   emoji: string;
   bg: string;
   match: string;
@@ -24,6 +26,7 @@ export type InspirationItem = {
   humidity: string;
   location: string;
   photoUrl?: string;
+  gender?: UserGender;
 };
 
 export type OutfitInsights = {

@@ -21,7 +21,7 @@ export function OutfitStatsPanel({
         </p>
         {insights && insights.sampleCount > 0 && (
           <p className="mt-2 text-center text-xs text-stone-400">
-            {insights.tempMin}°–{insights.tempMax}°C・共 {insights.sampleCount} 筆穿搭
+            此天氣區間 {insights.sampleCount} 筆穿搭
           </p>
         )}
         {loading ? (

@@ -2,7 +2,10 @@ import { env } from "../env";
 
 export const NOTION_VERSION = "2022-06-28";
 
-export async function notionRequest<T>(path: string, init: RequestInit): Promise<T> {
+export async function notionRequest<T>(
+  path: string,
+  init: RequestInit = {}
+): Promise<T> {
   const res = await fetch(`https://api.notion.com/v1${path}`, {
     ...init,
     headers: {

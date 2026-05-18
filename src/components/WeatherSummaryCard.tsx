@@ -5,11 +5,18 @@ export function WeatherSummaryCard({
   weather,
   metrics,
   className = "",
+  showDailyRange,
 }: {
   weather: WeatherData | null;
   metrics: { label: string; val: string }[];
   className?: string;
+  showDailyRange?: boolean;
 }) {
+  const showRange =
+    showDailyRange !== false &&
+    weather?.tempMin != null &&
+    weather?.tempMax != null;
+
   return (
     <div
       className={`weather-summary-card glass-card-strong flex w-full items-center justify-between gap-4 rounded-2xl ${className}`}
@@ -23,6 +30,12 @@ export function WeatherSummaryCard({
             {weather?.condition || "—"}
           </span>
         </div>
+        {showRange && (
+          <p className="weather-summary-daily-range mt-1 text-[13px] font-medium tabular-nums text-stone-500">
+            <span className="text-stone-400">今日 </span>
+            {Math.round(weather.tempMin!)}° – {Math.round(weather.tempMax!)}°
+          </p>
+        )}
         <p className="weather-summary-location mt-1.5 truncate font-medium text-stone-400">
           <MapPin size={11} className="mr-0.5 inline -mt-px" />
           {weather?.locationName || "未知地點"}

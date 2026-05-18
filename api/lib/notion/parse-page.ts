@@ -1,3 +1,4 @@
+import type { UserGender } from "../types";
 import { RECORDS_DB } from "./schema";
 
 export type NotionProp = {
@@ -7,6 +8,8 @@ export type NotionProp = {
   number?: number | null;
   select?: { name: string } | null;
   multi_select?: Array<{ name: string }>;
+  relation?: Array<{ id: string }>;
+  unique_id?: { prefix?: string | null; number?: number };
   date?: { start?: string };
   files?: Array<{
     type?: string;
@@ -17,8 +20,12 @@ export type NotionProp = {
 };
 
 export type ParsedNotionRecord = {
+  /** Notion page id */
   id: string;
+  /** 資料庫「ID」欄位值 */
+  recordId: string;
   userName: string;
+  gender?: UserGender;
   location: string;
   startedAt?: string;
   weather?: string;
@@ -45,6 +52,26 @@ function plainText(prop?: NotionProp): string {
   return "";
 }
 
+/** 讀取資料庫「ID」欄位（rich_text / title / number / unique_id） */
+export function readRecordIdFromProperties(
+  properties: Record<string, NotionProp>
+): string {
+  const prop = properties[RECORDS_DB.recordId];
+  if (!prop) return "";
+
+  if (prop.type === "rich_text" || prop.type === "title") {
+    return plainText(prop).trim();
+  }
+  if (prop.type === "number" && prop.number != null) {
+    return String(prop.number);
+  }
+  if (prop.type === "unique_id" && prop.unique_id?.number != null) {
+    const { prefix, number } = prop.unique_id;
+    return prefix ? `${prefix}-${number}` : String(number);
+  }
+  return "";
+}
+
 function fileUrl(prop?: NotionProp): string | undefined {
   if (!prop || prop.type !== "files" || !prop.files?.length) return undefined;
   const f = prop.files[0];
@@ -61,10 +88,17 @@ export function parseNotionPage(page: {
 
   const temperature = p[RECORDS_DB.temperature]?.number ?? undefined;
   const lowerSelect = p[RECORDS_DB.lowerBodyTags]?.select?.name;
+  const genderName = p[RECORDS_DB.gender]?.select?.name;
+  const gender: UserGender | undefined =
+    genderName === "男生" || genderName === "女生" || genderName === "不分"
+      ? genderName
+      : undefined;
 
   return {
     id: page.id,
+    recordId: readRecordIdFromProperties(p),
     userName,
+    ...(gender ? { gender } : {}),
     location: plainText(p[RECORDS_DB.location]),
     startedAt: p[RECORDS_DB.startedAt]?.date?.start,
     weather: p[RECORDS_DB.weather]?.select?.name,

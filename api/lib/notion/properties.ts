@@ -19,6 +19,11 @@ export function toNotionProperties(payload: NotionRecordPayload): NotionProps {
       title: [{ text: { content: payload.userName } }],
     };
   }
+  if (payload.gender !== undefined) {
+    props[RECORDS_DB.gender] = {
+      select: payload.gender ? { name: payload.gender } : null,
+    };
+  }
   if (payload.location !== undefined) {
     props[RECORDS_DB.location] = richText(payload.location);
   }
@@ -36,7 +41,7 @@ export function toNotionProperties(payload: NotionRecordPayload): NotionProps {
     props[RECORDS_DB.temperature] = { number: payload.temperature };
   }
   if (payload.maxTemp !== undefined) {
-    props[RECORDS_DB.maxTemp] = richText(payload.maxTemp);
+    props[RECORDS_DB.maxTemp] = { number: payload.maxTemp };
   }
   if (payload.minTemp !== undefined) {
     props[RECORDS_DB.minTemp] = { number: payload.minTemp };
@@ -71,6 +76,11 @@ export function toNotionProperties(payload: NotionRecordPayload): NotionProps {
   }
   if (payload.stuffiness !== undefined) {
     props[RECORDS_DB.stuffiness] = { number: payload.stuffiness };
+  }
+  if (payload.favoriteIds !== undefined) {
+    props[RECORDS_DB.favorite] = multiSelect(payload.favoriteIds);
+  } else if (payload.favoriteTargets !== undefined) {
+    props[RECORDS_DB.favorite] = multiSelect(payload.favoriteTargets);
   }
   if (payload.photoFileUploadId) {
     props[RECORDS_DB.photo] = {

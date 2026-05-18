@@ -5,10 +5,8 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { BottomActionBar } from "./components/BottomActionBar";
-import { FeelMetricsChips } from "./components/FeelMetricsChips";
 import { FeelSliderField } from "./components/FeelSliderField";
 import { FEEL_TONES } from "./lib/feel-metrics";
-import { OutfitPhotoDisplay } from "./components/OutfitPhotoDisplay";
 import { OutfitStatsPanel } from "./components/OutfitStatsPanel";
 import {
   FeedbackOutfitCard,
@@ -17,11 +15,13 @@ import {
 import { PendingFeedbackBanner } from "./components/PendingFeedbackBanner";
 import { ReminderSettingsPanel } from "./components/ReminderSettings";
 import { WeatherSummaryCard } from "./components/WeatherSummaryCard";
-import { motion, AnimatePresence, useMotionValue, useTransform } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import {
   analyzeOutfit,
   buildRecordFromWeather,
-  createRecord,
+  toggleOutfitFavorite,
+  fetchUserFavorites,
+  ensureActiveUserRecordApi,
   fetchCurrentWeather,
   fetchOutfitInsights,
   formatGeoLabel,
@@ -38,15 +38,18 @@ import {
   scheduleEveningReminder,
 } from "./lib/reminder";
 import {
-  buildInspirationDeck,
-  buildInspirationRangeKey,
-  clearInspirationSwipe,
-  loadInspirationSwipe,
-  isInspirationCardSaved,
-  recordInspirationSwipe,
-  syncInspirationSwipeRange,
-  type InspirationSwipeState,
-} from "./lib/inspiration-swipe";
+  addInspirationFavorite,
+  clearInspirationFavorites,
+  favoritesStateFromCards,
+  isInspirationFavorite,
+  listFavoriteCards,
+  loadInspirationFavorites,
+  removeInspirationFavorite,
+  saveInspirationFavorites,
+  type InspirationFavoritesState,
+} from "./lib/inspiration-favorites";
+import { InspirationFeedScreen } from "./screens/InspirationFeedScreen";
+import { FavoritesScreen } from "./screens/FavoritesScreen";
 import {
   clearPendingRecord,
   DEFAULT_REMINDER,
@@ -58,9 +61,17 @@ import {
   saveSession,
   setPendingRecord,
   formatTimeFromIso,
+  type ActiveUserRecord,
   type ReminderSettings,
 } from "./lib/session-storage";
-import type { GeoSearchResult, ParsedOutfitImage, UserLocation, WeatherData } from "./types/api";
+import type {
+  GeoSearchResult,
+  ParsedOutfitImage,
+  UserGender,
+  UserLocation,
+  WeatherData,
+} from "./types/api";
+import { USER_GENDER_OPTIONS, isUserGender } from "./lib/user-gender";
 import { 
   Home, 
   Sparkles, 
@@ -70,7 +81,6 @@ import {
   MapPin, 
   ArrowRight, 
   ChevronRight, 
-  X, 
   Heart,
   Droplets,
   Thermometer,
@@ -86,7 +96,7 @@ import {
 } from "lucide-react";
 
 // --- Types ---
-type Screen = "welcome" | "home" | "inspiration" | "record" | "feedback";
+type Screen = "welcome" | "home" | "inspiration" | "favorites" | "record" | "feedback";
 
 type Outfit = InspirationItem;
 
@@ -227,6 +237,8 @@ const AppExitButton = ({ onClick }: { onClick: () => void }) => (
 const WelcomeScreen = ({
   userName,
   setUserName,
+  userGender,
+  setUserGender,
   locationInput,
   setLocationInput,
   userLocation,
@@ -236,6 +248,8 @@ const WelcomeScreen = ({
 }: {
   userName: string;
   setUserName: (v: string) => void;
+  userGender: UserGender | null;
+  setUserGender: (v: UserGender | null) => void;
   locationInput: string;
   setLocationInput: (v: string) => void;
   userLocation: UserLocation | null;
@@ -249,7 +263,8 @@ const WelcomeScreen = ({
   const [locating, setLocating] = useState(false);
   const locationWrapRef = useRef<HTMLDivElement>(null);
 
-  const canStart = userName.trim().length > 0 && userLocation !== null;
+  const canStart =
+    userName.trim().length > 0 && userGender !== null && userLocation !== null;
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -461,6 +476,37 @@ const WelcomeScreen = ({
           <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.21, duration: 0.35 }}
+          >
+            <label htmlFor="welcome-gender" className="welcome-field-label">
+              性別
+            </label>
+            <select
+              id="welcome-gender"
+              className="welcome-field-select"
+              value={userGender ?? ""}
+              onChange={(e) => {
+                const value = e.target.value;
+                setUserGender(isUserGender(value) ? value : null);
+              }}
+              required
+            >
+              <option value="" disabled>
+                請選擇
+              </option>
+              {USER_GENDER_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </motion.div>
+
+          <div className="welcome-field-divider" aria-hidden />
+
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.24, duration: 0.35 }}
           >
             <label htmlFor="welcome-location" className="welcome-field-label">
@@ -541,7 +587,7 @@ const WelcomeScreen = ({
                 exit={{ opacity: 0 }}
                 className="welcome-hint"
               >
-                請先填寫名字和地點
+                請先填寫名字、性別和地點
               </motion.p>
             ) : (
               <motion.p
@@ -636,232 +682,10 @@ const HomeScreen = ({
   </div>
 );
 
-const InspirationEmptyState = ({
-  variant,
-  onRecord,
-  onRequestExit,
-}: {
-  variant: "no-data" | "exhausted";
-  onRecord: () => void;
-  onRequestExit: () => void;
-}) => (
-  <div className="inspiration-layout app-screen-gradient">
-    <div className="flex justify-end px-6 pt-3">
-      <AppExitButton onClick={onRequestExit} />
-    </div>
-    <div className="inspiration-empty-body">
-      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/70 text-stone-500 ring-1 ring-stone-200/70">
-        {variant === "exhausted" ? (
-          <Sparkles size={28} strokeWidth={1.5} className="text-[#8b7355]" />
-        ) : (
-          <Shirt size={28} strokeWidth={1.5} />
-        )}
-      </div>
-      <h2 className="text-base font-semibold text-stone-800">
-        {variant === "exhausted" ? "本區間靈感已瀏覽完畢" : "此溫度區間還沒有穿搭靈感"}
-      </h2>
-      <p className="mx-auto mt-2 max-w-[280px] text-sm leading-relaxed text-stone-500">
-        {variant === "exhausted"
-          ? "溫度變化後會推薦新穿搭。收藏過的穿搭會排在堆疊最後，再次略過則會移除。"
-          : "成為第一筆相似天氣的穿搭記錄，幫助大家找到靈感。"}
-      </p>
-      {variant === "no-data" ? (
-        <button
-          type="button"
-          onClick={onRecord}
-          className="mt-6 px-6 py-3 bg-stone-800 text-white rounded-xl text-sm font-semibold transition-transform active:scale-[0.98]"
-        >
-          成為第一筆穿搭記錄
-        </button>
-      ) : null}
-    </div>
-  </div>
-);
-
-const InspirationScreen = ({
-  cards,
-  deckExhausted,
-  insightsLoading,
-  currentCardIsSaved,
-  handleNextInspiration,
-  setScreen,
-  weather,
-  insights,
-  onRequestExit,
-}: {
-  cards: Outfit[];
-  deckExhausted?: boolean;
-  insightsLoading?: boolean;
-  currentCardIsSaved?: boolean;
-  handleNextInspiration: (liked: boolean) => void;
-  setScreen: (s: Screen) => void;
-  weather: WeatherData | null;
-  insights: OutfitInsights | null;
-  onRequestExit: () => void;
-}) => {
-  if (cards.length === 0) {
-    if (insightsLoading) {
-      return (
-        <motion.div className="inspiration-layout app-screen-gradient">
-          <div className="flex justify-end px-6 pt-3">
-            <AppExitButton onClick={onRequestExit} />
-          </div>
-          <div className="inspiration-empty-body">
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="glass-card-strong flex w-full max-w-sm flex-col items-center justify-center rounded-2xl p-10 animate-pulse"
-            >
-              <div className="mb-3 h-10 w-10 rounded-full bg-stone-200/80" />
-              <div className="h-3 w-24 rounded bg-stone-200/80" />
-            </motion.div>
-          </div>
-        </motion.div>
-      );
-    }
-
-    return (
-      <InspirationEmptyState
-        variant={deckExhausted ? "exhausted" : "no-data"}
-        onRecord={() => setScreen("record")}
-        onRequestExit={onRequestExit}
-      />
-    );
-  }
-
-  const currentCard = cards[0];
-
-  return (
-    <div className="inspiration-layout app-screen-gradient">
-      <header className="inspiration-header mb-1 mt-3 flex items-center justify-between gap-2 px-6">
-          <span className="font-semibold text-stone-800">今日靈感</span>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <span className="glass-pill rounded-full px-2.5 py-1 text-[11px] font-medium text-stone-600">
-              {insights ? `${insights.tempMin}–${insights.tempMax}°C` : `${Math.round(weather?.temp || 26)}°`}{" "}
-              相似天氣
-            </span>
-            <AppExitButton onClick={onRequestExit} />
-          </div>
-        </header>
-
-      <div className="inspiration-main app-inset min-h-0">
-        <div className="inspiration-cards">
-          <div className="inspiration-card-stage">
-            <AnimatePresence initial={false}>
-              <motion.div
-                key={currentCard.id}
-                initial={{ scale: 0.96, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ x: 300, rotate: 12, opacity: 0 }}
-                drag="x"
-                dragConstraints={{ left: 0, right: 0 }}
-                onDragEnd={(_, info) => {
-                  if (info.offset.x > 100) handleNextInspiration(true);
-                  else if (info.offset.x < -100) handleNextInspiration(false);
-                }}
-                className="inspiration-card inspiration-card-stack h-full w-full cursor-grab overflow-hidden rounded-3xl active:cursor-grabbing"
-                style={{ height: "100%" }}
-              >
-                <div className="inspiration-card-photo-cell">
-                  <OutfitPhotoDisplay
-                    photoUrl={currentCard.photoUrl}
-                    emoji={currentCard.emoji}
-                    bg={currentCard.bg}
-                    className="inspiration-card-photo-flex"
-                  />
-                </div>
-                <div className="inspiration-card-content p-4">
-                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.22 }}>
-                    <div className="text-xl font-bold text-stone-900">{currentCard.temp}</div>
-                    <div className="mt-0.5 text-xs text-stone-500">
-                      {currentCard.who}・{currentCard.location}・{currentCard.date}
-                    </div>
-                    {currentCard.tags.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {currentCard.tags.map((tag, i) => (
-                          <span
-                            key={i}
-                            className="rounded-full border border-stone-200/80 bg-white/80 px-2.5 py-1 text-[10px] font-medium text-stone-600"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    <FeelMetricsChips metrics={currentCard.feelMetrics} compact />
-                  </motion.div>
-                </div>
-              </motion.div>
-            </AnimatePresence>
-            </div>
-        </div>
-      </div>
-
-      <div className="inspiration-action-dock">
-        <div className="app-inset">
-          <BottomActionBar
-            primaryLabel="我穿好了，來記錄"
-            onPrimary={() => setScreen("record")}
-            left={{
-              icon: <X size={24} />,
-              onClick: () => handleNextInspiration(false),
-              ariaLabel: "略過",
-              className: "border-stone-200 text-stone-400",
-            }}
-            right={{
-              icon: (
-                <Heart
-                  size={24}
-                  fill={currentCardIsSaved ? "#e11d48" : "none"}
-                  stroke={currentCardIsSaved ? "#e11d48" : "currentColor"}
-                  strokeWidth={2}
-                />
-              ),
-              onClick: () => handleNextInspiration(true),
-              ariaLabel: currentCardIsSaved ? "已收藏" : "喜歡",
-              className: currentCardIsSaved
-                ? "border-rose-300 bg-rose-50 text-rose-500 hover:bg-rose-100"
-                : "border-stone-400 text-[#8b7355] hover:bg-stone-50",
-            }}
-          />
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const RecordAlreadyUploadedState = ({
-  onGoToFeedback,
-  onRequestExit,
-}: {
-  onGoToFeedback: () => void;
-  onRequestExit: () => void;
-}) => (
-  <div className="flex min-h-0 flex-1 flex-col overflow-hidden app-screen-gradient">
-    <div className="flex shrink-0 justify-end px-6 pt-3">
-      <AppExitButton onClick={onRequestExit} />
-    </div>
-    <div className="app-empty-body">
-      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/70 text-stone-500 ring-1 ring-stone-200/70">
-        <Shirt size={28} strokeWidth={1.5} />
-      </div>
-      <h2 className="text-base font-semibold text-stone-800">今天已經上傳過穿搭了</h2>
-      <p className="mx-auto mt-2 max-w-[280px] text-sm leading-relaxed text-stone-500">
-        請至「回饋」頁填寫今日體感。完成回饋後，即可再次拍照記錄。
-      </p>
-      <button
-        type="button"
-        onClick={onGoToFeedback}
-        className="mt-6 rounded-xl bg-stone-800 px-6 py-3 text-sm font-semibold text-white transition-transform active:scale-[0.98]"
-      >
-        前往回饋頁
-      </button>
-    </div>
-  </div>
-);
 
 const RecordScreen = ({
   hasUploadedToday,
+  uploadedPhotoUrl,
   onGoToFeedback,
   outfitImage,
   onImageReady,
@@ -880,6 +704,7 @@ const RecordScreen = ({
   onRequestExit,
 }: {
   hasUploadedToday: boolean;
+  uploadedPhotoUrl?: string;
   onGoToFeedback: () => void;
   outfitImage: ParsedOutfitImage | null;
   onImageReady: (img: ParsedOutfitImage) => void;
@@ -899,17 +724,10 @@ const RecordScreen = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  if (hasUploadedToday) {
-    return (
-      <RecordAlreadyUploadedState
-        onGoToFeedback={onGoToFeedback}
-        onRequestExit={onRequestExit}
-      />
-    );
-  }
+  const [photoShareConsent, setPhotoShareConsent] = useState(false);
 
   const startCamera = async () => {
+    if (hasUploadedToday) return;
     try {
       setIsCameraOpen(true);
       setShowActionSheet(false);
@@ -953,7 +771,22 @@ const RecordScreen = ({
     e.target.value = "";
   };
 
-  const hasPhoto = outfitImage !== null;
+  const photoPreviewUrl = hasUploadedToday
+    ? uploadedPhotoUrl
+    : outfitImage?.previewUrl;
+  const hasPhoto = Boolean(photoPreviewUrl);
+
+  useEffect(() => {
+    if (!hasPhoto) setPhotoShareConsent(false);
+  }, [hasPhoto]);
+
+  const handleCompleteRecord = () => {
+    if (!photoShareConsent) {
+      showToast("請先勾選照片分享說明，再完成記錄");
+      return;
+    }
+    saveToWardrobe();
+  };
 
   return (
     <div className="screen-scroll app-scroll app-screen-gradient">
@@ -990,10 +823,20 @@ const RecordScreen = ({
       />
 
       <div className="relative mb-3 w-full">
-        <motion.div 
-          whileTap={{ scale: 0.98 }}
-          onClick={() => !hasPhoto && !recordSaving && setShowActionSheet(true)}
-          className={`h-56 rounded-3xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden ${hasPhoto ? "bg-[#E1F5EE] border-[#1D9E75]" : isCameraOpen ? "bg-black border-none" : "bg-slate-50 border-slate-200 hover:border-[#378ADD]"}`}
+        <motion.div
+          whileTap={hasUploadedToday ? undefined : { scale: 0.98 }}
+          onClick={() =>
+            !hasUploadedToday && !hasPhoto && !recordSaving && setShowActionSheet(true)
+          }
+          className={`h-56 rounded-3xl border-2 flex flex-col items-center justify-center transition-all overflow-hidden ${
+            hasUploadedToday
+              ? "border-[#1D9E75] bg-[#E1F5EE] cursor-default"
+              : hasPhoto
+                ? "border-dashed border-[#1D9E75] bg-[#E1F5EE] cursor-pointer"
+                : isCameraOpen
+                  ? "border-none bg-black cursor-pointer"
+                  : "border-dashed border-slate-200 bg-slate-50 cursor-pointer hover:border-[#378ADD]"
+          }`}
         >
           {isCameraOpen ? (
             <div className="relative w-full h-full">
@@ -1010,25 +853,29 @@ const RecordScreen = ({
                 <div className="w-8 h-8 bg-slate-100 rounded-full border border-slate-200" />
               </button>
             </div>
-          ) : hasPhoto && outfitImage ? (
+          ) : hasPhoto && photoPreviewUrl ? (
             <div className="relative w-full h-full bg-slate-100">
               <img
-                src={outfitImage.previewUrl}
+                src={photoPreviewUrl}
                 alt="今日穿搭"
                 className="w-full h-full object-contain object-center rounded-3xl"
               />
               <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/50 to-transparent p-3 text-center">
-                <div className="text-xs font-bold text-white">照片已選取 · 氣象已綁定</div>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onClearImage();
-                  }}
-                  className="mt-1 text-[10px] text-white/90 underline"
-                >
-                  重新拍攝
-                </button>
+                <div className="text-xs font-bold text-white">
+                  {hasUploadedToday ? "照片已上傳" : "照片已選取 · 氣象已綁定"}
+                </div>
+                {!hasUploadedToday && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onClearImage();
+                    }}
+                    className="mt-1 text-[10px] text-white/90 underline"
+                  >
+                    重新拍攝
+                  </button>
+                )}
               </div>
             </div>
           ) : (
@@ -1043,7 +890,7 @@ const RecordScreen = ({
         </motion.div>
 
         <AnimatePresence>
-          {showActionSheet && (
+          {showActionSheet && !hasUploadedToday && (
             <>
               <motion.div 
                 initial={{ opacity: 0 }}
@@ -1083,7 +930,7 @@ const RecordScreen = ({
         </AnimatePresence>
       </div>
 
-      {hasPhoto && (
+      {!hasUploadedToday && hasPhoto && (
         <ReminderSettingsPanel
           reminder={reminder}
           onChange={onReminderChange}
@@ -1092,14 +939,39 @@ const RecordScreen = ({
         />
       )}
 
-      <div className="pt-6 pb-2">
-        <BottomActionBar
-          solo
-          primaryLabel={recordSaving ? "AI 分析並寫入中…" : "完成記錄"}
-          onPrimary={saveToWardrobe}
-          disabled={!hasPhoto}
-          loading={recordSaving}
-        />
+      {!hasUploadedToday && hasPhoto && (
+        <label className="record-photo-consent mb-4 flex cursor-pointer gap-3 px-4 py-3.5">
+          <input
+            type="checkbox"
+            checked={photoShareConsent}
+            onChange={(e) => setPhotoShareConsent(e.target.checked)}
+            className="record-photo-consent__checkbox mt-0.5 h-4 w-4 shrink-0 rounded"
+          />
+          <span className="record-photo-consent__text text-xs leading-relaxed">
+            我已了解：這張穿搭照片可能會出現在其他使用者的
+            <span className="font-semibold">靈感參考</span>
+            中，協助大家在相近天氣下選擇穿搭（僅分享照片與天氣資訊，不含個人名字）。
+          </span>
+        </label>
+      )}
+
+      <div className="pt-2 pb-2">
+        {hasUploadedToday ? (
+          <>
+            <BottomActionBar solo primaryLabel="前往回饋" onPrimary={onGoToFeedback} />
+            <p className="mt-3 text-center text-xs leading-relaxed text-stone-400">
+              你需要完成體感回饋才可以上傳新穿搭
+            </p>
+          </>
+        ) : (
+          <BottomActionBar
+            solo
+            primaryLabel={recordSaving ? "AI 分析並寫入中…" : "完成記錄"}
+            onPrimary={handleCompleteRecord}
+            disabled={!hasPhoto}
+            loading={recordSaving}
+          />
+        )}
       </div>
       </div>
     </div>
@@ -1142,11 +1014,16 @@ const FeedbackScreen = ({
     setFeelSet(true);
     
     // Generate description based on the three metrics
-    const bText = newMetrics.breathability > 70 ? "極佳" : newMetrics.breathability > 40 ? "舒適" : "不通風";
+    const bLabel =
+      newMetrics.breathability > 70
+        ? "透氣極佳"
+        : newMetrics.breathability > 40
+          ? "透氣舒適"
+          : "不通風";
     const sText = newMetrics.snugness > 70 ? "緊緻" : newMetrics.snugness > 40 ? "合身" : "寬鬆";
     const stText = newMetrics.stuffiness > 70 ? "極悶熱" : newMetrics.stuffiness > 40 ? "微悶" : "乾爽";
-    
-    setFeedbackDesc(`透氣${bText}(${newMetrics.breathability}%)・${sText}感(${newMetrics.snugness}%)・${stText}(${newMetrics.stuffiness}%)`);
+
+    setFeedbackDesc(`${bLabel}(${newMetrics.breathability}%)・${sText}感(${newMetrics.snugness}%)・${stText}(${newMetrics.stuffiness}%)`);
   };
 
   if (!needsFeedback) {
@@ -1209,7 +1086,7 @@ const FeedbackScreen = ({
         className={`glass-card mb-4 w-full rounded-xl p-4 transition-opacity ${feelSet ? "opacity-100 scale-100" : "opacity-30 scale-[0.98] animate-pulse"}`}
       >
         <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-stone-400">
-          生成的感受標籤
+          你的感受
         </div>
         <div className="flex items-center gap-2 text-sm font-bold text-stone-800">
           {feelSet ? (
@@ -1237,10 +1114,13 @@ const FeedbackScreen = ({
 export default function App() {
   const [screen, setScreen] = useState<Screen>("welcome");
   const [userName, setUserName] = useState("");
+  const [userGender, setUserGender] = useState<UserGender | null>(null);
   const [outfitList, setOutfitList] = useState<Outfit[]>(INITIAL_WARDROBE);
-  const [inspirationSwipe, setInspirationSwipe] = useState<InspirationSwipeState | null>(() =>
-    loadInspirationSwipe()
-  );
+  const [inspirationFavorites, setInspirationFavorites] = useState<InspirationFavoritesState>({
+    userName: "",
+    items: {},
+  });
+  const [favoriteBusyId, setFavoriteBusyId] = useState<string | null>(null);
   const [outfitImage, setOutfitImage] = useState<ParsedOutfitImage | null>(null);
   const [recordSaving, setRecordSaving] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -1258,6 +1138,10 @@ export default function App() {
   const [locationInput, setLocationInput] = useState("");
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
   const [notionPageId, setNotionPageId] = useState<string | null>(null);
+  /** 當日＋氣溫區間的 active 列（收藏／記錄／回饋皆寫入此列） */
+  const [activeUserRecord, setActiveUserRecord] = useState<ActiveUserRecord | null>(
+    null
+  );
   const [outfitInsights, setOutfitInsights] = useState<OutfitInsights | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [reminder, setReminder] = useState<ReminderSettings>(DEFAULT_REMINDER);
@@ -1308,16 +1192,105 @@ export default function App() {
     }
   }, [weather?.temp, loadOutfitInsights]);
 
+  const syncUserFavorites = useCallback(async (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setInspirationFavorites({ userName: "", items: {} });
+      return;
+    }
+    setInspirationFavorites(loadInspirationFavorites(trimmed));
+    try {
+      const cards = await fetchUserFavorites(trimmed);
+      const fromServer = favoritesStateFromCards(trimmed, cards);
+      setInspirationFavorites(fromServer);
+      saveInspirationFavorites(fromServer);
+    } catch (error) {
+      console.warn("fetchUserFavorites:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    void syncUserFavorites(userName);
+  }, [userName, syncUserFavorites]);
+
+  const syncActiveUserRecord = useCallback(async () => {
+    const trimmed = userName.trim();
+    if (!trimmed || !weather) return null;
+
+    try {
+      const session = loadSession();
+      const result = await ensureActiveUserRecordApi({
+        userName: trimmed,
+        temp: weather.temp,
+        ...(typeof weather.tempMin === "number" ? { tempMin: weather.tempMin } : {}),
+        ...(typeof weather.tempMax === "number" ? { tempMax: weather.tempMax } : {}),
+        location: weather.locationName ?? userLocation?.name,
+        gender: userGender,
+        weather: weather.condition,
+        humidity: weather.humidity,
+        rainProb: weather.rainProb,
+        apparentTemp: weather.apparentTemp,
+        uvIndex: weather.uvIndex,
+        activeUserRecord: session.activeUserRecord,
+      });
+
+      const prev = session.activeUserRecord;
+      const active: ActiveUserRecord = {
+        pageId: result.pageId,
+        date: result.date,
+        tempBand: result.tempBand,
+      };
+      saveSession({ activeUserRecord: active });
+      setActiveUserRecord(active);
+
+      if (!prev || prev.pageId !== active.pageId) {
+        const pending = loadSession().pendingRecord;
+        if (pending && pending.pageId !== active.pageId) {
+          clearPendingRecord();
+          setHasPendingFeedback(false);
+        }
+      }
+
+      const currentPageId = notionPageId ?? loadSession().pendingRecord?.pageId;
+      if (!currentPageId || currentPageId === prev?.pageId) {
+        setNotionPageId(active.pageId);
+      }
+
+      return active;
+    } catch (error) {
+      console.warn("ensureActiveUserRecord:", error);
+      return null;
+    }
+  }, [userName, weather, userGender, userLocation, notionPageId]);
+
+  useEffect(() => {
+    if (!sessionHydrated.current) return;
+    const trimmed = userName.trim();
+    if (!trimmed || !weather) return;
+    void syncActiveUserRecord();
+  }, [
+    weather?.temp,
+    weather?.condition,
+    weather?.locationName,
+    userName,
+    userGender,
+    syncActiveUserRecord,
+  ]);
+
   useEffect(() => {
     const expired = expireStalePending();
     const session = loadSession();
 
     if (session.userName) setUserName(session.userName);
+    if (session.gender) setUserGender(session.gender);
     if (session.userLocation) {
       setUserLocation(session.userLocation);
       setLocationInput(session.userLocation.name);
     }
     setReminder(session.reminder);
+    if (session.activeUserRecord) {
+      setActiveUserRecord(session.activeUserRecord);
+    }
 
     const recordId = getRecordIdFromUrl();
     if (recordId) {
@@ -1334,7 +1307,9 @@ export default function App() {
       setTimeout(() => showToast("昨日的紀錄已過期，請重新拍照"), 0);
     }
 
-    const canAutoStart = Boolean(session.userName.trim() && session.userLocation);
+    const canAutoStart = Boolean(
+      session.userName.trim() && session.gender && session.userLocation
+    );
     if (canAutoStart && session.userLocation) {
       void loadWeather(
         session.userLocation.lat,
@@ -1352,6 +1327,11 @@ export default function App() {
     if (!sessionHydrated.current) return;
     saveSession({ userName });
   }, [userName]);
+
+  useEffect(() => {
+    if (!sessionHydrated.current) return;
+    saveSession({ gender: userGender });
+  }, [userGender]);
 
   useEffect(() => {
     if (!sessionHydrated.current) return;
@@ -1429,46 +1409,77 @@ export default function App() {
 
   const inspirationCards = outfitInsights?.inspiration ?? [];
 
-  const inspirationRangeKey = useMemo(
-    () => buildInspirationRangeKey(outfitInsights, weather?.temp),
-    [outfitInsights, weather?.temp]
+  const favoriteCards = useMemo(
+    () => listFavoriteCards(inspirationFavorites),
+    [inspirationFavorites]
   );
 
-  useEffect(() => {
-    if (!inspirationRangeKey) return;
-    setInspirationSwipe(syncInspirationSwipeRange(inspirationRangeKey));
-  }, [inspirationRangeKey]);
-
-  const visibleInspirationCards = useMemo(
-    () => buildInspirationDeck(inspirationCards, inspirationSwipe, inspirationRangeKey),
-    [inspirationCards, inspirationSwipe, inspirationRangeKey]
-  );
+  const handleToggleFavorite = async (card: InspirationItem) => {
+    const trimmedName = userName.trim();
+    const targetUserName = card.who?.trim();
+    if (!trimmedName) {
+      showToast("請先完成登入設定");
+      return;
+    }
+    if (!card.id) {
+      showToast("此穿搭缺少 Notion 紀錄，無法收藏");
+      return;
+    }
+    if (targetUserName && trimmedName === targetUserName) {
+      showToast("無法收藏自己的穿搭");
+      return;
+    }
+    if (favoriteBusyId === card.id) return;
+    const saved = isInspirationFavorite(inspirationFavorites, card.id);
+    setFavoriteBusyId(card.id);
+    try {
+      const session = loadSession();
+      const result = await toggleOutfitFavorite(trimmedName, card.id, !saved, {
+        activeUserRecord: session.activeUserRecord ?? activeUserRecord,
+        location: weather?.locationName ?? userLocation?.name,
+        gender: userGender,
+        temp: weather?.temp,
+        weather: weather?.condition,
+      });
+      const active: ActiveUserRecord = result.activeUserRecord;
+      setActiveUserRecord(active);
+      saveSession({ activeUserRecord: active });
+      setNotionPageId(active.pageId);
+      setInspirationFavorites((prev) => {
+        const base =
+          prev.userName === trimmedName ? prev : loadInspirationFavorites(trimmedName);
+        return saved
+          ? removeInspirationFavorite(base, card.id)
+          : addInspirationFavorite(base, card);
+      });
+      showToast(saved ? "已取消收藏" : "已加入收藏 ♡");
+    } catch (error) {
+      console.warn("toggleOutfitFavorite:", error);
+      showToast(
+        error instanceof Error && error.message
+          ? error.message
+          : "收藏同步失敗"
+      );
+    } finally {
+      setFavoriteBusyId(null);
+    }
+  };
 
   const startApp = () => {
-    if (!userName.trim() || !userLocation) return;
-    saveSession({ userName: userName.trim(), userLocation, reminder });
+    if (!userName.trim() || !userGender || !userLocation) return;
+    saveSession({
+      userName: userName.trim(),
+      gender: userGender,
+      userLocation,
+      reminder,
+    });
     void loadWeather(userLocation.lat, userLocation.lon, userLocation.name);
     setScreen("home");
   };
 
-  const handleNextInspiration = (liked: boolean) => {
-    const current = visibleInspirationCards[0];
-    if (!current || !inspirationRangeKey) return;
-    const wasSaved = isInspirationCardSaved(inspirationSwipe, current.id);
-    const next = recordInspirationSwipe(current.id, liked, inspirationRangeKey);
-    setInspirationSwipe(next);
-    if (liked) {
-      showToast(wasSaved ? "已在收藏中，已移至堆疊最後 ♡" : "已收藏，移至堆疊最後 ♡");
-    } else if (wasSaved) {
-      showToast("已從收藏移除並略過");
-    } else {
-      showToast("已略過這套穿搭");
-    }
-  };
-
   const performExitApp = () => {
     resetAppSession();
-    clearInspirationSwipe();
+    if (userName.trim()) clearInspirationFavorites(userName);
     void cancelEveningReminder();
 
     setUserName("");
@@ -1476,9 +1487,10 @@ export default function App() {
     setLocationInput("");
     setWeather(null);
     setOutfitInsights(null);
-    setInspirationSwipe(null);
+    setInspirationFavorites({ items: {} });
     setOutfitImage(null);
     setNotionPageId(null);
+    setActiveUserRecord(null);
     setHasPendingFeedback(false);
     setReminder(DEFAULT_REMINDER);
     setScreen("welcome");
@@ -1526,15 +1538,35 @@ export default function App() {
         }
       }
 
-      const { id } = await createRecord({
-        ...buildRecordFromWeather(userName, weather, toStartedAtIso(currentTime)),
+      let pageId =
+        loadSession().activeUserRecord?.pageId ??
+        activeUserRecord?.pageId ??
+        notionPageId;
+
+      if (!pageId) {
+        const active = await syncActiveUserRecord();
+        pageId = active?.pageId ?? null;
+      }
+
+      if (!pageId) {
+        showToast("無法建立今日紀錄列，請稍後再試");
+        return;
+      }
+
+      await updateRecord(pageId, {
+        ...buildRecordFromWeather(
+          userName,
+          weather,
+          toStartedAtIso(currentTime),
+          userGender ?? loadSession().gender ?? undefined
+        ),
         upperBodyTags: upperBodyTags.length ? upperBodyTags : undefined,
         lowerBodyTags: lowerBodyTags.length ? lowerBodyTags : undefined,
         photoBase64: outfitImage.base64,
         photoMimeType: outfitImage.mimeType,
       });
-      setNotionPageId(id);
-      setPendingRecord(id, {
+      setNotionPageId(pageId);
+      setPendingRecord(pageId, {
         photoPreviewUrl: outfitImage.previewUrl,
         locationName: weather.locationName,
         temp: weather.temp,
@@ -1547,23 +1579,10 @@ export default function App() {
       setIsCameraOpen(false);
       void loadOutfitInsights(weather.temp);
 
-      const scheduled = await scheduleEveningReminder(id, reminder);
-      const link = buildRecordUrl(id);
-      try {
-        await navigator.clipboard.writeText(link);
-        showToast(
-          scheduled
-            ? "已記錄！晚間會提醒；連結已複製，可晚上開啟填體感"
-            : "已記錄！連結已複製，可晚上開啟填寫體感"
-        );
-      } catch {
-        showToast(
-          scheduled
-            ? "穿搭已記錄！晚間會提醒你填寫體感 →"
-            : "穿搭已記錄！接下來填寫今日體感 →"
-        );
-      }
-      setTimeout(() => setScreen("feedback"), 1000);
+      await scheduleEveningReminder(pageId, reminder);
+      const link = buildRecordUrl(pageId);
+      void navigator.clipboard.writeText(link).catch(() => {});
+      showToast("已記錄，你可以前往回饋穿搭體感");
     } catch (error) {
       console.warn("Notion create record:", error);
       const msg = error instanceof Error ? error.message : "";
@@ -1587,7 +1606,11 @@ export default function App() {
     if (!feelSet) return;
 
     const pageId =
-      notionPageId ?? loadSession().pendingRecord?.pageId ?? null;
+      notionPageId ??
+      loadSession().pendingRecord?.pageId ??
+      loadSession().activeUserRecord?.pageId ??
+      activeUserRecord?.pageId ??
+      null;
 
     if (!pageId) {
       showToast("找不到今日穿搭紀錄，請重新拍照或開啟晚間連結");
@@ -1644,51 +1667,21 @@ export default function App() {
       <div className="app-frame">
         <div className="app-screen-host">
         <div className="app-screen-flow">
-            {screen === "home" ? (
-              <HomeScreen
-                userName={userName}
-                setScreen={setScreen}
-                weather={weather}
-                loading={weatherLoading}
-                insights={outfitInsights}
-                insightsLoading={insightsLoading}
-                showPendingBanner={hasPendingFeedback}
-                onContinuePending={continuePendingFeedback}
-                onRequestExit={() => setShowExitConfirm(true)}
-              />
-            ) : screen === "inspiration" ? (
-              <InspirationScreen
-                cards={visibleInspirationCards}
-                deckExhausted={
-                  inspirationCards.length > 0 && visibleInspirationCards.length === 0
-                }
-                insightsLoading={insightsLoading}
-                currentCardIsSaved={
-                  visibleInspirationCards[0]
-                    ? isInspirationCardSaved(inspirationSwipe, visibleInspirationCards[0].id)
-                    : false
-                }
-                handleNextInspiration={handleNextInspiration}
-                setScreen={setScreen}
-                weather={weather}
-                insights={outfitInsights}
-                onRequestExit={() => setShowExitConfirm(true)}
-              />
-            ) : (
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div 
-            key={screen}
-            initial={{ opacity: 0, x: 10 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -10 }}
-            transition={{ duration: 0.2 }}
-            className="app-screen-gradient app-screen-page"
-            style={{ position: "relative" }}
-          >
-            {screen === "welcome" && (
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={screen}
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              transition={{ duration: 0.2 }}
+              className="app-screen-gradient app-screen-page"
+            >
+              {screen === "welcome" && (
               <WelcomeScreen
                 userName={userName}
                 setUserName={setUserName}
+                userGender={userGender}
+                setUserGender={setUserGender}
                 locationInput={locationInput}
                 setLocationInput={setLocationInput}
                 userLocation={userLocation}
@@ -1696,10 +1689,50 @@ export default function App() {
                 startApp={startApp}
                 showToast={showToast}
               />
-            )}
-            {screen === "record" && (
+              )}
+              {screen === "home" && (
+                <HomeScreen
+                  userName={userName}
+                  setScreen={setScreen}
+                  weather={weather}
+                  loading={weatherLoading}
+                  insights={outfitInsights}
+                  insightsLoading={insightsLoading}
+                  showPendingBanner={hasPendingFeedback}
+                  onContinuePending={continuePendingFeedback}
+                  onRequestExit={() => setShowExitConfirm(true)}
+                />
+              )}
+              {screen === "inspiration" && (
+                <InspirationFeedScreen
+                  cards={inspirationCards}
+                  currentUserName={userName}
+                  insightsLoading={insightsLoading}
+                  favorites={inspirationFavorites}
+                  favoriteBusyId={favoriteBusyId}
+                  onToggleFavorite={handleToggleFavorite}
+                  onGoRecord={() => setScreen("record")}
+                  weather={weather}
+                  insights={outfitInsights}
+                  onRequestExit={() => setShowExitConfirm(true)}
+                />
+              )}
+              {screen === "favorites" && (
+                <FavoritesScreen
+                  cards={favoriteCards}
+                  currentUserName={userName}
+                  favorites={inspirationFavorites}
+                  favoriteBusyId={favoriteBusyId}
+                  onToggleFavorite={handleToggleFavorite}
+                  weather={weather}
+                  insights={outfitInsights}
+                  onRequestExit={() => setShowExitConfirm(true)}
+                />
+              )}
+              {screen === "record" && (
               <RecordScreen
                 hasUploadedToday={hasPendingFeedback}
+                uploadedPhotoUrl={feedbackOutfit.photoUrl}
                 onGoToFeedback={continuePendingFeedback}
                 outfitImage={outfitImage}
                 onImageReady={onOutfitImageReady}
@@ -1729,10 +1762,9 @@ export default function App() {
                 submitFeedback={submitFeedback}
                 onRequestExit={() => setShowExitConfirm(true)}
               />
-            )}
-          </motion.div>
-        </AnimatePresence>
-            )}
+              )}
+            </motion.div>
+          </AnimatePresence>
         </div>
         </div>
 
@@ -1743,8 +1775,9 @@ export default function App() {
               {[
                 { id: "home", icon: <Home size={20} />, label: "首頁" },
                 { id: "inspiration", icon: <Sparkles size={20} />, label: "靈感" },
+                { id: "favorites", icon: <Heart size={20} />, label: "收藏" },
                 { id: "record", icon: <Camera size={20} />, label: "記錄" },
-                { id: "feedback", icon: <Smile size={20} />, label: "回饋" }
+                { id: "feedback", icon: <Smile size={20} />, label: "回饋" },
               ].map((tab) => (
                 <button 
                   key={tab.id}
