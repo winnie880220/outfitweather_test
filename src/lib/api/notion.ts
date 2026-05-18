@@ -1,8 +1,24 @@
-import type { NotionRecordPayload, UserGender } from "../../types/api";
-import { apiPatch, apiPost } from "./client";
-import type { OutfitRecord } from "../../types/api";
+import type { NotionRecordPayload, OutfitRecord, UserGender } from "../../types/api";
+import { apiGet, apiPatch, apiPost } from "./client";
 
-/** POST /api/notion/records — 建立（天氣 + 使用者） */
+export type OutfitRecordSnapshot = {
+  pageId: string;
+  photoUrl?: string;
+  locationName?: string;
+  temp?: number;
+  weather?: string;
+  recordedTime?: string;
+};
+
+/** GET /api/notion-records?pageId= */
+export async function fetchRecordSnapshot(
+  pageId: string
+): Promise<OutfitRecordSnapshot> {
+  const params = new URLSearchParams({ pageId: pageId.trim() });
+  return apiGet<OutfitRecordSnapshot>(`/api/notion-records?${params}`);
+}
+
+/** POST /api/notion-records — 建立新穿搭列（含照片上傳） */
 export async function createRecord(payload: NotionRecordPayload): Promise<{ id: string }> {
   return apiPost<{ id: string }>("/api/notion-records", payload);
 }

@@ -19,6 +19,7 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   analyzeOutfit,
   buildRecordFromWeather,
+  createRecord,
   toggleOutfitFavorite,
   fetchUserFavorites,
   ensureActiveUserRecordApi,
@@ -31,6 +32,7 @@ import {
 } from "./lib/api";
 import type { InspirationItem, OutfitInsights } from "./lib/api";
 import { captureVideoFrame, compressDataUrl } from "./lib/image";
+import { hydratePendingRecordFromNotion } from "./lib/pending-record-hydrate";
 import { buildRecordUrl, clearRecordFromUrl, getRecordIdFromUrl } from "./lib/record-url";
 import {
   cancelEveningReminder,
@@ -39,7 +41,6 @@ import {
 } from "./lib/reminder";
 import {
   addInspirationFavorite,
-  clearInspirationFavorites,
   favoritesStateFromCards,
   isInspirationFavorite,
   listFavoriteCards,
@@ -217,6 +218,74 @@ const ExitConfirmDialog = ({
               className="flex-1 rounded-xl bg-stone-800 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-stone-900 active:scale-[0.98]"
             >
               確定離開
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+    ) : null}
+  </AnimatePresence>
+);
+
+const PendingExitBlockDialog = ({
+  open,
+  onCancel,
+  onGoFeedback,
+}: {
+  open: boolean;
+  onCancel: () => void;
+  onGoFeedback: () => void;
+}) => (
+  <AnimatePresence>
+    {open ? (
+      <motion.div
+        className="fixed inset-0 z-[60] flex items-center justify-center p-6"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        role="presentation"
+        onClick={onCancel}
+      >
+        <motion.div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="pending-exit-title"
+          aria-describedby="pending-exit-desc"
+          initial={{ opacity: 0, scale: 0.96, y: 8 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.96, y: 8 }}
+          transition={{ duration: 0.18 }}
+          className="w-full max-w-[300px] rounded-2xl bg-white p-5 shadow-xl ring-1 ring-stone-200/80"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <motion.div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-stone-100 text-stone-600">
+            <Smile size={22} strokeWidth={1.75} />
+          </motion.div>
+          <h2
+            id="pending-exit-title"
+            className="text-center text-base font-semibold text-stone-800"
+          >
+            請先完成體感回饋
+          </h2>
+          <p
+            id="pending-exit-desc"
+            className="mt-2 text-center text-sm leading-relaxed text-stone-500"
+          >
+            你今日已上傳穿搭照片，請先完成體感回饋後再離開，資料才會完整保存。
+          </p>
+          <div className="mt-5 flex gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="flex-1 rounded-xl border border-stone-200 bg-white py-2.5 text-sm font-semibold text-stone-600 transition-colors hover:bg-stone-50"
+            >
+              稍後再說
+            </button>
+            <button
+              type="button"
+              onClick={onGoFeedback}
+              className="flex-1 rounded-xl bg-stone-800 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-stone-900 active:scale-[0.98]"
+            >
+              前往回饋
             </button>
           </div>
         </motion.div>
@@ -1129,6 +1198,7 @@ export default function App() {
   const [feedbackDesc, setFeedbackDesc] = useState("尚未標記");
   const [toastMsg, setToastMsg] = useState("");
   const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [showPendingExitBlock, setShowPendingExitBlock] = useState(false);
   const [currentTime, setCurrentTime] = useState("");
 
   const showToast = (msg: string) => setToastMsg(msg);
@@ -1146,6 +1216,8 @@ export default function App() {
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [reminder, setReminder] = useState<ReminderSettings>(DEFAULT_REMINDER);
   const [hasPendingFeedback, setHasPendingFeedback] = useState(false);
+  /** 待回饋 session 更新後觸發 UI 重讀（含從 Notion 還原照片） */
+  const [pendingRevision, setPendingRevision] = useState(0);
   const sessionHydrated = useRef(false);
 
   const toStartedAtIso = (timeHm: string) => {
@@ -1243,16 +1315,13 @@ export default function App() {
       saveSession({ activeUserRecord: active });
       setActiveUserRecord(active);
 
-      if (!prev || prev.pageId !== active.pageId) {
-        const pending = loadSession().pendingRecord;
-        if (pending && pending.pageId !== active.pageId) {
-          clearPendingRecord();
-          setHasPendingFeedback(false);
-        }
-      }
+      const pending = loadSession().pendingRecord;
+      const pendingToday = isPendingValidToday(pending);
 
-      const currentPageId = notionPageId ?? loadSession().pendingRecord?.pageId;
-      if (!currentPageId || currentPageId === prev?.pageId) {
+      // 有待回饋時維持綁定「已上傳照片」的那一列，不因 active 列換日／換溫區間而清除
+      if (pendingToday && pending) {
+        setNotionPageId(pending.pageId);
+      } else if (!notionPageId || notionPageId === prev?.pageId) {
         setNotionPageId(active.pageId);
       }
 
@@ -1298,10 +1367,19 @@ export default function App() {
       setPendingRecord(recordId);
       clearRecordFromUrl();
     } else if (isPendingValidToday(session.pendingRecord)) {
-      setNotionPageId(session.pendingRecord!.pageId);
+      const pending = session.pendingRecord!;
+      setNotionPageId(pending.pageId);
+      if (pending.recordedTime) setCurrentTime(pending.recordedTime);
     }
 
-    setHasPendingFeedback(isPendingValidToday(loadSession().pendingRecord));
+    const pendingValid = isPendingValidToday(session.pendingRecord);
+    setHasPendingFeedback(pendingValid);
+
+    if (pendingValid) {
+      void hydratePendingRecordFromNotion().then((updated) => {
+        if (updated) setPendingRevision((n) => n + 1);
+      });
+    }
 
     if (expired) {
       setTimeout(() => showToast("昨日的紀錄已過期，請重新拍照"), 0);
@@ -1350,15 +1428,18 @@ export default function App() {
     const onVisibility = () => {
       if (document.visibilityState !== "visible") return;
       const session = loadSession();
-      if (
-        isPendingValidToday(session.pendingRecord) &&
-        session.reminder.enabled &&
-        session.pendingRecord
-      ) {
-        void maybeShowPendingReminderNotification(
-          session.pendingRecord.pageId,
-          session.reminder
-        );
+      if (isPendingValidToday(session.pendingRecord) && session.pendingRecord) {
+        setHasPendingFeedback(true);
+        setNotionPageId(session.pendingRecord.pageId);
+        void hydratePendingRecordFromNotion().then((updated) => {
+          if (updated) setPendingRevision((n) => n + 1);
+        });
+        if (session.reminder.enabled) {
+          void maybeShowPendingReminderNotification(
+            session.pendingRecord.pageId,
+            session.reminder
+          );
+        }
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
@@ -1393,8 +1474,41 @@ export default function App() {
     setScreen("feedback");
   };
 
+  const requestExit = useCallback(() => {
+    const hasPending =
+      hasPendingFeedback || isPendingValidToday(loadSession().pendingRecord);
+    if (!hasPending) {
+      setShowExitConfirm(true);
+      return;
+    }
+    if (screen === "feedback") {
+      showToast("請先完成今日穿搭的體感回饋，再離開 App");
+      return;
+    }
+    setShowPendingExitBlock(true);
+  }, [hasPendingFeedback, screen]);
+
+  const goFeedbackFromPendingExit = () => {
+    setShowPendingExitBlock(false);
+    continuePendingFeedback();
+  };
+
   const feedbackOutfit = useMemo((): FeedbackOutfitContext => {
     const pending = loadSession().pendingRecord;
+    const useUploadSnapshot = isPendingValidToday(pending) && pending;
+
+    if (useUploadSnapshot) {
+      return {
+        photoUrl: outfitImage?.previewUrl ?? pending.photoPreviewUrl,
+        locationName: pending.locationName,
+        temp: pending.temp,
+        condition: pending.condition,
+        recordedTime:
+          pending.recordedTime ||
+          (pending.photoSavedAt ? formatTimeFromIso(pending.photoSavedAt) : undefined),
+      };
+    }
+
     return {
       photoUrl: outfitImage?.previewUrl ?? pending?.photoPreviewUrl,
       locationName: weather?.locationName ?? pending?.locationName,
@@ -1405,7 +1519,7 @@ export default function App() {
         pending?.recordedTime ||
         (pending?.photoSavedAt ? formatTimeFromIso(pending.photoSavedAt) : undefined),
     };
-  }, [outfitImage, weather, currentTime]);
+  }, [outfitImage, weather, currentTime, pendingRevision]);
 
   const inspirationCards = outfitInsights?.inspiration ?? [];
 
@@ -1479,20 +1593,31 @@ export default function App() {
 
   const performExitApp = () => {
     resetAppSession();
-    if (userName.trim()) clearInspirationFavorites(userName);
+    clearRecordFromUrl();
     void cancelEveningReminder();
 
     setUserName("");
+    setUserGender(null);
     setUserLocation(null);
     setLocationInput("");
     setWeather(null);
+    setWeatherLoading(false);
     setOutfitInsights(null);
+    setInsightsLoading(false);
     setInspirationFavorites({ items: {} });
     setOutfitImage(null);
     setNotionPageId(null);
     setActiveUserRecord(null);
     setHasPendingFeedback(false);
+    setPendingRevision(0);
     setReminder(DEFAULT_REMINDER);
+    setFeelSet(false);
+    setFeedbackDesc("尚未標記");
+    setRecordSaving(false);
+    setIsCameraOpen(false);
+    setShowActionSheet(false);
+    setFavoriteBusyId(null);
+    setCurrentTime("");
     setScreen("welcome");
     setShowExitConfirm(false);
     showToast("已返回初始頁面");
@@ -1505,7 +1630,6 @@ export default function App() {
     setCurrentTime(
       `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`
     );
-    showToast("照片上傳成功");
   };
 
   const clearOutfitImage = () => {
@@ -1538,22 +1662,8 @@ export default function App() {
         }
       }
 
-      let pageId =
-        loadSession().activeUserRecord?.pageId ??
-        activeUserRecord?.pageId ??
-        notionPageId;
-
-      if (!pageId) {
-        const active = await syncActiveUserRecord();
-        pageId = active?.pageId ?? null;
-      }
-
-      if (!pageId) {
-        showToast("無法建立今日紀錄列，請稍後再試");
-        return;
-      }
-
-      await updateRecord(pageId, {
+      // 每次完成記錄都建立「新的一列」穿搭（不覆寫 active 列；同 userName＋氣溫可有多筆）
+      const { id: pageId } = await createRecord({
         ...buildRecordFromWeather(
           userName,
           weather,
@@ -1565,14 +1675,27 @@ export default function App() {
         photoBase64: outfitImage.base64,
         photoMimeType: outfitImage.mimeType,
       });
+      let photoPreviewUrl = outfitImage.previewUrl;
+      try {
+        const thumb = await compressDataUrl(
+          `data:${outfitImage.mimeType};base64,${outfitImage.base64}`,
+          480,
+          0.72
+        );
+        photoPreviewUrl = thumb.previewUrl;
+      } catch {
+        /* 沿用原預覽圖 */
+      }
+
       setNotionPageId(pageId);
       setPendingRecord(pageId, {
-        photoPreviewUrl: outfitImage.previewUrl,
+        photoPreviewUrl,
         locationName: weather.locationName,
         temp: weather.temp,
         condition: weather.condition,
         recordedTime: currentTime || formatTimeFromIso(new Date().toISOString()),
       });
+      setPendingRevision((n) => n + 1);
       setHasPendingFeedback(true);
       setOutfitImage(null);
       setShowActionSheet(false);
@@ -1605,9 +1728,10 @@ export default function App() {
   }) => {
     if (!feelSet) return;
 
+    const pending = loadSession().pendingRecord;
     const pageId =
+      (isPendingValidToday(pending) ? pending!.pageId : null) ??
       notionPageId ??
-      loadSession().pendingRecord?.pageId ??
       loadSession().activeUserRecord?.pageId ??
       activeUserRecord?.pageId ??
       null;
@@ -1700,7 +1824,7 @@ export default function App() {
                   insightsLoading={insightsLoading}
                   showPendingBanner={hasPendingFeedback}
                   onContinuePending={continuePendingFeedback}
-                  onRequestExit={() => setShowExitConfirm(true)}
+                  onRequestExit={requestExit}
                 />
               )}
               {screen === "inspiration" && (
@@ -1714,7 +1838,7 @@ export default function App() {
                   onGoRecord={() => setScreen("record")}
                   weather={weather}
                   insights={outfitInsights}
-                  onRequestExit={() => setShowExitConfirm(true)}
+                  onRequestExit={requestExit}
                 />
               )}
               {screen === "favorites" && (
@@ -1726,7 +1850,7 @@ export default function App() {
                   onToggleFavorite={handleToggleFavorite}
                   weather={weather}
                   insights={outfitInsights}
-                  onRequestExit={() => setShowExitConfirm(true)}
+                  onRequestExit={requestExit}
                 />
               )}
               {screen === "record" && (
@@ -1748,7 +1872,7 @@ export default function App() {
                 showToast={showToast}
                 reminder={reminder}
                 onReminderChange={handleReminderChange}
-                onRequestExit={() => setShowExitConfirm(true)}
+                onRequestExit={requestExit}
               />
             )}
             {screen === "feedback" && (
@@ -1760,7 +1884,7 @@ export default function App() {
                 feelSet={feelSet}
                 setFeelSet={setFeelSet}
                 submitFeedback={submitFeedback}
-                onRequestExit={() => setShowExitConfirm(true)}
+                onRequestExit={requestExit}
               />
               )}
             </motion.div>
@@ -1803,6 +1927,11 @@ export default function App() {
           open={showExitConfirm}
           onCancel={() => setShowExitConfirm(false)}
           onConfirm={performExitApp}
+        />
+        <PendingExitBlockDialog
+          open={showPendingExitBlock}
+          onCancel={() => setShowPendingExitBlock(false)}
+          onGoFeedback={goFeedbackFromPendingExit}
         />
       </div>
     </div>

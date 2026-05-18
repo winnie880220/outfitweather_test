@@ -6,6 +6,7 @@ import { reverseGeocode, searchLocations } from "../api/lib/geocode";
 import { analyzeOutfitImage } from "../api/lib/gemini/analyze-outfit";
 import { isGeminiConfigured } from "../api/lib/env";
 import { getOutfitInsights } from "../api/lib/notion/outfit-insights";
+import { getRecordByPageId } from "../api/lib/notion/get-record";
 import { createRecordInNotion, updateRecordInNotion } from "../api/lib/notion/records";
 import {
   queryFavoritedOutfits,
@@ -106,6 +107,14 @@ async function handleApi(
     }
 
     if (url.pathname === "/api/notion-records") {
+      if (req.method === "GET") {
+        const pageId = url.searchParams.get("pageId")?.trim() ?? "";
+        if (!pageId) {
+          return send(res, 400, { ok: false, error: "缺少 pageId" });
+        }
+        const result = await getRecordByPageId(pageId);
+        return send(res, result.ok ? 200 : 502, result);
+      }
       if (req.method === "POST") {
         const body = (await readBody(req)) as NotionRecordPayload;
         const result = await createRecordInNotion(body);

@@ -1,5 +1,6 @@
 import type { NotionRecordPayload } from "./lib/types";
 import { sendJson, type VercelRequest, type VercelResponse } from "./lib/vercel";
+import { getRecordByPageId } from "./lib/notion/get-record";
 import { createRecordInNotion, updateRecordInNotion } from "./lib/notion/records";
 
 async function readJsonBody(req: VercelRequest): Promise<unknown> {
@@ -9,9 +10,19 @@ async function readJsonBody(req: VercelRequest): Promise<unknown> {
   return {};
 }
 
-/** POST /api/notion-records | PATCH /api/notion-records */
+/** GET /api/notion-records?pageId= | POST | PATCH */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
+    if (req.method === "GET") {
+      const pageId =
+        typeof req.query.pageId === "string" ? req.query.pageId.trim() : "";
+      if (!pageId) {
+        return sendJson(res, 400, { ok: false, error: "缺少 pageId" });
+      }
+      const result = await getRecordByPageId(pageId);
+      return sendJson(res, result.ok ? 200 : 502, result);
+    }
+
     if (req.method === "POST") {
       const body = (await readJsonBody(req)) as NotionRecordPayload;
       if (!body?.userName?.trim()) {

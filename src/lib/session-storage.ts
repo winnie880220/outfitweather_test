@@ -1,4 +1,6 @@
 import type { UserGender, UserLocation } from "../types/api";
+import { clearAllInspirationFavoritesLocal } from "./inspiration-favorites";
+import { clearInspirationSwipe } from "./inspiration-swipe";
 import { isUserGender } from "./user-gender";
 
 const STORAGE_KEY = "outfitweather_session";
@@ -113,6 +115,27 @@ export function isPendingValidToday(pending: PendingRecord | null): boolean {
   return pending.date === localDateString();
 }
 
+function writePendingRecord(pending: PendingRecord): PendingRecord {
+  const base = loadSession();
+  try {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ ...base, pendingRecord: pending })
+    );
+    return pending;
+  } catch (e) {
+    if (!pending.photoPreviewUrl) throw e;
+    const lean: PendingRecord = { ...pending };
+    delete lean.photoPreviewUrl;
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ ...base, pendingRecord: lean })
+    );
+    console.warn("pending photo preview too large for localStorage, will restore from Notion");
+    return lean;
+  }
+}
+
 export function setPendingRecord(
   pageId: string,
   snapshot?: PendingRecordSnapshot
@@ -124,8 +147,7 @@ export function setPendingRecord(
     hasFeedback: false,
     ...snapshot,
   };
-  saveSession({ pendingRecord: pending });
-  return pending;
+  return writePendingRecord(pending);
 }
 
 export function formatTimeFromIso(iso: string): string {
@@ -146,10 +168,13 @@ export function clearPendingRecord(): void {
   saveSession({ pendingRecord: null });
 }
 
-/** 回到初始頁：清除名稱、地點、待回饋等 session 資料 */
+/** 回到初始頁：清除 session、待回饋、收藏快取、靈感滑動紀錄等所有本機資料 */
 export function resetAppSession(): void {
+  if (typeof window === "undefined") return;
   try {
     localStorage.removeItem(STORAGE_KEY);
+    clearAllInspirationFavoritesLocal();
+    clearInspirationSwipe();
   } catch (e) {
     console.warn("session-storage reset failed:", e);
   }

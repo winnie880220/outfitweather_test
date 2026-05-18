@@ -11,8 +11,10 @@ export {
   buildRecordFromWeather,
   createRecord,
   updateRecord,
+  fetchRecordSnapshot,
   createFeedback,
   createOutfit,
   listInspiration,
   listOutfits,
 } from "./notion";
+export type { OutfitRecordSnapshot } from "./notion";

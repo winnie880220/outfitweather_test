@@ -189,7 +189,11 @@ export async function getOutfitInsights(
   const lowerTop3 = toTop3(lowerCounts, total);
 
   const inspiration = records
-    .filter((r) => r.upperBodyTags.length > 0 || r.lowerBodyTags.length > 0)
+    .filter(
+      (r) =>
+        Boolean(r.photoUrl) &&
+        (r.upperBodyTags.length > 0 || r.lowerBodyTags.length > 0)
+    )
     .slice(0, 20)
     .map((r, i) => toInspirationCard(r, i, upperTop3, lowerTop3));
 

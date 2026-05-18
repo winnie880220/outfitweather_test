@@ -102,3 +102,18 @@ export function clearInspirationFavorites(userName: string): void {
     console.warn("inspiration-favorites clear failed:", e);
   }
 }
+
+/** 清除所有使用者的靈感收藏快取（離開 App 時） */
+export function clearAllInspirationFavoritesLocal(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(STORAGE_PREFIX)) keys.push(key);
+    }
+    for (const key of keys) localStorage.removeItem(key);
+  } catch (e) {
+    console.warn("inspiration-favorites clear all failed:", e);
+  }
+}
