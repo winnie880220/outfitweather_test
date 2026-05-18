@@ -78,6 +78,7 @@ import {
   Clock,
   Globe,
   Sun,
+  Cloud,
   Upload,
   Wind,
   User,
@@ -349,104 +350,214 @@ const WelcomeScreen = ({
     );
   };
 
+  const previewLocation = userLocation?.name?.trim() || locationInput.trim();
+
   return (
-  <div className="flex min-h-min flex-col items-center justify-center px-8 py-10 pb-16">
-    <motion.div 
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="text-center"
-    >
-      <h1 className="text-5xl font-medium tracking-tight text-stone-800 leading-none">衣氣象</h1>
-      <p className="mt-2 text-xs uppercase tracking-widest text-stone-500">Outfit Weather</p>
-    </motion.div>
-
-    <motion.div 
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ delay: 0.2 }}
-      className="glass-card-strong mt-10 w-full rounded-2xl p-5"
-    >
-      <label className="text-[10px] text-slate-400 uppercase tracking-wider mb-2 block font-semibold">你的名字</label>
-      <input 
-        className="text-2xl font-medium text-slate-800 w-full outline-none placeholder:text-slate-200"
-        placeholder="輸入名字..."
-        value={userName}
-        onChange={(e) => setUserName(e.target.value)}
-        autoFocus
-      />
-    </motion.div>
-
     <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ delay: 0.3 }}
-      className="glass-card-strong relative mb-4 mt-4 w-full rounded-2xl p-5"
-      ref={locationWrapRef}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="welcome-screen screen-scroll app-scroll"
     >
-      <label className="text-[10px] text-slate-400 uppercase tracking-wider mb-2 block font-semibold">你的地點</label>
-      <input
-        className="text-2xl font-medium text-slate-800 w-full outline-none placeholder:text-slate-200"
-        placeholder="例如：台北"
-        value={locationInput}
-        onChange={(e) => handleLocationInputChange(e.target.value)}
-        onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
-      />
-
-      <button
-        type="button"
-        onClick={handleUseCurrentLocation}
-        disabled={locating}
-        className="glass-pill mt-4 flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium text-stone-600 transition-colors hover:bg-white/80 disabled:opacity-60"
+      <motion.div
+        className="welcome-ambient"
+        aria-hidden
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.8 }}
       >
-        <MapPin size={13} />
-        {locating ? "定位中..." : "使用我目前定位"}
-      </button>
+        <span className="welcome-ambient-blob welcome-ambient-blob--sun" />
+        <span className="welcome-ambient-blob welcome-ambient-blob--sky" />
+      </motion.div>
 
-      <AnimatePresence>
-        {showDropdown && (
-          <motion.ul
-            initial={{ opacity: 0, y: -4 }}
+      <motion.div className="app-inset welcome-body">
+        <motion.header
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+          className="welcome-hero"
+        >
+          <motion.div className="welcome-hero-icons" aria-hidden>
+            <motion.span
+              className="welcome-hero-icon welcome-hero-icon--sun"
+              initial={{ opacity: 0, x: -10, scale: 0.85 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              transition={{ delay: 0.08, duration: 0.4 }}
+            >
+              <Sun size={17} strokeWidth={1.75} />
+            </motion.span>
+            <motion.span
+              className="welcome-hero-icon welcome-hero-icon--main"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.14, duration: 0.45, type: "spring", stiffness: 260, damping: 22 }}
+            >
+              <Shirt size={28} strokeWidth={1.5} />
+            </motion.span>
+            <motion.span
+              className="welcome-hero-icon welcome-hero-icon--cloud"
+              initial={{ opacity: 0, x: 10, scale: 0.85 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              transition={{ delay: 0.2, duration: 0.4 }}
+            >
+              <Cloud size={17} strokeWidth={1.75} />
+            </motion.span>
+          </motion.div>
+
+          <h1 className="welcome-title">衣氣象</h1>
+          <p className="welcome-subtitle">Outfit Weather</p>
+          <p className="welcome-tagline">依天氣記錄穿搭，晚上回饋穿著體感</p>
+        </motion.header>
+
+        <AnimatePresence initial={false}>
+          {canStart && (
+            <motion.div
+              key="welcome-preview"
+              initial={{ opacity: 0, y: 10, height: 0 }}
+              animate={{ opacity: 1, y: 0, height: "auto" }}
+              exit={{ opacity: 0, y: -6, height: 0 }}
+              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              className="welcome-preview-wrap"
+            >
+              <p className="welcome-preview">
+                <User size={14} className="shrink-0 text-[#8b7355]" aria-hidden />
+                <span className="min-w-0 truncate">
+                  嗨，<strong className="font-semibold text-stone-800">{userName.trim()}</strong>
+                  <span className="text-stone-400"> · </span>
+                  <span className="text-stone-600">{previewLocation}</span>
+                </span>
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.12, duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+          className="welcome-setup-card"
+          ref={locationWrapRef}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            className="app-scroll absolute left-0 right-0 top-full mt-1 z-20 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto"
+            transition={{ delay: 0.18, duration: 0.35 }}
           >
-            {searching && (
-              <li className="px-4 py-3 text-sm text-slate-400">搜尋中...</li>
+            <label htmlFor="welcome-name" className="welcome-field-label">
+              你的名字
+            </label>
+            <input
+              id="welcome-name"
+              className="welcome-field-input"
+              placeholder="輸入名字"
+              value={userName}
+              onChange={(e) => setUserName(e.target.value)}
+              autoComplete="name"
+              autoFocus
+            />
+          </motion.div>
+
+          <div className="welcome-field-divider" aria-hidden />
+
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.24, duration: 0.35 }}
+          >
+            <label htmlFor="welcome-location" className="welcome-field-label">
+              你的地點
+            </label>
+            <input
+              id="welcome-location"
+              className="welcome-field-input"
+              placeholder="例如：台北"
+              value={locationInput}
+              onChange={(e) => handleLocationInputChange(e.target.value)}
+              onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
+              autoComplete="off"
+            />
+
+            <button
+              type="button"
+              onClick={handleUseCurrentLocation}
+              disabled={locating}
+              className="welcome-locate-btn"
+            >
+              <MapPin size={14} className="shrink-0" />
+              {locating ? "定位中..." : "使用我目前定位"}
+            </button>
+          </motion.div>
+
+          <AnimatePresence>
+            {showDropdown && (
+              <motion.ul
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                className="app-scroll welcome-suggestions"
+              >
+                {searching && (
+                  <li className="px-4 py-3 text-sm text-stone-400">搜尋中...</li>
+                )}
+                {!searching &&
+                  suggestions.map((item) => (
+                    <li key={item.place_id}>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectSuggestion(item)}
+                        className="welcome-suggestion-item"
+                      >
+                        <MapPin size={14} className="shrink-0 text-[#8b7355] mt-0.5" />
+                        <span className="line-clamp-2">{formatGeoLabel(item)}</span>
+                      </button>
+                    </li>
+                  ))}
+              </motion.ul>
             )}
-            {!searching &&
-              suggestions.map((item) => (
-                <li key={item.place_id}>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectSuggestion(item)}
-                    className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-50 last:border-0 flex items-start gap-2"
-                  >
-                    <MapPin size={14} className="text-[#378ADD] shrink-0 mt-0.5" />
-                    <span className="line-clamp-2">{formatGeoLabel(item)}</span>
-                  </button>
-                </li>
-              ))}
-          </motion.ul>
-        )}
-      </AnimatePresence>
+          </AnimatePresence>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.28, duration: 0.38 }}
+          className="welcome-actions"
+        >
+          <button
+            type="button"
+            onClick={startApp}
+            disabled={!canStart}
+            className={`welcome-start-btn ${canStart ? "welcome-start-btn--ready btn-gradient-primary" : ""}`}
+          >
+            開始
+            <ArrowRight size={17} className={canStart ? "welcome-start-arrow" : ""} />
+          </button>
+
+          <AnimatePresence mode="wait" initial={false}>
+            {!canStart ? (
+              <motion.p
+                key="hint"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="welcome-hint"
+              >
+                請先填寫名字和地點
+              </motion.p>
+            ) : (
+              <motion.p
+                key="ready"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="welcome-hint welcome-hint--ready"
+              >
+                準備好了，進去看看今天的天氣
+              </motion.p>
+            )}
+          </AnimatePresence>
+        </motion.div>
+      </motion.div>
     </motion.div>
-
-    <button
-      onClick={startApp}
-      disabled={!canStart}
-      className={`flex w-full items-center justify-center gap-2 rounded-xl py-4 text-base font-medium transition-all ${
-        canStart
-          ? "btn-gradient-primary text-white"
-          : "cursor-not-allowed bg-white/40 text-slate-400"
-      }`}
-    >
-      開始 <ArrowRight size={16} />
-    </button>
-
-    {!canStart && (
-      <p className="text-center text-xs text-slate-400 mt-3">請先填寫名字和地點</p>
-    )}
-  </div>
   );
 };
 
