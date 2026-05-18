@@ -269,7 +269,8 @@ body {
     pointer-events: auto;
   }
 
-  .inspiration-empty-body {
+  .inspiration-empty-body,
+  .app-empty-body {
     display: flex;
     min-height: 0;
     flex: 1;
@@ -507,6 +508,12 @@ body {
 
   .btn-gradient-primary:hover {
     background: linear-gradient(135deg, #1f1c1a 0%, #3d3835 100%);
+  }
+
+  .feedback-sliders .feel-range {
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
   }
 
   input[type="range"] {

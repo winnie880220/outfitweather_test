@@ -6,7 +6,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { BottomActionBar } from "./components/BottomActionBar";
 import { FeelMetricsChips } from "./components/FeelMetricsChips";
-import { FEEL_TONES, FEEL_TRACK_EMPTY } from "./lib/feel-metrics";
+import { FeelSliderField } from "./components/FeelSliderField";
+import { FEEL_TONES } from "./lib/feel-metrics";
 import { OutfitPhotoDisplay } from "./components/OutfitPhotoDisplay";
 import { OutfitStatsPanel } from "./components/OutfitStatsPanel";
 import {
@@ -89,48 +90,6 @@ type Screen = "welcome" | "home" | "inspiration" | "record" | "feedback";
 type Outfit = InspirationItem;
 
 // --- Mock Data ---
-const INSPIRATION_CARDS: Outfit[] = [
-  {
-    id: "1",
-    emoji: "🧥",
-    bg: "#ebe6dc",
-    match: "97%",
-    temp: "26°C・多雲",
-    who: "Mei",
-    date: "昨天",
-    location: "基隆",
-    feelMetrics: { breathability: 45, wrapping: 55, stuffiness: 72 },
-    tags: ["防曬外套", "T恤"],
-    humidity: "78%"
-  },
-  {
-    id: "2",
-    emoji: "👗",
-    bg: "#f0e8df",
-    match: "94%",
-    temp: "25°C・多雲",
-    who: "小芸",
-    date: "3天前",
-    location: "台北",
-    feelMetrics: { breathability: 68, wrapping: 50, stuffiness: 38 },
-    tags: ["薄外套", "連身裙"],
-    humidity: "75%"
-  },
-  {
-    id: "3",
-    emoji: "🧤",
-    bg: "#e8e4dc",
-    match: "88%",
-    temp: "24°C・陰",
-    who: "Jade",
-    date: "2天前",
-    location: "新北",
-    feelMetrics: { breathability: 55, wrapping: 42, stuffiness: 28 },
-    tags: ["薄長袖", "長褲"],
-    humidity: "82%"
-  }
-];
-
 const INITIAL_WARDROBE: Outfit[] = [
   {
     id: "w1",
@@ -611,6 +570,7 @@ const InspirationEmptyState = ({
 const InspirationScreen = ({
   cards,
   deckExhausted,
+  insightsLoading,
   currentCardIsSaved,
   handleNextInspiration,
   setScreen,
@@ -620,6 +580,7 @@ const InspirationScreen = ({
 }: {
   cards: Outfit[];
   deckExhausted?: boolean;
+  insightsLoading?: boolean;
   currentCardIsSaved?: boolean;
   handleNextInspiration: (liked: boolean) => void;
   setScreen: (s: Screen) => void;
@@ -628,6 +589,26 @@ const InspirationScreen = ({
   onRequestExit: () => void;
 }) => {
   if (cards.length === 0) {
+    if (insightsLoading) {
+      return (
+        <motion.div className="inspiration-layout app-screen-gradient">
+          <div className="flex justify-end px-6 pt-3">
+            <AppExitButton onClick={onRequestExit} />
+          </div>
+          <div className="inspiration-empty-body">
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="glass-card-strong flex w-full max-w-sm flex-col items-center justify-center rounded-2xl p-10 animate-pulse"
+            >
+              <div className="mb-3 h-10 w-10 rounded-full bg-stone-200/80" />
+              <div className="h-3 w-24 rounded bg-stone-200/80" />
+            </motion.div>
+          </div>
+        </motion.div>
+      );
+    }
+
     return (
       <InspirationEmptyState
         variant={deckExhausted ? "exhausted" : "no-data"}
@@ -677,9 +658,6 @@ const InspirationScreen = ({
                     bg={currentCard.bg}
                     className="inspiration-card-photo-flex"
                   />
-                  <div className="pointer-events-none absolute top-3 right-3 z-10 rounded-full bg-stone-800/90 px-2.5 py-1 text-[10px] font-bold text-white backdrop-blur-sm">
-                    {currentCard.match} 匹配
-                  </div>
                 </div>
                 <div className="inspiration-card-content p-4">
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.22 }}>
@@ -741,7 +719,39 @@ const InspirationScreen = ({
   );
 };
 
+const RecordAlreadyUploadedState = ({
+  onGoToFeedback,
+  onRequestExit,
+}: {
+  onGoToFeedback: () => void;
+  onRequestExit: () => void;
+}) => (
+  <div className="flex min-h-0 flex-1 flex-col overflow-hidden app-screen-gradient">
+    <div className="flex shrink-0 justify-end px-6 pt-3">
+      <AppExitButton onClick={onRequestExit} />
+    </div>
+    <div className="app-empty-body">
+      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/70 text-stone-500 ring-1 ring-stone-200/70">
+        <Shirt size={28} strokeWidth={1.5} />
+      </div>
+      <h2 className="text-base font-semibold text-stone-800">今天已經上傳過穿搭了</h2>
+      <p className="mx-auto mt-2 max-w-[280px] text-sm leading-relaxed text-stone-500">
+        請至「回饋」頁填寫今日體感。完成回饋後，即可再次拍照記錄。
+      </p>
+      <button
+        type="button"
+        onClick={onGoToFeedback}
+        className="mt-6 rounded-xl bg-stone-800 px-6 py-3 text-sm font-semibold text-white transition-transform active:scale-[0.98]"
+      >
+        前往回饋頁
+      </button>
+    </div>
+  </div>
+);
+
 const RecordScreen = ({
+  hasUploadedToday,
+  onGoToFeedback,
   outfitImage,
   onImageReady,
   onClearImage,
@@ -758,6 +768,8 @@ const RecordScreen = ({
   onReminderChange,
   onRequestExit,
 }: {
+  hasUploadedToday: boolean;
+  onGoToFeedback: () => void;
   outfitImage: ParsedOutfitImage | null;
   onImageReady: (img: ParsedOutfitImage) => void;
   onClearImage: () => void;
@@ -776,6 +788,15 @@ const RecordScreen = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  if (hasUploadedToday) {
+    return (
+      <RecordAlreadyUploadedState
+        onGoToFeedback={onGoToFeedback}
+        onRequestExit={onRequestExit}
+      />
+    );
+  }
 
   const startCamera = async () => {
     try {
@@ -1017,60 +1038,18 @@ const FeedbackScreen = ({
     setFeedbackDesc(`透氣${bText}(${newMetrics.breathability}%)・${sText}感(${newMetrics.snugness}%)・${stText}(${newMetrics.stuffiness}%)`);
   };
 
-  const SliderField = ({ label, value, color, onChange, icon }: { label: string, value: number, color: string, onChange: (v: number) => void, icon: React.ReactNode }) => (
-    <div className="mb-6 last:mb-0 group">
-      <div className="flex justify-between items-center mb-2">
-        <label className="flex items-center gap-2 text-sm font-bold text-stone-700 transition-colors group-hover:text-stone-900">
-          <div
-            className="rounded-lg p-1.5 text-stone-400 transition-colors"
-            style={{
-              color: value > 10 ? color : undefined,
-              backgroundColor: value > 10 ? `${color}18` : "rgba(255,255,255,0.6)",
-            }}
-          >
-            {icon}
-          </div>
-          {label}
-        </label>
-        <motion.span
-          key={value}
-          initial={{ scale: 1.1, opacity: 0.8 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="text-xs font-black font-mono tabular-nums"
-          style={{ color: value > 10 ? color : "#a8a29e" }}
-        >
-          {value}%
-        </motion.span>
-      </div>
-      <div className="relative h-8 flex items-center">
-        <input 
-          type="range" 
-          min="0" 
-          max="100" 
-          value={value} 
-          onChange={(e) => onChange(parseInt(e.target.value))}
-          className="h-2.5 w-full cursor-pointer appearance-none rounded-lg"
-          style={{
-            background: `linear-gradient(to right, ${color} ${value}%, ${FEEL_TRACK_EMPTY} ${value}%)`,
-            color,
-          }}
-        />
-      </div>
-    </div>
-  );
-
   if (!needsFeedback) {
     return (
-      <div className="screen-scroll app-scroll app-screen-gradient">
-        <div className="app-inset flex justify-end px-4 pt-4">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden app-screen-gradient">
+        <div className="flex shrink-0 justify-end px-6 pt-3">
           <AppExitButton onClick={onRequestExit} />
         </div>
-        <div className="app-inset px-6 pb-[var(--nav-safe-bottom)] pt-8 text-center">
+        <div className="app-empty-body">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/70 text-stone-500 ring-1 ring-stone-200/70">
             <Smile size={28} strokeWidth={1.5} />
           </div>
           <h2 className="text-base font-semibold text-stone-800">今日沒有需要回饋的穿搭了</h2>
-          <p className="mx-auto mt-2 max-w-[260px] text-sm leading-relaxed text-stone-500">
+          <p className="mx-auto mt-2 max-w-[280px] text-sm leading-relaxed text-stone-500">
             今天的體感已記錄完成，或尚未建立今日穿搭。可先至「記錄」拍照上傳。
           </p>
         </div>
@@ -1091,22 +1070,22 @@ const FeedbackScreen = ({
 
       <FeedbackOutfitCard outfit={feedbackOutfit} className="mb-4 w-full" />
 
-      <div className="glass-card-strong mb-5 w-full rounded-2xl p-6">
-        <SliderField
+      <div className="feedback-sliders glass-card-strong mb-5 w-full rounded-2xl p-6">
+        <FeelSliderField
           label="透氣度"
           value={metrics.breathability}
           color={FEEL_TONES.breathability}
           icon={<Wind size={14} />}
           onChange={(v) => updateMetric("breathability", v)}
         />
-        <SliderField
+        <FeelSliderField
           label="包裹感"
           value={metrics.snugness}
           color={FEEL_TONES.wrapping}
           icon={<User size={14} />}
           onChange={(v) => updateMetric("snugness", v)}
         />
-        <SliderField
+        <FeelSliderField
           label="悶熱感"
           value={metrics.stuffiness}
           color={FEEL_TONES.stuffiness}
@@ -1307,6 +1286,14 @@ export default function App() {
     refreshPendingFeedback();
   }, [screen, refreshPendingFeedback]);
 
+  useEffect(() => {
+    if (!hasPendingFeedback) return;
+    setOutfitImage(null);
+    setRecordSaving(false);
+    setShowActionSheet(false);
+    setIsCameraOpen(false);
+  }, [hasPendingFeedback]);
+
   const continuePendingFeedback = () => {
     const session = loadSession();
     if (isPendingValidToday(session.pendingRecord)) {
@@ -1329,10 +1316,7 @@ export default function App() {
     };
   }, [outfitImage, weather, currentTime]);
 
-  const inspirationCards =
-    outfitInsights && outfitInsights.inspiration.length > 0
-      ? outfitInsights.inspiration
-      : INSPIRATION_CARDS;
+  const inspirationCards = outfitInsights?.inspiration ?? [];
 
   const inspirationRangeKey = useMemo(
     () => buildInspirationRangeKey(outfitInsights, weather?.temp),
@@ -1447,6 +1431,9 @@ export default function App() {
         recordedTime: currentTime || formatTimeFromIso(new Date().toISOString()),
       });
       setHasPendingFeedback(true);
+      setOutfitImage(null);
+      setShowActionSheet(false);
+      setIsCameraOpen(false);
       void loadOutfitInsights(weather.temp);
 
       const scheduled = await scheduleEveningReminder(id, reminder);
@@ -1505,6 +1492,7 @@ export default function App() {
       markPendingFeedbackComplete();
       clearPendingRecord();
       setHasPendingFeedback(false);
+      setOutfitImage(null);
       void cancelEveningReminder();
     } catch (error) {
       console.warn("Notion update record:", error);
@@ -1563,6 +1551,7 @@ export default function App() {
                 deckExhausted={
                   inspirationCards.length > 0 && visibleInspirationCards.length === 0
                 }
+                insightsLoading={insightsLoading}
                 currentCardIsSaved={
                   visibleInspirationCards[0]
                     ? isInspirationCardSaved(inspirationSwipe, visibleInspirationCards[0].id)
@@ -1599,6 +1588,8 @@ export default function App() {
             )}
             {screen === "record" && (
               <RecordScreen
+                hasUploadedToday={hasPendingFeedback}
+                onGoToFeedback={continuePendingFeedback}
                 outfitImage={outfitImage}
                 onImageReady={onOutfitImageReady}
                 onClearImage={clearOutfitImage}
