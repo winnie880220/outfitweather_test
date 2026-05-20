@@ -994,11 +994,10 @@ body {
     box-shadow: 0 2px 12px rgba(120, 100, 80, 0.06);
   }
 
+  /* 底部導覽：實色底，避免捲動內容（如 CTA 按鈕）透出干擾圖示與標籤 */
   .glass-nav {
-    background: rgba(255, 252, 248, 0.82);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid rgba(255, 255, 255, 0.9);
+    background: #fffcf8;
+    border: 1px solid rgba(245, 241, 235, 0.95);
     box-shadow: 0 12px 40px rgba(120, 100, 80, 0.12);
   }
 
