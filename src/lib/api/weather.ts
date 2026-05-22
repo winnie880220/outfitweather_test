@@ -73,7 +73,7 @@ async function fetchWeatherDirect(
   };
 }
 
-/** GET /api/weather（失敗時改直接呼叫 Open-Meteo） */
+/** GET /api/weather（後端失敗時改直接呼叫 Open-Meteo，僅作本機後備） */
 export async function fetchCurrentWeather(
   lat: number,
   lon: number,

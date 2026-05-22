@@ -1,4 +1,4 @@
-import { getCurrentWeather } from "./lib/weather";
+import { getCurrentWeather, getWeatherProvider } from "./lib/weather";
 import { getQueryString, parseLatLonFromQuery, sendJson, type VercelRequest, type VercelResponse } from "./lib/vercel";
 
 /** GET /api/weather?lat=25.03&lon=121.56&name=台北市 */
@@ -16,7 +16,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const data = await getCurrentWeather(coords.lat, coords.lon, displayName);
-    return sendJson(res, 200, { ok: true, data, source: "api" });
+    return sendJson(res, 200, {
+      ok: true,
+      data,
+      source: "api",
+      provider: getWeatherProvider(),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "天氣取得失敗";
     return sendJson(res, 500, { ok: false, error: message });

@@ -7,9 +7,9 @@ export interface ApiResponse<T> {
 
 export interface WeatherData {
   temp: number;
-  /** 當日預報最低溫（Open-Meteo daily） */
+  /** 當日預報最低溫 */
   tempMin?: number;
-  /** 當日預報最高溫（Open-Meteo daily） */
+  /** 當日預報最高溫 */
   tempMax?: number;
   condition: string;
   conditionCode: number;

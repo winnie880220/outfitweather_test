@@ -1,7 +1,7 @@
 import "../scripts/load-env";
-import type { Plugin, Connect } from "vite";
+import { loadEnv, type Plugin, type Connect } from "vite";
 import type { IncomingMessage, ServerResponse } from "http";
-import { getCurrentWeather } from "../api/lib/weather";
+import { getCurrentWeather, getWeatherProvider } from "../api/lib/weather";
 import { reverseGeocode, searchLocations } from "../api/lib/geocode";
 import { analyzeOutfitImage } from "../api/lib/gemini/analyze-outfit";
 import { isGeminiConfigured } from "../api/lib/env";
@@ -56,7 +56,12 @@ async function handleApi(
       }
       const name = url.searchParams.get("name") ?? undefined;
       const data = await getCurrentWeather(lat, lon, name || undefined);
-      return send(res, 200, { ok: true, data, source: "api" });
+      return send(res, 200, {
+        ok: true,
+        data,
+        source: "api",
+        provider: getWeatherProvider(),
+      });
     }
 
     if (url.pathname === "/api/geocode-search" && req.method === "GET") {
@@ -235,10 +240,18 @@ async function handleApi(
   }
 }
 
+function applyLocalEnv(mode: string) {
+  const loaded = loadEnv(mode, process.cwd(), "");
+  for (const [key, value] of Object.entries(loaded)) {
+    if (value !== undefined) process.env[key] = value;
+  }
+}
+
 export function viteApiDevPlugin(): Plugin {
   return {
     name: "vite-api-dev",
     configureServer(server) {
+      applyLocalEnv(server.config.mode);
       server.middlewares.use(handleApi);
     },
   };

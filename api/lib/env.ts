@@ -13,6 +13,15 @@ export const env = {
   get geminiApiKey() {
     return process.env.GEMINI_API_KEY?.trim() ?? "";
   },
+  /** Google Maps Platform — Weather API（與 Gemini 金鑰可相同專案） */
+  get googleWeatherApiKey() {
+    return (
+      process.env.GOOGLE_WEATHER_API_KEY?.trim() ??
+      process.env.GOOGLE_MAPS_API_KEY?.trim() ??
+      process.env.googleWeatherApiKey?.trim() ??
+      ""
+    );
+  },
 };
 
 export const getNotionDatabaseId = () => env.notionDatabaseId;
@@ -21,3 +30,5 @@ export const isNotionConfigured = () =>
   Boolean(env.notionApiKey && env.notionDatabaseId);
 
 export const isGeminiConfigured = () => Boolean(env.geminiApiKey);
+
+export const isGoogleWeatherConfigured = () => Boolean(env.googleWeatherApiKey);
