@@ -133,22 +133,25 @@ export function InspirationFeedScreen({
 
       <InspirationGenderTabs value={genderFilter} onChange={setGenderFilter} />
 
-      <div className="inspiration-feed-scroll app-scroll app-inset min-h-0">
+      <div
+        className="inspiration-feed-scroll inspiration-feed-scroll--reels app-scroll app-inset min-h-0"
+        aria-label="穿搭靈感，上下滑動切換"
+      >
         {filteredCards.length === 0 ? (
           <FilteredEmptyState filter={genderFilter} />
         ) : (
-          <div className="inspiration-feed-list">
-            {filteredCards.map((card) => (
+          filteredCards.map((card) => (
+            <div key={card.id} className="inspiration-feed-reel-slide">
               <InspirationCard
-                key={card.id}
+                layout="reel"
                 card={card}
                 currentUserName={currentUserName}
                 isSaved={isInspirationFavorite(favorites, card.id)}
                 favoriteBusy={favoriteBusyId === card.id}
                 onToggleFavorite={() => onToggleFavorite(card)}
               />
-            ))}
-          </div>
+            </div>
+          ))
         )}
       </div>
 

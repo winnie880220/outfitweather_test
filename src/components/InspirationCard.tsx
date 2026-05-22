@@ -15,22 +15,34 @@ export function InspirationCard({
   isSaved,
   onToggleFavorite,
   favoriteBusy = false,
+  layout = "list",
 }: {
   card: InspirationItem;
   currentUserName?: string;
   isSaved: boolean;
   onToggleFavorite: () => void;
   favoriteBusy?: boolean;
+  layout?: "list" | "reel";
 }) {
   const showFavorite = !isOwnOutfit(card, currentUserName);
+  const isReel = layout === "reel";
 
   return (
-    <article className="inspiration-feed-card inspiration-card overflow-hidden rounded-3xl">
-      <div className="inspiration-card-photo-cell relative min-h-[14rem]">
+    <article
+      className={
+        isReel
+          ? "inspiration-reel-card inspiration-card h-full overflow-hidden rounded-3xl"
+          : "inspiration-feed-card inspiration-card overflow-hidden rounded-3xl"
+      }
+    >
+      <div
+        className={`inspiration-card-photo-cell relative ${isReel ? "min-h-0 flex-1" : "min-h-[14rem]"}`}
+      >
         <OutfitPhotoDisplay
           photoUrl={card.photoUrl}
           emoji={card.emoji}
           bg={card.bg}
+          objectFit="contain"
           className="inspiration-card-photo-feed"
         />
         {showFavorite ? (
@@ -50,7 +62,7 @@ export function InspirationCard({
           </button>
         ) : null}
       </div>
-      <div className="inspiration-card-content p-3.5">
+      <div className={`inspiration-card-content shrink-0 ${isReel ? "p-4" : "p-3.5"}`}>
         <div className="text-xl font-bold text-stone-900">{card.temp}</div>
         <div className="mt-0.5 text-xs text-stone-500">
           {[card.location, card.date].filter(Boolean).join("・")}
