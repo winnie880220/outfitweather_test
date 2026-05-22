@@ -104,6 +104,22 @@ export async function queryRecordsByUserName(
   return pages;
 }
 
+/** 將 Favorite 存的 ID 字串（如 "32" 或 "OUT-32"）轉成 Notion unique_id.equals 用的數字 */
+function parseUniqueIdNumber(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const dash = trimmed.lastIndexOf("-");
+  if (dash > 0) {
+    const suffix = trimmed.slice(dash + 1);
+    const n = Number(suffix);
+    if (!Number.isNaN(n)) return n;
+  }
+
+  const n = Number(trimmed);
+  return Number.isNaN(n) ? null : n;
+}
+
 function recordIdFilter(
   value: string,
   fieldType: string
@@ -121,9 +137,11 @@ function recordIdFilter(
   }
 
   if (fieldType === "unique_id") {
+    const n = parseUniqueIdNumber(trimmed);
+    if (n === null) return null;
     return {
       property: RECORDS_DB.recordId,
-      unique_id: { equals: trimmed },
+      unique_id: { equals: n },
     };
   }
 

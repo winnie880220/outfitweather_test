@@ -1,6 +1,6 @@
-import { ensureActiveUserRecord } from "./lib/notion/user-active-record";
-import type { ActiveUserRecordState } from "./lib/notion/user-active-record";
-import { sendJson, type VercelRequest, type VercelResponse } from "./lib/vercel";
+import { ensureActiveUserRecord } from "../lib/notion/user-active-record";
+import type { ActiveUserRecordState } from "../lib/notion/user-active-record";
+import { sendJson, type VercelRequest, type VercelResponse } from "../lib/vercel";
 
 async function readJsonBody(req: VercelRequest): Promise<unknown> {
   if (req.body !== undefined && req.body !== null) {
