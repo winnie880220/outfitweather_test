@@ -1,5 +1,5 @@
 export { ApiError } from "./client";
-export { analyzeOutfit } from "./outfit";
+export { analyzeOutfit, type OutfitAnalysis, type OutfitTagAnchor } from "./outfit";
 export { fetchOutfitInsights } from "./outfit-insights";
 export type { OutfitInsights, OutfitTagStat, InspirationItem } from "./outfit-insights";
 export { fetchCurrentWeather } from "./weather";

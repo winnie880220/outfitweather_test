@@ -15,6 +15,7 @@ import {
 import { PendingFeedbackBanner } from "./components/PendingFeedbackBanner";
 import { ReminderSettingsPanel } from "./components/ReminderSettings";
 import { WeatherSummaryCard } from "./components/WeatherSummaryCard";
+import { OutfitPhotoTagOverlay } from "./components/OutfitPhotoTagOverlay";
 import { motion, AnimatePresence } from "motion/react";
 import {
   analyzeOutfit,
@@ -30,7 +31,7 @@ import {
   searchLocations,
   updateRecord,
 } from "./lib/api";
-import type { InspirationItem, OutfitInsights } from "./lib/api";
+import type { InspirationItem, OutfitAnalysis, OutfitInsights } from "./lib/api";
 import { captureVideoFrame, compressDataUrl } from "./lib/image";
 import { hydratePendingRecordFromNotion } from "./lib/pending-record-hydrate";
 import { buildRecordUrl, clearRecordFromUrl, getRecordIdFromUrl } from "./lib/record-url";
@@ -755,8 +756,11 @@ const HomeScreen = ({
 const RecordScreen = ({
   hasUploadedToday,
   uploadedPhotoUrl,
+  uploadedOutfitTags,
   onGoToFeedback,
   outfitImage,
+  outfitAnalysisPreview,
+  outfitAnalysisLoading,
   onImageReady,
   onClearImage,
   currentTime,
@@ -774,8 +778,11 @@ const RecordScreen = ({
 }: {
   hasUploadedToday: boolean;
   uploadedPhotoUrl?: string;
+  uploadedOutfitTags: OutfitAnalysis | null;
   onGoToFeedback: () => void;
   outfitImage: ParsedOutfitImage | null;
+  outfitAnalysisPreview: OutfitAnalysis | null;
+  outfitAnalysisLoading: boolean;
   onImageReady: (img: ParsedOutfitImage) => void;
   onClearImage: () => void;
   currentTime: string;
@@ -897,14 +904,14 @@ const RecordScreen = ({
           onClick={() =>
             !hasUploadedToday && !hasPhoto && !recordSaving && setShowActionSheet(true)
           }
-          className={`h-56 rounded-3xl border-2 flex flex-col items-center justify-center transition-all overflow-hidden ${
+          className={`record-photo-frame h-64 rounded-3xl flex flex-col items-center justify-center transition-all overflow-hidden ${
             hasUploadedToday
-              ? "border-[#1D9E75] bg-[#E1F5EE] cursor-default"
+              ? "record-photo-frame--uploaded cursor-default"
               : hasPhoto
-                ? "border-dashed border-[#1D9E75] bg-[#E1F5EE] cursor-pointer"
+                ? "record-photo-frame--selected cursor-pointer"
                 : isCameraOpen
-                  ? "border-none bg-black cursor-pointer"
-                  : "border-dashed border-slate-200 bg-slate-50 cursor-pointer hover:border-[#378ADD]"
+                  ? "!border-0 bg-black cursor-pointer"
+                  : "border-dashed border-stone-200/80 bg-slate-50/80 cursor-pointer hover:border-stone-300"
           }`}
         >
           {isCameraOpen ? (
@@ -923,24 +930,57 @@ const RecordScreen = ({
               </button>
             </div>
           ) : hasPhoto && photoPreviewUrl ? (
-            <div className="relative w-full h-full bg-slate-100">
+            <div className="relative h-full w-full bg-[#faf7f2]">
               <img
                 src={photoPreviewUrl}
                 alt="今日穿搭"
-                className="w-full h-full object-contain object-center rounded-3xl"
+                className="h-full w-full object-contain object-center rounded-3xl"
               />
-              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/50 to-transparent p-3 text-center">
-                <div className="text-xs font-bold text-white">
-                  {hasUploadedToday ? "照片已上傳" : "照片已選取 · 氣象已綁定"}
+              {(() => {
+                const tags =
+                  outfitAnalysisPreview ?? uploadedOutfitTags;
+                const showOverlay =
+                  outfitAnalysisLoading ||
+                  outfitAnalysisPreview ||
+                  (hasUploadedToday &&
+                    tags &&
+                    (tags.upperBodyTags.length > 0 ||
+                      tags.lowerBodyTags.length > 0));
+                if (!showOverlay) return null;
+                return (
+                  <OutfitPhotoTagOverlay
+                    upperBodyTags={tags?.upperBodyTags ?? []}
+                    lowerBodyTags={tags?.lowerBodyTags ?? []}
+                    tagAnchors={tags?.tagAnchors}
+                    loading={outfitAnalysisLoading && !outfitAnalysisPreview}
+                  />
+                );
+              })()}
+              <div
+                className={`absolute inset-x-0 bottom-0 z-[3] p-3 text-center ${
+                  outfitAnalysisLoading
+                    ? "pointer-events-none opacity-0"
+                    : "record-photo-caption"
+                }`}
+              >
+                <div className="record-photo-caption__text text-xs">
+                  {hasUploadedToday
+                    ? "照片已上傳"
+                    : outfitAnalysisPreview ||
+                        (uploadedOutfitTags &&
+                          (uploadedOutfitTags.upperBodyTags.length > 0 ||
+                            uploadedOutfitTags.lowerBodyTags.length > 0))
+                      ? "AI 已標註穿搭單品"
+                      : "照片已選取 · 氣象已綁定"}
                 </div>
-                {!hasUploadedToday && (
+                {!hasUploadedToday && !outfitAnalysisLoading && (
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       onClearImage();
                     }}
-                    className="mt-1 text-[10px] text-white/90 underline"
+                    className="mt-1 text-[10px] font-medium text-stone-500 underline decoration-stone-300 underline-offset-2"
                   >
                     重新拍攝
                   </button>
@@ -1035,9 +1075,15 @@ const RecordScreen = ({
         ) : (
           <BottomActionBar
             solo
-            primaryLabel={recordSaving ? "AI 分析並寫入中…" : "完成記錄"}
+            primaryLabel={
+              recordSaving
+                ? outfitAnalysisLoading
+                  ? "AI 分析穿搭中…"
+                  : "寫入記錄中…"
+                : "完成記錄"
+            }
             onPrimary={handleCompleteRecord}
-            disabled={!hasPhoto}
+            disabled={!hasPhoto || recordSaving}
             loading={recordSaving}
           />
         )}
@@ -1064,18 +1110,22 @@ const FeedbackScreen = ({
   setFeedbackDesc: (v: string) => void;
   feelSet: boolean;
   setFeelSet: (v: boolean) => void;
-  submitFeedback: (metrics: {
-    breathability: number;
-    snugness: number;
-    stuffiness: number;
-  }) => void;
+  submitFeedback: (
+    metrics: {
+      breathability: number;
+      snugness: number;
+      stuffiness: number;
+    },
+    feelNote?: string
+  ) => void;
   onRequestExit: () => void;
 }) => {
   const [metrics, setMetrics] = useState({
     breathability: 50,
     snugness: 50,
-    stuffiness: 50
+    stuffiness: 50,
   });
+  const [feelNote, setFeelNote] = useState("");
 
   const updateMetric = (key: keyof typeof metrics, value: number) => {
     const newMetrics = { ...metrics, [key]: value };
@@ -1127,7 +1177,7 @@ const FeedbackScreen = ({
 
       <FeedbackOutfitCard outfit={feedbackOutfit} className="mb-4 w-full" />
 
-      <div className="feedback-sliders glass-card-strong mb-5 w-full rounded-2xl p-6">
+      <div className="feedback-sliders glass-card-strong mb-4 w-full rounded-2xl p-6">
         <FeelSliderField
           label="透氣度"
           value={metrics.breathability}
@@ -1149,28 +1199,43 @@ const FeedbackScreen = ({
           icon={<Thermometer size={14} />}
           onChange={(v) => updateMetric("stuffiness", v)}
         />
+        <div
+          className={`feedback-slider-summary mt-4 border-t border-stone-200/70 pt-3 transition-opacity ${feelSet ? "opacity-100" : "opacity-45"}`}
+        >
+          <div className="mb-1 text-[10px] font-medium text-stone-400">滑桿摘要</div>
+          <p className="text-xs leading-relaxed text-stone-600">
+            {feelSet ? feedbackDesc : "拖動滑桿後會顯示摘要"}
+          </p>
+        </div>
       </div>
 
-      <div
-        className={`glass-card mb-4 w-full rounded-xl p-4 transition-opacity ${feelSet ? "opacity-100 scale-100" : "opacity-30 scale-[0.98] animate-pulse"}`}
-      >
-        <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-stone-400">
-          你的感受
-        </div>
-        <div className="flex items-center gap-2 text-sm font-bold text-stone-800">
-          {feelSet ? (
-            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: FEEL_TONES.wrapping }} />
-          ) : (
-            <span className="h-2 w-2 rounded-full bg-stone-300" />
-          )}
-          {feedbackDesc}
-        </div>
+      <div className="feedback-feel-note glass-card mb-4 w-full rounded-xl p-4">
+        <label
+          htmlFor="feel-note-input"
+          className="mb-2 block text-xs font-semibold text-stone-600"
+        >
+          穿搭感受
+          <span className="ml-1 font-normal text-stone-400">（選填）</span>
+        </label>
+        <textarea
+          id="feel-note-input"
+          value={feelNote}
+          onChange={(e) => setFeelNote(e.target.value)}
+          placeholder="例如：我今天真漂亮"
+          rows={3}
+          maxLength={200}
+          className="feedback-feel-note__input w-full resize-none rounded-xl border border-stone-200/90 bg-white/80 px-3 py-2.5 text-sm leading-relaxed text-stone-700 placeholder:text-stone-400 focus:border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-200/80"
+        />
+        <p className="mt-1.5 text-right text-[10px] text-stone-400">
+          {feelNote.length}/200
+        </p>
       </div>
-      <div className="pt-6 pb-2">
+
+      <div className="pt-2 pb-2">
         <BottomActionBar
           solo
-          primaryLabel={feelSet ? "貢獻這份體感數據" : "請先調整下方滑桿"}
-          onPrimary={() => submitFeedback(metrics)}
+          primaryLabel={feelSet ? "貢獻這份體感數據" : "請先調整滑桿"}
+          onPrimary={() => submitFeedback(metrics, feelNote.trim() || undefined)}
           disabled={!feelSet}
         />
       </div>
@@ -1191,6 +1256,9 @@ export default function App() {
   });
   const [favoriteBusyId, setFavoriteBusyId] = useState<string | null>(null);
   const [outfitImage, setOutfitImage] = useState<ParsedOutfitImage | null>(null);
+  const [outfitAnalysisPreview, setOutfitAnalysisPreview] =
+    useState<OutfitAnalysis | null>(null);
+  const [outfitAnalysisLoading, setOutfitAnalysisLoading] = useState(false);
   const [recordSaving, setRecordSaving] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [showActionSheet, setShowActionSheet] = useState(false);
@@ -1493,6 +1561,19 @@ export default function App() {
     continuePendingFeedback();
   };
 
+  const uploadedOutfitTags = useMemo((): OutfitAnalysis | null => {
+    const pending = loadSession().pendingRecord;
+    if (!isPendingValidToday(pending) || !pending) return null;
+    const upper = pending.upperBodyTags ?? [];
+    const lower = pending.lowerBodyTags ?? [];
+    if (upper.length === 0 && lower.length === 0) return null;
+    return {
+      upperBodyTags: upper,
+      lowerBodyTags: lower,
+      ...(pending.tagAnchors?.length ? { tagAnchors: pending.tagAnchors } : {}),
+    };
+  }, [pendingRevision, hasPendingFeedback]);
+
   const feedbackOutfit = useMemo((): FeedbackOutfitContext => {
     const pending = loadSession().pendingRecord;
     const useUploadSnapshot = isPendingValidToday(pending) && pending;
@@ -1626,6 +1707,8 @@ export default function App() {
   const onOutfitImageReady = (img: ParsedOutfitImage) => {
     setRecordSaving(false);
     setOutfitImage(img);
+    setOutfitAnalysisPreview(null);
+    setOutfitAnalysisLoading(false);
     const now = new Date();
     setCurrentTime(
       `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`
@@ -1635,24 +1718,36 @@ export default function App() {
   const clearOutfitImage = () => {
     setRecordSaving(false);
     setOutfitImage(null);
+    setOutfitAnalysisPreview(null);
+    setOutfitAnalysisLoading(false);
   };
 
   const saveToWardrobe = async () => {
     if (!outfitImage || !weather || recordSaving) return;
 
     setRecordSaving(true);
+    setOutfitAnalysisPreview(null);
+    setOutfitAnalysisLoading(true);
+
     let upperBodyTags: string[] = [];
     let lowerBodyTags: string[] = [];
+    let savedTagAnchors: OutfitAnalysis["tagAnchors"];
 
     try {
       try {
-        const analysis = await analyzeOutfit(outfitImage.base64, outfitImage.mimeType);
+        const analysis = await analyzeOutfit(
+          outfitImage.base64,
+          outfitImage.mimeType
+        );
         upperBodyTags = analysis.upperBodyTags;
         lowerBodyTags = analysis.lowerBodyTags;
-        const upper = upperBodyTags.length ? upperBodyTags.join("、") : "—";
-        const lower = lowerBodyTags.length ? lowerBodyTags.join("、") : "—";
-        showToast(`AI 辨識：上著 ${upper}｜下著 ${lower}`);
+        savedTagAnchors = analysis.tagAnchors;
+        setOutfitAnalysisPreview(analysis);
+        setOutfitAnalysisLoading(false);
+        // 讓標籤動畫播完再寫入 Notion
+        await new Promise((resolve) => setTimeout(resolve, 1400));
       } catch (error) {
+        setOutfitAnalysisLoading(false);
         console.warn("Gemini analyze:", error);
         const msg = error instanceof Error ? error.message : "";
         if (msg.includes("額度") || msg.includes("429") || msg.includes("quota")) {
@@ -1694,10 +1789,15 @@ export default function App() {
         temp: weather.temp,
         condition: weather.condition,
         recordedTime: currentTime || formatTimeFromIso(new Date().toISOString()),
+        ...(upperBodyTags.length ? { upperBodyTags } : {}),
+        ...(lowerBodyTags.length ? { lowerBodyTags } : {}),
+        ...(savedTagAnchors?.length ? { tagAnchors: savedTagAnchors } : {}),
       });
       setPendingRevision((n) => n + 1);
       setHasPendingFeedback(true);
       setOutfitImage(null);
+      setOutfitAnalysisPreview(null);
+      setOutfitAnalysisLoading(false);
       setShowActionSheet(false);
       setIsCameraOpen(false);
       void loadOutfitInsights(weather.temp);
@@ -1721,11 +1821,14 @@ export default function App() {
     }
   };
 
-  const submitFeedback = async (metrics: {
-    breathability: number;
-    snugness: number;
-    stuffiness: number;
-  }) => {
+  const submitFeedback = async (
+    metrics: {
+      breathability: number;
+      snugness: number;
+      stuffiness: number;
+    },
+    feelNote?: string
+  ) => {
     if (!feelSet) return;
 
     const pending = loadSession().pendingRecord;
@@ -1782,7 +1885,11 @@ export default function App() {
     };
     
     setOutfitList([newOutfit, ...outfitList]);
-    showToast("體感數據已記錄，謝謝你的貢獻 🌏");
+    showToast(
+      feelNote?.trim()
+        ? "體感數據與你的感受已記錄，謝謝你的貢獻 🌏"
+        : "體感數據已記錄，謝謝你的貢獻 🌏"
+    );
     setTimeout(() => setScreen("home"), 1000);
   };
 
@@ -1857,8 +1964,11 @@ export default function App() {
               <RecordScreen
                 hasUploadedToday={hasPendingFeedback}
                 uploadedPhotoUrl={feedbackOutfit.photoUrl}
+                uploadedOutfitTags={uploadedOutfitTags}
                 onGoToFeedback={continuePendingFeedback}
                 outfitImage={outfitImage}
+                outfitAnalysisPreview={outfitAnalysisPreview}
+                outfitAnalysisLoading={outfitAnalysisLoading}
                 onImageReady={onOutfitImageReady}
                 onClearImage={clearOutfitImage}
                 currentTime={currentTime}

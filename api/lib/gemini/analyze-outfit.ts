@@ -7,9 +7,16 @@ import {
   UPPER_BODY_TAGS,
 } from "./outfit-taxonomy";
 
+export type OutfitTagAnchor = {
+  label: string;
+  anchorX: number;
+  anchorY: number;
+};
+
 export type OutfitAnalysisResult = {
   upperBodyTags: string[];
   lowerBodyTags: string[];
+  tagAnchors?: OutfitTagAnchor[];
 };
 
 /** 支援 generateContent + 圖片的模型（v1beta 可用） */
@@ -60,6 +67,31 @@ function shouldTryNextModel(error: unknown): boolean {
   return isQuotaError(error) || isModelUnavailableError(error);
 }
 
+function clampPct(value: unknown): number | null {
+  const n = typeof value === "number" ? value : Number(value);
+  if (Number.isNaN(n)) return null;
+  return Math.round(Math.min(92, Math.max(8, n)));
+}
+
+function parseTagAnchors(
+  raw: unknown,
+  allowedLabels: Set<string>
+): OutfitTagAnchor[] {
+  if (!Array.isArray(raw)) return [];
+  const anchors: OutfitTagAnchor[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const label = typeof row.label === "string" ? row.label.trim() : "";
+    if (!label || !allowedLabels.has(label)) continue;
+    const anchorX = clampPct(row.anchorX);
+    const anchorY = clampPct(row.anchorY);
+    if (anchorX === null || anchorY === null) continue;
+    anchors.push({ label, anchorX, anchorY });
+  }
+  return anchors;
+}
+
 async function generateWithModel(
   ai: GoogleGenAI,
   model: string,
@@ -87,16 +119,29 @@ async function generateWithModel(
     throw new Error("Gemini 未回傳內容");
   }
 
-  let parsed: { upperBodyTags?: string[]; lowerBodyTags?: string[] };
+  let parsed: {
+    upperBodyTags?: string[];
+    lowerBodyTags?: string[];
+    tagAnchors?: unknown;
+  };
   try {
     parsed = JSON.parse(text) as typeof parsed;
   } catch {
     throw new Error("Gemini 回傳格式無法解析");
   }
 
+  const upperBodyTags = filterAllowedTags(parsed.upperBodyTags, UPPER_BODY_TAGS);
+  const lowerBodyTags = filterAllowedTags(parsed.lowerBodyTags, LOWER_BODY_TAGS).slice(
+    0,
+    1
+  );
+  const allowedLabels = new Set([...upperBodyTags, ...lowerBodyTags]);
+  const tagAnchors = parseTagAnchors(parsed.tagAnchors, allowedLabels);
+
   return {
-    upperBodyTags: filterAllowedTags(parsed.upperBodyTags, UPPER_BODY_TAGS),
-    lowerBodyTags: filterAllowedTags(parsed.lowerBodyTags, LOWER_BODY_TAGS).slice(0, 1),
+    upperBodyTags,
+    lowerBodyTags,
+    ...(tagAnchors.length > 0 ? { tagAnchors } : {}),
   };
 }
 

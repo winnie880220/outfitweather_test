@@ -11,6 +11,9 @@ export interface PendingRecordSnapshot {
   temp?: number;
   condition?: string;
   recordedTime?: string;
+  upperBodyTags?: string[];
+  lowerBodyTags?: string[];
+  tagAnchors?: Array<{ label: string; anchorX: number; anchorY: number }>;
 }
 
 export interface PendingRecord {
@@ -23,6 +26,9 @@ export interface PendingRecord {
   temp?: number;
   condition?: string;
   recordedTime?: string;
+  upperBodyTags?: string[];
+  lowerBodyTags?: string[];
+  tagAnchors?: Array<{ label: string; anchorX: number; anchorY: number }>;
 }
 
 export interface ReminderSettings {
