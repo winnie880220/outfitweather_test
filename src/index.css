@@ -1661,6 +1661,7 @@ body {
   width: 100%;
   align-items: center;
   justify-content: center;
+  filter: drop-shadow(0 5px 14px rgba(44, 40, 37, 0.13));
 }
 
 .style-note-card--export-9x16 .style-note-card__polaroid {
@@ -1674,6 +1675,8 @@ body {
   border-width: 0.45rem;
   border-bottom-width: 0.45rem;
   overflow: hidden;
+  transform: none;
+  box-shadow: none;
 }
 
 .style-note-card__polaroid-photo {
@@ -1685,40 +1688,43 @@ body {
   background: #f3f0eb;
 }
 
-.style-note-card__export-photo-bg {
+.style-note-card__polaroid-photo .outfit-tag-overlay {
+  z-index: 4;
+}
+
+.style-note-card__export-photo {
+  position: relative;
+  z-index: 1;
   display: block;
   flex: 1 1 auto;
   width: 100%;
   min-height: 120px;
   height: 100%;
+  object-fit: contain;
+  object-position: center;
   background-color: #f3f0eb;
-  background-size: contain;
-  background-position: center;
-  background-repeat: no-repeat;
-}
-
-.style-note-card__export-photo-helper {
-  position: absolute;
-  width: 0;
-  height: 0;
-  opacity: 0;
-  pointer-events: none;
 }
 
 .style-note-card--export-9x16[data-capturing="true"],
 .style-note-card--export-9x16[data-capturing="true"] * {
   animation: none !important;
   transition: none !important;
+}
+
+.style-note-card--export-9x16[data-capturing="true"] .outfit-tag-overlay,
+.style-note-card--export-9x16[data-capturing="true"] .outfit-tag-pill,
+.style-note-card--export-9x16[data-capturing="true"] .outfit-tag-anchor,
+.style-note-card--export-9x16[data-capturing="true"] .style-note-card__photo-color-tag {
   opacity: 1 !important;
+}
+
+.style-note-card--export-9x16[data-capturing="true"] .style-note-card__polaroid-wrap {
+  filter: drop-shadow(0 5px 14px rgba(44, 40, 37, 0.13));
 }
 
 .style-note-card--export-9x16[data-capturing="true"] .style-note-card__polaroid {
   transform: none;
-}
-
-.style-note-card--export-9x16[data-capturing="true"] .style-note-card__polaroid-photo,
-.style-note-card--export-9x16[data-capturing="true"] .style-note-card__export-photo-bg {
-  min-height: unset;
+  box-shadow: none;
 }
 
 .style-note-card--export-9x16 .style-note-card__photo-color-tag {

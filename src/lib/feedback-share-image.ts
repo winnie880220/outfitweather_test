@@ -60,9 +60,6 @@ export async function resolveSharePhotoDataUrl(
 
 function shouldIncludeNode(node: Node): boolean {
   if (!(node instanceof HTMLElement)) return true;
-  if (node.classList.contains("style-note-card__export-photo-helper")) {
-    return false;
-  }
   if (
     node.tagName === "IMG" &&
     node.classList.contains("opacity-0") &&
@@ -73,66 +70,23 @@ function shouldIncludeNode(node: Node): boolean {
   return true;
 }
 
-function readPhotoSrc(element: HTMLElement): string | undefined {
-  const bg = element.querySelector<HTMLElement>(".style-note-card__export-photo-bg");
-  const fromBg = bg?.style.backgroundImage.match(/url\(["']?([^"')]+)["']?\)/)?.[1];
-  if (fromBg) return fromBg;
-  return element.querySelector<HTMLImageElement>(".style-note-card__export-photo-helper")
-    ?.src;
-}
-
-type PhotoRegion = { dx: number; dy: number; dw: number; dh: number };
-
-function measurePhotoRegion(element: HTMLElement): PhotoRegion | null {
-  const cardRect = element.getBoundingClientRect();
-  const photoEl = element.querySelector(".style-note-card__polaroid-photo");
-  if (!photoEl) return null;
-  const rect = photoEl.getBoundingClientRect();
-  if (rect.width < 1 || rect.height < 1) return null;
-  return {
-    dx: rect.left - cardRect.left,
-    dy: rect.top - cardRect.top,
-    dw: rect.width,
-    dh: rect.height,
-  };
-}
-
-async function loadImage(src: string): Promise<HTMLImageElement> {
-  const dataUrl = await ensureDataUrl(src);
-  const img = new Image();
-  img.decoding = "sync";
-  img.src = dataUrl;
-  await img.decode();
-  return img;
-}
-
-/** 擷取前僅 inline 圖片，不調整版面（避免陰影／拍立得框位移） */
+/** 擷取前：inline 圖片 data URL */
 export async function prepareShareCardForCapture(
   element: HTMLElement,
   photoDataUrl?: string
 ): Promise<void> {
   element.setAttribute("data-capturing", "true");
 
-  const bgEl = element.querySelector<HTMLElement>(".style-note-card__export-photo-bg");
-  const src = photoDataUrl ?? readPhotoSrc(element);
-  if (src && bgEl) {
-    try {
-      const dataUrl = await ensureDataUrl(src);
-      bgEl.style.backgroundImage = `url("${dataUrl}")`;
-    } catch {
-      if (src.startsWith("data:")) {
-        bgEl.style.backgroundImage = `url("${src}")`;
-      }
-    }
-  }
+  const img = element.querySelector<HTMLImageElement>(".style-note-card__export-photo");
+  const src = photoDataUrl ?? img?.src;
 
-  const helper = element.querySelector<HTMLImageElement>(
-    ".style-note-card__export-photo-helper"
-  );
-  if (helper && src) {
+  if (src && img) {
+    const dataUrl = src.startsWith("data:")
+      ? src
+      : await ensureDataUrl(src).catch(() => src);
+    img.src = dataUrl;
     try {
-      helper.src = await ensureDataUrl(src);
-      await helper.decode();
+      await img.decode();
     } catch {
       /* optional */
     }
@@ -148,86 +102,11 @@ export function releaseShareCardCaptureState(element: HTMLElement): void {
   element.removeAttribute("data-capturing");
 }
 
-function samplePhotoPresent(
-  cardImg: HTMLImageElement,
-  region: PhotoRegion,
-  cardCssWidth: number
-): boolean {
-  const scale = cardImg.width / Math.max(1, cardCssWidth);
-  const sx = Math.max(0, Math.round(region.dx * scale));
-  const sy = Math.max(0, Math.round(region.dy * scale));
-  const sw = Math.min(32, Math.round(region.dw * scale));
-  const sh = Math.min(32, Math.round(region.dh * scale));
-  if (sw < 4 || sh < 4) return false;
-
-  const canvas = document.createElement("canvas");
-  canvas.width = sw;
-  canvas.height = sh;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return false;
-  ctx.drawImage(cardImg, sx, sy, sw, sh, 0, 0, sw, sh);
-  const data = ctx.getImageData(0, 0, sw, sh).data;
-  let nonBg = 0;
-  for (let i = 0; i < data.length; i += 4) {
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
-    const a = data[i + 3];
-    if (a < 20) continue;
-    if (!(r > 228 && g > 224 && b > 216)) nonBg += 1;
-  }
-  return nonBg > sw * sh * 0.06;
-}
-
-/** 僅在 toPng 未帶出照片時才合成，且用擷取前的區域座標 */
-async function compositePhotoFallback(
-  element: HTMLElement,
-  pngDataUrl: string,
-  photoDataUrl: string,
-  region: PhotoRegion
-): Promise<Blob> {
-  const [cardImg, photoImg] = await Promise.all([
-    loadImage(pngDataUrl),
-    loadImage(photoDataUrl),
-  ]);
-
-  const cardCssWidth = element.getBoundingClientRect().width;
-  const scale = cardImg.width / Math.max(1, cardCssWidth);
-  const dx = Math.round(region.dx * scale);
-  const dy = Math.round(region.dy * scale);
-  const dw = Math.round(region.dw * scale);
-  const dh = Math.round(region.dh * scale);
-
-  const canvas = document.createElement("canvas");
-  canvas.width = cardImg.width;
-  canvas.height = cardImg.height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    const res = await fetch(pngDataUrl);
-    return res.blob();
-  }
-
-  ctx.drawImage(cardImg, 0, 0);
-
-  const fitScale = Math.min(dw / photoImg.width, dh / photoImg.height);
-  const pw = Math.round(photoImg.width * fitScale);
-  const ph = Math.round(photoImg.height * fitScale);
-  const px = dx + Math.round((dw - pw) / 2);
-  const py = dy + Math.round((dh - ph) / 2);
-  ctx.drawImage(photoImg, px, py, pw, ph);
-
-  const res = await fetch(canvas.toDataURL("image/png"));
-  return res.blob();
-}
-
 export async function captureShareCardElement(
   element: HTMLElement,
   photoDataUrl?: string
 ): Promise<Blob> {
-  const photoSrc = photoDataUrl ?? readPhotoSrc(element);
-  const region = measurePhotoRegion(element);
-
-  await prepareShareCardForCapture(element, photoSrc);
+  await prepareShareCardForCapture(element, photoDataUrl);
 
   try {
     const pixelRatio = computePixelRatio(element);
@@ -238,24 +117,6 @@ export async function captureShareCardElement(
       skipAutoScale: true,
       filter: shouldIncludeNode,
     });
-
-    const cardImg = await loadImage(dataUrl);
-    const cardCssWidth = element.getBoundingClientRect().width;
-
-    if (
-      photoSrc &&
-      region &&
-      !samplePhotoPresent(cardImg, region, cardCssWidth)
-    ) {
-      const blob = await compositePhotoFallback(
-        element,
-        dataUrl,
-        photoSrc,
-        region
-      );
-      if (!blob.size) throw new Error("匯出失敗");
-      return blob;
-    }
 
     const res = await fetch(dataUrl);
     const blob = await res.blob();

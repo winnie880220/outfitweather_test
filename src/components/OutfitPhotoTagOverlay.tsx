@@ -11,6 +11,7 @@ export function OutfitPhotoTagOverlay({
   tagAnchors,
   loading = false,
   compactTags = false,
+  exportStatic = false,
   className = "",
 }: {
   upperBodyTags: string[];
@@ -18,6 +19,8 @@ export function OutfitPhotoTagOverlay({
   tagAnchors?: Array<{ label: string; anchorX: number; anchorY: number }>;
   loading?: boolean;
   compactTags?: boolean;
+  /** 分享卡匯出：靜態標籤，避免 html-to-image 漏繪 motion 動畫 */
+  exportStatic?: boolean;
   className?: string;
 }) {
   const placements = buildOutfitTagPlacements(
@@ -26,6 +29,46 @@ export function OutfitPhotoTagOverlay({
     tagAnchors
   );
   const showTags = !loading && placements.length > 0;
+
+  if (exportStatic) {
+    return (
+      <div
+        className={`outfit-tag-overlay pointer-events-none absolute inset-0 overflow-hidden ${className}`}
+        aria-live="polite"
+      >
+        {showTags ? (
+          <>
+            <svg
+              className="absolute inset-0 h-full w-full"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              aria-hidden
+            >
+              {placements.map((p, i) => (
+                <line
+                  key={`line-${p.label}-${i}`}
+                  x1={placement.labelX}
+                  y1={placement.labelY}
+                  x2={placement.anchorX}
+                  y2={placement.anchorY}
+                  stroke="rgba(120, 113, 108, 0.55)"
+                  strokeWidth={0.28}
+                  strokeLinecap="round"
+                />
+              ))}
+            </svg>
+            {placements.map((p, i) => (
+              <StaticTagLabel
+                key={`${p.label}-${i}`}
+                placement={p}
+                compact={compactTags}
+              />
+            ))}
+          </>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <motion.div
@@ -87,6 +130,38 @@ export function OutfitPhotoTagOverlay({
           : null}
       </AnimatePresence>
     </motion.div>
+  );
+}
+
+function StaticTagLabel({
+  placement,
+  compact = false,
+}: {
+  placement: OutfitTagPlacement;
+  compact?: boolean;
+}) {
+  const onRight = placement.labelX >= 50;
+
+  return (
+    <>
+      <span
+        className="outfit-tag-anchor absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+        style={{ left: `${placement.anchorX}%`, top: `${placement.anchorY}%` }}
+      />
+      <span
+        className={`outfit-tag-pill absolute whitespace-nowrap -translate-y-1/2 px-2.5 py-1 font-semibold tracking-wide ${
+          compact ? "outfit-tag-pill--compact max-w-none" : "max-w-[28%]"
+        }`}
+        style={{
+          ...(onRight
+            ? { right: `${100 - placement.labelX}%`, left: "auto" }
+            : { left: `${placement.labelX}%`, right: "auto" }),
+          top: `${placement.labelY}%`,
+        }}
+      >
+        {placement.label}
+      </span>
+    </>
   );
 }
 
