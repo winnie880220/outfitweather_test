@@ -16,6 +16,7 @@ export type NotionProp = {
     name?: string;
     file?: { url?: string };
     external?: { url?: string };
+    file_upload?: { id: string };
   }>;
 };
 
@@ -35,10 +36,15 @@ export type ParsedNotionRecord = {
   apparentTemp?: string;
   upperBodyTags: string[];
   lowerBodyTags: string[];
+  colors: string[];
+  /** 記錄當下該區顏色排行第一 */
+  currentRanking?: string;
   breathability?: number;
   wrapping?: number;
   stuffiness?: number;
   photoUrl?: string;
+  /** Notion File Upload API 的 id（列表查詢可能無直接 url） */
+  photoFileUploadId?: string;
 };
 
 function plainText(prop?: NotionProp): string {
@@ -72,10 +78,16 @@ export function readRecordIdFromProperties(
   return "";
 }
 
-function fileUrl(prop?: NotionProp): string | undefined {
-  if (!prop || prop.type !== "files" || !prop.files?.length) return undefined;
+function parsePhotoField(prop?: NotionProp): {
+  photoUrl?: string;
+  photoFileUploadId?: string;
+} {
+  if (!prop || prop.type !== "files" || !prop.files?.length) return {};
   const f = prop.files[0];
-  return f.file?.url ?? f.external?.url;
+  if (f.file?.url) return { photoUrl: f.file.url };
+  if (f.external?.url) return { photoUrl: f.external.url };
+  if (f.file_upload?.id) return { photoFileUploadId: f.file_upload.id };
+  return {};
 }
 
 export function parseNotionPage(page: {
@@ -108,9 +120,14 @@ export function parseNotionPage(page: {
     apparentTemp: plainText(p[RECORDS_DB.apparentTemp]) || undefined,
     upperBodyTags: p[RECORDS_DB.upperBodyTags]?.multi_select?.map((t) => t.name) ?? [],
     lowerBodyTags: lowerSelect ? [lowerSelect] : [],
+    colors: p[RECORDS_DB.color]?.multi_select?.map((t) => t.name) ?? [],
+    currentRanking:
+      p[RECORDS_DB.currentRanking]?.multi_select?.[0]?.name ||
+      plainText(p[RECORDS_DB.currentRanking]) ||
+      undefined,
     breathability: p[RECORDS_DB.breathability]?.number ?? undefined,
     wrapping: p[RECORDS_DB.wrapping]?.number ?? undefined,
     stuffiness: p[RECORDS_DB.stuffiness]?.number ?? undefined,
-    photoUrl: fileUrl(p[RECORDS_DB.photo]),
+    ...parsePhotoField(p[RECORDS_DB.photo]),
   };
 }

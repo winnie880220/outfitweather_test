@@ -16,6 +16,7 @@ export function BottomActionBar({
   disabled = false,
   loading = false,
   className = "",
+  buttonRadius = "pill",
 }: {
   primaryLabel: string;
   onPrimary: () => void;
@@ -27,12 +28,15 @@ export function BottomActionBar({
   /** 處理中：維持主按鈕樣式，僅防止重複點擊 */
   loading?: boolean;
   className?: string;
+  /** pill = 全圓角按鈕；card = 與記錄頁卡片一致的 1rem 圓角 */
+  buttonRadius?: "pill" | "card";
 }) {
+  const btnRound = buttonRadius === "card" ? "rounded-2xl" : "rounded-full";
   const primaryBtnClass = disabled
-    ? "h-11 w-full cursor-not-allowed rounded-full bg-white/50 text-sm font-semibold text-slate-400 opacity-50"
+    ? `h-11 w-full cursor-not-allowed ${btnRound} bg-white/50 text-sm font-semibold text-slate-400 opacity-50`
     : loading
-      ? "btn-gradient-primary h-11 w-full cursor-wait rounded-full text-sm font-semibold text-white opacity-90"
-      : "btn-gradient-primary h-11 w-full rounded-full text-sm font-semibold text-white transition-all active:scale-95";
+      ? `btn-gradient-primary h-11 w-full cursor-wait ${btnRound} text-sm font-semibold text-white opacity-90`
+      : `btn-gradient-primary h-11 w-full ${btnRound} text-sm font-semibold text-white transition-all active:scale-95`;
   const primaryDisabled = disabled || loading;
   const sideBtnBase =
     "flex h-12 w-12 shrink-0 items-center justify-center rounded-full border transition-all hover:bg-stone-50 active:scale-95";

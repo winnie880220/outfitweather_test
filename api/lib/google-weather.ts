@@ -105,14 +105,18 @@ export async function getCurrentWeatherFromGoogle(
   lon: number,
   displayName?: string
 ): Promise<WeatherData> {
-  const [current, daily] = await Promise.all([
-    fetchGoogleJson<GoogleCurrentConditionsResponse>(
-      buildGoogleWeatherUrl("currentConditions:lookup", lat, lon)
-    ),
-    fetchGoogleJson<GoogleDailyForecastResponse>(
+  const current = await fetchGoogleJson<GoogleCurrentConditionsResponse>(
+    buildGoogleWeatherUrl("currentConditions:lookup", lat, lon)
+  );
+
+  let daily: GoogleDailyForecastResponse = {};
+  try {
+    daily = await fetchGoogleJson<GoogleDailyForecastResponse>(
       buildGoogleWeatherUrl("forecast/days:lookup", lat, lon, { days: "1" })
-    ),
-  ]);
+    );
+  } catch {
+    /* 日預報非必須；僅影響今日高低溫 */
+  }
 
   const temp = celsius(current.temperature);
   if (typeof temp !== "number") {

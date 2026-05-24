@@ -1,8 +1,8 @@
-import { getOutfitInsights } from "./lib/notion/outfit-insights";
+import { getRegionColorFills } from "./lib/notion/outfit-insights";
 import { isNotionConfigured } from "./lib/env";
 import { getQueryString, sendJson, type VercelRequest, type VercelResponse } from "./lib/vercel";
 
-/** GET /api/outfit-insights?temp=26&delta=1&county=台北市&district=大安區 */
+/** GET /api/region-color-fills?temp=26&delta=1 */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") {
     return sendJson(res, 405, { ok: false, error: "Method not allowed" });
@@ -25,14 +25,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const delta = deltaRaw ? parseFloat(deltaRaw) : 1;
   const safeDelta = Number.isNaN(delta) ? 1 : Math.min(3, Math.max(0, delta));
 
-  const county = getQueryString(req.query, "county") || undefined;
-  const district = getQueryString(req.query, "district") || undefined;
-
   try {
-    const data = await getOutfitInsights(temp, safeDelta, county, district);
-    return sendJson(res, 200, { ok: true, data, source: "notion" });
+    const fills = await getRegionColorFills(temp, safeDelta);
+    return sendJson(res, 200, { ok: true, data: { fills }, source: "notion" });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "穿搭統計失敗";
+    const message = error instanceof Error ? error.message : "區域色票失敗";
     return sendJson(res, 500, { ok: false, error: message });
   }
 }

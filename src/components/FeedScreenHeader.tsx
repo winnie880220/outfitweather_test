@@ -1,4 +1,4 @@
-import { LogOut } from "lucide-react";
+import { ChevronLeft, LogOut } from "lucide-react";
 import type { OutfitInsights } from "../lib/api/outfit-insights";
 import type { WeatherData } from "../types/api";
 
@@ -15,23 +15,63 @@ export function FeedScreenHeader({
   title,
   weather,
   insights,
+  regionLabel,
+  drilldownBackLabel,
+  onBackFromDrilldown,
   onRequestExit,
 }: {
   title: string;
   weather: WeatherData | null;
   insights: OutfitInsights | null;
+  regionLabel?: string | null;
+  drilldownBackLabel?: string | null;
+  onBackFromDrilldown?: () => void;
   onRequestExit: () => void;
 }) {
   const tempLabel = insights
     ? `${insights.tempMin}–${insights.tempMax}°C`
     : `${Math.round(weather?.temp ?? 26)}°`;
 
+  const badge = regionLabel
+    ? `${regionLabel} · ${tempLabel}`
+    : `${tempLabel} 相似天氣`;
+
+  const isDrilldown = Boolean(onBackFromDrilldown && drilldownBackLabel);
+
+  if (isDrilldown) {
+    return (
+      <header className="inspiration-header inspiration-feed-header inspiration-feed-header--drilldown">
+        <div className="inspiration-feed-header__toolbar">
+          <button
+            type="button"
+            onClick={onBackFromDrilldown}
+            className="inspiration-drilldown-back-btn"
+            aria-label={`返回${drilldownBackLabel}靈感`}
+          >
+            <ChevronLeft size={15} strokeWidth={2.25} aria-hidden />
+            <span>返回{drilldownBackLabel}</span>
+          </button>
+          <AppExitButton onClick={onRequestExit} />
+        </div>
+        <div className="inspiration-feed-header__main">
+          <h1 className="inspiration-feed-header__title">{title}</h1>
+          <p className="inspiration-feed-header__region glass-pill" title={badge}>
+            {badge}
+          </p>
+        </div>
+      </header>
+    );
+  }
+
   return (
     <header className="inspiration-header inspiration-feed-header flex shrink-0 items-center justify-between gap-2 px-6">
-      <span className="font-semibold text-stone-800">{title}</span>
+      <span className="min-w-0 truncate text-base font-semibold text-stone-800">{title}</span>
       <div className="flex shrink-0 items-center gap-1.5">
-        <span className="glass-pill rounded-full px-2.5 py-1 text-[11px] font-medium text-stone-600">
-          {tempLabel} 相似天氣
+        <span
+          className="glass-pill max-w-[min(14rem,46vw)] truncate rounded-full px-2.5 py-1 text-[11px] font-medium text-stone-600"
+          title={badge}
+        >
+          {badge}
         </span>
         <AppExitButton onClick={onRequestExit} />
       </div>

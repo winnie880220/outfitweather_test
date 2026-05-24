@@ -5,7 +5,11 @@ import { getCurrentWeather, getWeatherProvider } from "../api/lib/weather";
 import { reverseGeocode, searchLocations } from "../api/lib/geocode";
 import { analyzeOutfitImage } from "../api/lib/gemini/analyze-outfit";
 import { isGeminiConfigured } from "../api/lib/env";
-import { getOutfitInsights } from "../api/lib/notion/outfit-insights";
+import {
+  getOutfitInsights,
+  getRegionColorFills,
+} from "../api/lib/notion/outfit-insights";
+import { getMapColorPoints } from "../api/lib/notion/map-colors";
 import { getRecordByPageId } from "../api/lib/notion/get-record";
 import { createRecordInNotion, updateRecordInNotion } from "../api/lib/notion/records";
 import {
@@ -98,6 +102,14 @@ async function handleApi(
       return send(res, 200, { ok: true, data, source: "gemini" });
     }
 
+    if (url.pathname === "/api/map-colors" && req.method === "GET") {
+      if (!isNotionOk()) {
+        return send(res, 503, { ok: false, error: "Notion 未設定" });
+      }
+      const points = await getMapColorPoints();
+      return send(res, 200, { ok: true, data: { points }, source: "notion" });
+    }
+
     if (url.pathname === "/api/outfit-insights" && req.method === "GET") {
       if (!isNotionOk()) {
         return send(res, 503, { ok: false, error: "Notion 未設定" });
@@ -107,8 +119,23 @@ async function handleApi(
         return send(res, 400, { ok: false, error: "請提供有效的 temp" });
       }
       const delta = parseFloat(url.searchParams.get("delta") ?? "1") || 1;
-      const data = await getOutfitInsights(temp, delta);
+      const county = url.searchParams.get("county")?.trim() || undefined;
+      const district = url.searchParams.get("district")?.trim() || undefined;
+      const data = await getOutfitInsights(temp, delta, county, district);
       return send(res, 200, { ok: true, data, source: "notion" });
+    }
+
+    if (url.pathname === "/api/region-color-fills" && req.method === "GET") {
+      if (!isNotionOk()) {
+        return send(res, 503, { ok: false, error: "Notion 未設定" });
+      }
+      const temp = parseFloat(url.searchParams.get("temp") ?? "");
+      if (Number.isNaN(temp)) {
+        return send(res, 400, { ok: false, error: "請提供有效的 temp" });
+      }
+      const delta = parseFloat(url.searchParams.get("delta") ?? "1") || 1;
+      const fills = await getRegionColorFills(temp, delta);
+      return send(res, 200, { ok: true, data: { fills }, source: "notion" });
     }
 
     if (url.pathname === "/api/notion-records") {

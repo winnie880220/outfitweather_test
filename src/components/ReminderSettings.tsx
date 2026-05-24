@@ -23,11 +23,13 @@ export function ReminderSettingsPanel({
   onChange,
   showToast,
   className = "mt-4",
+  compact = false,
 }: {
   reminder: ReminderConfig;
   onChange: (next: ReminderConfig) => void;
   showToast: (msg: string) => void;
   className?: string;
+  compact?: boolean;
 }) {
   const supported = isNotificationSupported();
   const permission = getNotificationPermission();
@@ -64,49 +66,65 @@ export function ReminderSettingsPanel({
   };
 
   return (
-    <div className={`glass-card-strong box-border rounded-2xl p-4 ${className}`}>
+    <div
+      className={`record-panel glass-card-strong box-border ${
+        compact ? "p-3.5" : "p-4"
+      } ${className}`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+          <p
+            className={`font-semibold text-stone-500 ${
+              compact ? "text-xs" : "text-[10px] uppercase tracking-wider text-slate-400"
+            }`}
+          >
             晚間提醒
           </p>
-          <p className="mt-1 text-sm text-stone-600 leading-snug">
-            拍照記錄後，在設定時間提醒你回來填寫體感
+          <p
+            className={`mt-1 leading-snug text-stone-600 ${
+              compact ? "text-[13px]" : "text-sm"
+            }`}
+          >
+            記錄完成後，於設定時間提醒你填寫體感
           </p>
         </div>
         <button
           type="button"
           onClick={() => void handleToggle()}
           disabled={!supported}
-          className={`shrink-0 flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${
+          className={`shrink-0 flex items-center justify-center transition-colors ${
+            compact ? "h-9 w-9" : "h-10 w-10"
+          } ${
             reminder.enabled
               ? "bg-[#378ADD] text-white"
               : "bg-stone-100 text-stone-400"
           } disabled:opacity-50`}
           aria-label={reminder.enabled ? "關閉晚間提醒" : "開啟晚間提醒"}
         >
-          {reminder.enabled ? <Bell size={18} /> : <BellOff size={18} />}
+          {reminder.enabled ? <Bell size={compact ? 16 : 18} /> : <BellOff size={compact ? 16 : 18} />}
         </button>
       </div>
 
       {reminder.enabled && (
-        <label className="mt-3 flex items-center justify-between gap-3">
+        <label className="mt-2.5 flex items-center justify-between gap-3 border-t border-stone-100 pt-2.5">
           <span className="text-xs font-medium text-stone-500">提醒時間</span>
           <input
             type="time"
             value={formatTime(reminder.hour, reminder.minute)}
             onChange={(e) => handleTimeChange(e.target.value)}
-            className="rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-sm text-stone-800"
+            className="rounded-lg border border-stone-200 bg-white px-2 py-1 text-xs text-stone-800"
           />
         </label>
       )}
 
       {!supported && (
-        <p className="mt-2 text-xs text-amber-700">此環境不支援推播，仍可用晚間連結開啟填寫。</p>
+        <p className="record-panel__note mt-2 text-xs leading-relaxed text-amber-800/90">
+          此環境不支援推播，仍可用晚間連結開啟填寫。
+        </p>
       )}
       {supported && permission === "denied" && (
-        <p className="mt-2 text-xs text-amber-700">
-          通知權限已拒絕，請至瀏覽器網站設定開啟；或安裝到主畫面後再試（iOS 支援有限）。
+        <p className="record-panel__note mt-2 text-xs leading-relaxed text-amber-800/90">
+          通知權限已拒絕，請至瀏覽器設定開啟。
         </p>
       )}
     </div>

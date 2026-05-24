@@ -46,9 +46,15 @@ export interface NotionRecordPayload {
   uvIndex?: number;
   upperBodyTags?: string[];
   lowerBodyTags?: string[];
+  /** Notion「color」Multi-select */
+  colors?: string[];
   breathability?: number;
   wrapping?: number;
   stuffiness?: number;
+  /** 使用者文字回饋（穿搭感受）→ Notion feedback */
+  feedback?: string;
+  /** 記錄當下該區顏色排行第一 → Notion CurrentRanking */
+  currentRanking?: string;
   photoUrl?: string;
   /** 前端傳入，伺服器上傳至 Notion Photo 後不寫入 properties */
   photoBase64?: string;

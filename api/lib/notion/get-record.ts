@@ -1,6 +1,7 @@
 import type { ApiResponse } from "../types";
 import { notionRequest } from "./client";
 import { parseNotionPage, type NotionProp } from "./parse-page";
+import { hydrateRecordPhotoUrls } from "./resolve-photo";
 
 export type OutfitRecordSnapshot = {
   pageId: string;
@@ -33,6 +34,7 @@ export async function getRecordByPageId(
     if (!parsed) {
       return { ok: false, error: "找不到穿搭紀錄" };
     }
+    await hydrateRecordPhotoUrls([parsed]);
 
     let recordedTime: string | undefined;
     if (parsed.startedAt) {

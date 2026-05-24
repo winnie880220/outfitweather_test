@@ -1,8 +1,28 @@
 import type { ApiResponse, NotionRecordPayload } from "../types";
 import { getNotionDatabaseId, isNotionConfigured } from "../env";
 import { notionRequest } from "./client";
+import { getRegionTopColorForLocation } from "./outfit-insights";
 import { toNotionProperties } from "./properties";
 import { uploadImageToNotion } from "./upload-photo";
+
+/** 寫入 CurrentRanking：該區在此氣溫下顏色排行第一 */
+async function withCurrentRanking(
+  payload: NotionRecordPayload
+): Promise<NotionRecordPayload> {
+  if (payload.currentRanking?.trim()) return payload;
+  if (!payload.location?.trim() || payload.temperature === undefined) return payload;
+
+  try {
+    const top = await getRegionTopColorForLocation(
+      payload.temperature,
+      payload.location
+    );
+    if (top) return { ...payload, currentRanking: top };
+  } catch (error) {
+    console.warn("[notion] CurrentRanking:", error);
+  }
+  return payload;
+}
 
 /** 將 photoBase64 上傳至 Notion，回傳可寫入 properties 的 payload */
 async function attachPhotoToPayload(
@@ -45,7 +65,8 @@ export async function createRecordInNotion(
   }
 
   try {
-    const { notionPayload, photoWarning } = await attachPhotoToPayload(payload);
+    const enriched = await withCurrentRanking(payload);
+    const { notionPayload, photoWarning } = await attachPhotoToPayload(enriched);
 
     const page = await notionRequest<{ id: string }>("/pages", {
       method: "POST",

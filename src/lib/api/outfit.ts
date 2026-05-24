@@ -9,6 +9,7 @@ export type OutfitTagAnchor = {
 export type OutfitAnalysis = {
   upperBodyTags: string[];
   lowerBodyTags: string[];
+  colors: string[];
   tagAnchors?: OutfitTagAnchor[];
 };
 

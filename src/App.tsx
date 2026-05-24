@@ -8,6 +8,9 @@ import { BottomActionBar } from "./components/BottomActionBar";
 import { FeelSliderField } from "./components/FeelSliderField";
 import { FEEL_TONES } from "./lib/feel-metrics";
 import { OutfitStatsPanel } from "./components/OutfitStatsPanel";
+import { TaiwanOutfitMap, type MapViewMode } from "./components/TaiwanOutfitMap";
+import { LocationRegionPicker } from "./components/LocationRegionPicker";
+import { OutfitColorChip } from "./components/OutfitColorChip";
 import {
   FeedbackOutfitCard,
   type FeedbackOutfitContext,
@@ -26,12 +29,38 @@ import {
   ensureActiveUserRecordApi,
   fetchCurrentWeather,
   fetchOutfitInsights,
-  formatGeoLabel,
+  fetchRegionColorFills,
   reverseGeocode,
-  searchLocations,
   updateRecord,
 } from "./lib/api";
-import type { InspirationItem, OutfitAnalysis, OutfitInsights } from "./lib/api";
+import type {
+  InspirationItem,
+  OutfitAnalysis,
+  OutfitInsights,
+  RegionColorFill,
+} from "./lib/api";
+import {
+  buildUserLocationFromPicker,
+  isTaipeiWholeAreaPicker,
+  parseLocationToPickerValue,
+  TAIPEI_COUNTY,
+  TAIPEI_WHOLE_AREA,
+  taipeiDistrictFromPicker,
+  type LocationPickerValue,
+} from "../lib/location-picker";
+import { buildRecordWeatherMetrics } from "../lib/weather-metrics";
+import { limitOutfitColors } from "../lib/outfit-colors";
+import {
+  isSameRegion,
+  locationPickerToRegion,
+  mapRegionToLocation,
+  regionKey,
+  regionLabel,
+  TAIPEI_WHOLE_REGION,
+  type MapRegion,
+} from "../lib/map-region";
+import { parseTaipeiDistrict, type TaipeiDistrict } from "../lib/taipei-district";
+import { parseLocationToCounty, type TaiwanCounty } from "../lib/taiwan-county";
 import { captureVideoFrame, compressDataUrl } from "./lib/image";
 import { hydratePendingRecordFromNotion } from "./lib/pending-record-hydrate";
 import { buildRecordUrl, clearRecordFromUrl, getRecordIdFromUrl } from "./lib/record-url";
@@ -66,8 +95,8 @@ import {
   type ActiveUserRecord,
   type ReminderSettings,
 } from "./lib/session-storage";
+import { addMapContribution } from "./lib/map-contributions";
 import type {
-  GeoSearchResult,
   ParsedOutfitImage,
   UserGender,
   UserLocation,
@@ -82,6 +111,7 @@ import {
   Shirt, 
   MapPin, 
   ArrowRight, 
+  ChevronLeft,
   ChevronRight, 
   Heart,
   Droplets,
@@ -115,6 +145,7 @@ const INITIAL_WARDROBE: Outfit[] = [
     location: "台北",
     feelMetrics: { breathability: 60, wrapping: 50, stuffiness: 40 },
     tags: [],
+    colors: [],
     humidity: "65%"
   },
   {
@@ -128,6 +159,7 @@ const INITIAL_WARDROBE: Outfit[] = [
     location: "新北",
     feelMetrics: { breathability: 40, wrapping: 65, stuffiness: 25 },
     tags: [],
+    colors: [],
     humidity: "55%"
   },
   {
@@ -141,6 +173,7 @@ const INITIAL_WARDROBE: Outfit[] = [
     location: "台北",
     feelMetrics: { breathability: 30, wrapping: 45, stuffiness: 85 },
     tags: [],
+    colors: [],
     humidity: "82%"
   }
 ];
@@ -309,133 +342,15 @@ const WelcomeScreen = ({
   setUserName,
   userGender,
   setUserGender,
-  locationInput,
-  setLocationInput,
-  userLocation,
-  setUserLocation,
   startApp,
-  showToast,
 }: {
   userName: string;
   setUserName: (v: string) => void;
   userGender: UserGender | null;
   setUserGender: (v: UserGender | null) => void;
-  locationInput: string;
-  setLocationInput: (v: string) => void;
-  userLocation: UserLocation | null;
-  setUserLocation: (v: UserLocation | null) => void;
   startApp: () => void;
-  showToast: (msg: string) => void;
 }) => {
-  const [suggestions, setSuggestions] = useState<GeoSearchResult[]>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [searching, setSearching] = useState(false);
-  const [locating, setLocating] = useState(false);
-  const locationWrapRef = useRef<HTMLDivElement>(null);
-
-  const canStart =
-    userName.trim().length > 0 && userGender !== null && userLocation !== null;
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (locationWrapRef.current && !locationWrapRef.current.contains(e.target as Node)) {
-        setShowDropdown(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    if (userLocation && locationInput === userLocation.name) return;
-
-    const q = locationInput.trim();
-    if (q.length < 2) {
-      setSuggestions([]);
-      setShowDropdown(false);
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const results = await searchLocations(q);
-        setSuggestions(results);
-        setShowDropdown(results.length > 0);
-        if (results.length === 0 && q.length >= 2) {
-          showToast("找不到相符地點，請換關鍵字或按右側定位");
-        }
-      } catch (error) {
-        setSuggestions([]);
-        setShowDropdown(false);
-        const msg = error instanceof Error ? error.message : "地點搜尋失敗";
-        showToast(msg.includes("fetch") ? "地點服務連線失敗，請稍後再試" : msg);
-      } finally {
-        setSearching(false);
-      }
-    }, 350);
-
-    return () => clearTimeout(timer);
-  }, [locationInput, userLocation]);
-
-  const handleSelectSuggestion = (item: GeoSearchResult) => {
-    const name = formatGeoLabel(item);
-    setLocationInput(name);
-    setUserLocation({ name, lat: parseFloat(item.lat), lon: parseFloat(item.lon) });
-    setShowDropdown(false);
-    setSuggestions([]);
-  };
-
-  const handleLocationInputChange = (value: string) => {
-    setLocationInput(value);
-    if (userLocation && value !== userLocation.name) {
-      setUserLocation(null);
-    }
-  };
-
-  const handleUseCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      showToast("此裝置不支援定位功能");
-      return;
-    }
-
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const { latitude: lat, longitude: lon } = pos.coords;
-          const name = await reverseGeocode(lat, lon);
-          setLocationInput(name);
-          setUserLocation({ name, lat, lon });
-          setShowDropdown(false);
-          setSuggestions([]);
-        } catch (error) {
-          const msg = error instanceof Error ? error.message : "";
-          showToast(
-            msg
-              ? `無法解析位置：${msg}`
-              : "無法解析目前位置，請手動輸入地點"
-          );
-        } finally {
-          setLocating(false);
-        }
-      },
-      (err) => {
-        const code = (err as GeolocationPositionError)?.code;
-        if (code === 1) {
-          showToast("請在瀏覽器允許定位權限後再試");
-        } else if (code === 3) {
-          showToast("定位逾時，請到戶外或改用手動輸入");
-        } else {
-          showToast("無法取得定位，請允許權限或手動輸入");
-        }
-        setLocating(false);
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
-    );
-  };
-
-  const previewLocation = userLocation?.name?.trim() || locationInput.trim();
+  const canStart = userName.trim().length > 0 && userGender !== null;
 
   return (
     <motion.div
@@ -508,7 +423,7 @@ const WelcomeScreen = ({
                 <span className="min-w-0 truncate">
                   嗨，<strong className="font-semibold text-stone-800">{userName.trim()}</strong>
                   <span className="text-stone-400"> · </span>
-                  <span className="text-stone-600">{previewLocation}</span>
+                  <span className="text-stone-600">{userGender}</span>
                 </span>
               </p>
             </motion.div>
@@ -520,7 +435,6 @@ const WelcomeScreen = ({
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.12, duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
           className="welcome-setup-card"
-          ref={locationWrapRef}
         >
           <motion.div
             initial={{ opacity: 0, y: 8 }}
@@ -571,65 +485,6 @@ const WelcomeScreen = ({
               ))}
             </select>
           </motion.div>
-
-          <div className="welcome-field-divider" aria-hidden />
-
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.24, duration: 0.35 }}
-          >
-            <label htmlFor="welcome-location" className="welcome-field-label">
-              你的地點
-            </label>
-            <input
-              id="welcome-location"
-              className="welcome-field-input"
-              placeholder="例如：台北"
-              value={locationInput}
-              onChange={(e) => handleLocationInputChange(e.target.value)}
-              onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
-              autoComplete="off"
-            />
-
-            <button
-              type="button"
-              onClick={handleUseCurrentLocation}
-              disabled={locating}
-              className="welcome-locate-btn"
-            >
-              <MapPin size={14} className="shrink-0" />
-              {locating ? "定位中..." : "使用我目前定位"}
-            </button>
-          </motion.div>
-
-          <AnimatePresence>
-            {showDropdown && (
-              <motion.ul
-                initial={{ opacity: 0, y: -4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                className="app-scroll welcome-suggestions"
-              >
-                {searching && (
-                  <li className="px-4 py-3 text-sm text-stone-400">搜尋中...</li>
-                )}
-                {!searching &&
-                  suggestions.map((item) => (
-                    <li key={item.place_id}>
-                      <button
-                        type="button"
-                        onClick={() => handleSelectSuggestion(item)}
-                        className="welcome-suggestion-item"
-                      >
-                        <MapPin size={14} className="shrink-0 text-[#8b7355] mt-0.5" />
-                        <span className="line-clamp-2">{formatGeoLabel(item)}</span>
-                      </button>
-                    </li>
-                  ))}
-              </motion.ul>
-            )}
-          </AnimatePresence>
         </motion.div>
 
         <motion.div
@@ -657,7 +512,7 @@ const WelcomeScreen = ({
                 exit={{ opacity: 0 }}
                 className="welcome-hint"
               >
-                請先填寫名字、性別和地點
+                請先填寫名字與性別
               </motion.p>
             ) : (
               <motion.p
@@ -667,7 +522,7 @@ const WelcomeScreen = ({
                 exit={{ opacity: 0 }}
                 className="welcome-hint welcome-hint--ready"
               >
-                準備好了，進去看看今天的天氣
+                進入首頁後會先定位，也可自行切換地區
               </motion.p>
             )}
           </AnimatePresence>
@@ -679,74 +534,152 @@ const WelcomeScreen = ({
 
 const HomeScreen = ({
   userName,
-  setScreen,
-  weather,
-  loading,
-  insights,
-  insightsLoading,
+  mapWeather,
+  mapWeatherLoading,
+  locationPicker,
+  onLocationPickerChange,
+  locating,
+  onRequestLocate,
+  regionColorFills,
+  userCounty,
+  userDistrict,
+  mapView,
+  onMapViewChange,
+  selectedRegion,
+  onSelectRegion,
+  regionInsights,
+  regionInsightsLoading,
+  onOpenRegionInspiration,
   showPendingBanner,
   onContinuePending,
   onRequestExit,
 }: {
   userName: string;
-  setScreen: (s: Screen) => void;
-  weather: WeatherData | null;
-  loading: boolean;
-  insights: OutfitInsights | null;
-  insightsLoading: boolean;
+  mapWeather: WeatherData | null;
+  mapWeatherLoading: boolean;
+  locationPicker: LocationPickerValue;
+  onLocationPickerChange: (value: LocationPickerValue) => void;
+  locating: boolean;
+  onRequestLocate: () => void;
+  regionColorFills: RegionColorFill[];
+  userCounty: TaiwanCounty | null;
+  userDistrict: TaipeiDistrict | null;
+  mapView: MapViewMode;
+  onMapViewChange: (view: MapViewMode) => void;
+  selectedRegion: MapRegion | null;
+  onSelectRegion: (region: MapRegion | null) => void;
+  regionInsights: OutfitInsights | null;
+  regionInsightsLoading: boolean;
+  onOpenRegionInspiration: () => void;
   showPendingBanner: boolean;
   onContinuePending: () => void;
   onRequestExit: () => void;
 }) => (
-  <div className="screen-scroll app-scroll app-screen-gradient">
-    <div className="app-inset pt-4 pb-[var(--nav-safe-bottom)]">
+  <div className="home-map-screen app-screen-gradient flex min-h-0 flex-col">
+    <div className="app-inset flex min-h-0 flex-1 flex-col pt-3 pb-[var(--nav-safe-bottom)]">
       {showPendingBanner ? (
         <PendingFeedbackBanner onContinue={onContinuePending} />
       ) : null}
-      <header className="mb-3 flex items-center justify-between gap-2">
-        <span className="min-w-0 shrink text-sm font-medium text-stone-800">嗨，{userName}！</span>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <span className="glass-pill flex max-w-[11rem] items-center gap-1 truncate rounded-full px-2.5 py-1 text-[11px] text-stone-600">
-            <MapPin size={12} className="shrink-0 text-stone-500" />
-            <span className="truncate">
-              {loading ? "定位中..." : weather?.locationName || "定位失敗"}
-            </span>
-          </span>
-          <AppExitButton onClick={onRequestExit} />
-        </div>
+      <header className="mb-2 flex shrink-0 items-center justify-between gap-2">
+        <span className="min-w-0 text-sm font-medium text-stone-800">嗨，{userName}！</span>
+        <AppExitButton onClick={onRequestExit} />
       </header>
 
-      <div className="flex flex-col gap-3">
-      {loading ? (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="glass-card-strong flex flex-col items-center justify-center rounded-2xl p-10 animate-pulse"
-        >
-          <div className="mb-3 h-10 w-10 rounded-full bg-stone-200/80" />
-          <div className="h-3 w-20 rounded bg-stone-200/80" />
-        </motion.div>
-      ) : (
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-          <WeatherSummaryCard
-            weather={weather}
-            metrics={[
-              { label: "濕度", val: `${weather?.humidity || 0}%` },
-              { label: "降雨", val: `${weather?.rainProb || 0}%` },
-              { label: "體感", val: `${Math.round(weather?.apparentTemp || 0)}°` },
-              { label: "UV", val: `${weather?.uvIndex || 0}` },
-            ]}
-          />
-        </motion.div>
-      )}
-
-        <OutfitStatsPanel insights={insights} loading={insightsLoading} />
-
-        <BottomActionBar
-          solo
-          primaryLabel="看大家的穿搭"
-          onPrimary={() => setScreen("inspiration")}
+      <div className="home-location-toolbar mb-2 shrink-0">
+        <LocationRegionPicker
+          compact
+          value={locationPicker}
+          onChange={onLocationPickerChange}
+          locating={locating}
+          onRequestLocate={onRequestLocate}
         />
+      </div>
+
+      <div className="home-map-stack relative flex min-h-0 flex-1 flex-col">
+        <TaiwanOutfitMap
+          regionColorFills={regionColorFills}
+          weather={mapWeather}
+          weatherLoading={mapWeatherLoading}
+          userCounty={userCounty}
+          userDistrict={userDistrict}
+          mapView={mapView}
+          onMapViewChange={onMapViewChange}
+          selectedRegion={selectedRegion}
+          onSelectRegion={onSelectRegion}
+        />
+
+        <AnimatePresence>
+          {selectedRegion ? (
+            <motion.div
+              key="region-sheet"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="home-region-sheet-overlay absolute inset-0 z-[600] flex flex-col"
+            >
+              <button
+                type="button"
+                className="home-region-sheet-backdrop min-h-0 flex-1 w-full cursor-default border-0 bg-stone-900/10 p-0"
+                aria-label="關閉區域排行榜"
+                onClick={() => onSelectRegion(null)}
+              />
+              <motion.div
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 16 }}
+                transition={{ duration: 0.22 }}
+                className="home-county-sheet shrink-0"
+              >
+                {mapView === "taipei-districts" &&
+                selectedRegion.level === "district" ? (
+                  <div className="home-county-sheet__nav">
+                    <button
+                      type="button"
+                      className="home-taipei-overview-btn"
+                      onClick={() =>
+                        onSelectRegion({ level: "county", county: TAIPEI_COUNTY })
+                      }
+                    >
+                      <ChevronLeft size={14} aria-hidden />
+                      整個台北市
+                    </button>
+                  </div>
+                ) : null}
+                <div className="home-county-sheet__head">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">
+                      此區穿搭
+                    </p>
+                    <h2 className="text-base font-bold text-stone-800">
+                      {regionLabel(selectedRegion)}
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onSelectRegion(null)}
+                    className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold text-stone-500 ring-1 ring-stone-200/90"
+                  >
+                    關閉
+                  </button>
+                </div>
+                <div className="px-3 pb-3">
+                  <OutfitStatsPanel
+                    insights={regionInsights}
+                    loading={regionInsightsLoading}
+                  />
+                  <div className="mt-2">
+                    <BottomActionBar
+                      solo
+                      primaryLabel={`看${regionLabel(selectedRegion)}穿搭靈感`}
+                      onPrimary={onOpenRegionInspiration}
+                    />
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </div>
     </div>
   </div>
@@ -830,6 +763,11 @@ const RecordScreen = ({
     }
   };
 
+  const openPhotoLibrary = () => {
+    setShowActionSheet(false);
+    window.setTimeout(() => fileInputRef.current?.click(), 0);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -865,10 +803,14 @@ const RecordScreen = ({
   };
 
   return (
-    <div className="screen-scroll app-scroll app-screen-gradient">
-      <div className="app-inset pt-4 pb-[var(--nav-safe-bottom)]">
-      <header className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="font-semibold text-stone-800">記錄今日穿搭</h2>
+    <div
+      className={`record-screen-layout app-screen-gradient ${
+        hasPhoto && !hasUploadedToday ? "record-screen-layout--with-extras" : ""
+      }`}
+    >
+      <div className="record-screen-top app-inset">
+      <header className="record-screen-header flex items-center justify-between gap-2">
+        <h2 className="text-base font-semibold text-stone-800">記錄今日穿搭</h2>
         <div className="flex shrink-0 items-center gap-2">
           {isCameraOpen ? (
             <button
@@ -888,23 +830,37 @@ const RecordScreen = ({
       </header>
 
       <WeatherSummaryCard
-        className="mb-3"
+        compact
+        className="record-screen-weather"
         weather={weather}
-        metrics={[
-          { label: "濕度", val: `${weather?.humidity || 0}%` },
-          { label: "降雨", val: `${weather?.rainProb || 0}%` },
-          { label: "體感", val: `${Math.round(weather?.apparentTemp || 0)}°` },
-          { label: "時間", val: currentTime || "--:--" },
-        ]}
+        metrics={buildRecordWeatherMetrics(weather)}
       />
+      </div>
 
-      <div className="relative mb-3 w-full">
+      <div className="record-screen-photo min-h-0 w-full flex-1">
+        <div className="app-inset record-screen-photo-inset">
+        <input
+          type="file"
+          ref={fileInputRef}
+          className="sr-only"
+          accept="image/*"
+          onChange={handleFileChange}
+        />
+
         <motion.div
           whileTap={hasUploadedToday ? undefined : { scale: 0.98 }}
           onClick={() =>
-            !hasUploadedToday && !hasPhoto && !recordSaving && setShowActionSheet(true)
+            !hasUploadedToday &&
+            !hasPhoto &&
+            !recordSaving &&
+            !showActionSheet &&
+            setShowActionSheet(true)
           }
-          className={`record-photo-frame h-64 rounded-3xl flex flex-col items-center justify-center transition-all overflow-hidden ${
+          className={`record-photo-frame flex h-full w-full flex-col overflow-hidden transition-all ${
+            hasPhoto || isCameraOpen
+              ? "record-photo-frame--filled"
+              : "record-photo-frame--empty items-center justify-center"
+          } ${
             hasUploadedToday
               ? "record-photo-frame--uploaded cursor-default"
               : hasPhoto
@@ -914,13 +870,19 @@ const RecordScreen = ({
                   : "border-dashed border-stone-200/80 bg-slate-50/80 cursor-pointer hover:border-stone-300"
           }`}
         >
+          <span
+            className={`record-photo-time-badge ${isCameraOpen ? "record-photo-time-badge--on-dark" : ""}`}
+            aria-label={`記錄時間 ${currentTime || "--:--"}`}
+          >
+            {currentTime || "--:--"}
+          </span>
           {isCameraOpen ? (
-            <div className="relative w-full h-full">
+            <div className="record-photo-stage relative h-full min-h-0 w-full flex-1 overflow-hidden bg-black">
               <video 
                 ref={videoRef} 
                 autoPlay 
                 playsInline 
-                className="w-full h-full object-cover rounded-3xl"
+                className="h-full w-full object-cover"
               />
               <button 
                 onClick={capturePhoto}
@@ -930,40 +892,41 @@ const RecordScreen = ({
               </button>
             </div>
           ) : hasPhoto && photoPreviewUrl ? (
-            <div className="relative h-full w-full bg-[#faf7f2]">
-              <img
-                src={photoPreviewUrl}
-                alt="今日穿搭"
-                className="h-full w-full object-contain object-center rounded-3xl"
-              />
-              {(() => {
-                const tags =
-                  outfitAnalysisPreview ?? uploadedOutfitTags;
-                const showOverlay =
-                  outfitAnalysisLoading ||
-                  outfitAnalysisPreview ||
-                  (hasUploadedToday &&
-                    tags &&
-                    (tags.upperBodyTags.length > 0 ||
-                      tags.lowerBodyTags.length > 0));
-                if (!showOverlay) return null;
-                return (
-                  <OutfitPhotoTagOverlay
-                    upperBodyTags={tags?.upperBodyTags ?? []}
-                    lowerBodyTags={tags?.lowerBodyTags ?? []}
-                    tagAnchors={tags?.tagAnchors}
-                    loading={outfitAnalysisLoading && !outfitAnalysisPreview}
-                  />
-                );
-              })()}
+            <>
+              <div className="record-photo-stage relative min-h-0 w-full flex-1 overflow-hidden bg-[#faf7f2]">
+                <img
+                  src={photoPreviewUrl}
+                  alt="今日穿搭"
+                  className="h-full w-full object-contain object-center"
+                />
+                {(() => {
+                  const tags =
+                    outfitAnalysisPreview ?? uploadedOutfitTags;
+                  const showOverlay =
+                    outfitAnalysisLoading ||
+                    outfitAnalysisPreview ||
+                    (hasUploadedToday &&
+                      tags &&
+                      (tags.upperBodyTags.length > 0 ||
+                        tags.lowerBodyTags.length > 0 ||
+                        (tags.colors?.length ?? 0) > 0));
+                  if (!showOverlay) return null;
+                  return (
+                    <OutfitPhotoTagOverlay
+                      upperBodyTags={tags?.upperBodyTags ?? []}
+                      lowerBodyTags={tags?.lowerBodyTags ?? []}
+                      tagAnchors={tags?.tagAnchors}
+                      loading={outfitAnalysisLoading && !outfitAnalysisPreview}
+                    />
+                  );
+                })()}
+              </div>
               <div
-                className={`absolute inset-x-0 bottom-0 z-[3] p-3 text-center ${
-                  outfitAnalysisLoading
-                    ? "pointer-events-none opacity-0"
-                    : "record-photo-caption"
+                className={`record-photo-meta shrink-0 text-center ${
+                  outfitAnalysisLoading ? "pointer-events-none opacity-0" : ""
                 }`}
               >
-                <div className="record-photo-caption__text text-xs">
+                <p className="record-photo-meta__status">
                   {hasUploadedToday
                     ? "照片已上傳"
                     : outfitAnalysisPreview ||
@@ -971,8 +934,23 @@ const RecordScreen = ({
                           (uploadedOutfitTags.upperBodyTags.length > 0 ||
                             uploadedOutfitTags.lowerBodyTags.length > 0))
                       ? "AI 已標註穿搭單品"
-                      : "照片已選取 · 氣象已綁定"}
-                </div>
+                      : "已選取照片，氣象已綁定"}
+                </p>
+                {(() => {
+                  const palette = limitOutfitColors(
+                    outfitAnalysisPreview?.colors ??
+                      uploadedOutfitTags?.colors ??
+                      []
+                  );
+                  if (!palette.length || outfitAnalysisLoading) return null;
+                  return (
+                    <div className="mt-1.5 flex flex-wrap justify-center gap-1.5">
+                      {palette.map((color) => (
+                        <OutfitColorChip key={color} name={color} variant="on-photo" />
+                      ))}
+                    </div>
+                  );
+                })()}
                 {!hasUploadedToday && !outfitAnalysisLoading && (
                   <button
                     type="button"
@@ -980,101 +958,119 @@ const RecordScreen = ({
                       e.stopPropagation();
                       onClearImage();
                     }}
-                    className="mt-1 text-[10px] font-medium text-stone-500 underline decoration-stone-300 underline-offset-2"
+                    className="record-photo-meta__retake"
                   >
                     重新拍攝
                   </button>
                 )}
               </div>
-            </div>
+            </>
           ) : (
-            <div className="text-center">
-              <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-sm mx-auto mb-3">
-                <Camera size={24} className="text-slate-400" />
+            <div className="record-photo-empty text-center">
+              <div className="record-photo-empty__icon mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-sm">
+                <Camera size={24} className="text-stone-400" />
               </div>
-              <div className="text-sm font-medium text-slate-600">點擊拍照 / 上傳今日穿搭</div>
-              <div className="text-[11px] text-slate-400 mt-1">系統自動綁定當下氣象數據</div>
+              <p className="text-sm font-medium text-stone-600">點擊拍照或上傳今日穿搭</p>
+              <p className="record-photo-empty__hint mt-1">自動綁定此刻天氣</p>
             </div>
           )}
-        </motion.div>
 
-        <AnimatePresence>
-          {showActionSheet && !hasUploadedToday && (
-            <>
-              <motion.div 
+          <AnimatePresence>
+            {showActionSheet && !hasUploadedToday && !hasPhoto && (
+              <motion.div
+                key="record-photo-action-sheet"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                onClick={() => setShowActionSheet(false)}
-                className="absolute inset-0 bg-white/80 backdrop-blur-sm z-20 rounded-3xl"
-              />
-              <motion.div 
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: 20, opacity: 0 }}
-                className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 p-8"
+                transition={{ duration: 0.18 }}
+                className="record-photo-action-sheet"
+                onClick={(e) => e.stopPropagation()}
               >
-                <button 
-                  onClick={startCamera}
-                  className="w-full py-4 bg-stone-800 text-white rounded-2xl flex items-center justify-center gap-2 font-bold shadow-lg"
-                >
-                  <Camera size={20} /> 開啟自拍鏡頭
-                </button>
-                <button 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-4 bg-white border border-slate-200 text-slate-700 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-md"
-                >
-                  <Upload size={20} /> 從相簿上傳
-                </button>
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  className="hidden" 
-                  accept="image/*" 
-                  onChange={handleFileChange}
+                <button
+                  type="button"
+                  aria-label="關閉"
+                  className="record-photo-action-sheet__backdrop border-0 p-0"
+                  onClick={() => setShowActionSheet(false)}
                 />
+                <motion.div
+                  initial={{ y: 12, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: 12, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="record-photo-action-sheet__actions"
+                >
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void startCamera();
+                    }}
+                    className="flex w-full items-center justify-center gap-2 bg-stone-800 py-3.5 text-sm font-bold text-white shadow-lg"
+                  >
+                    <Camera size={20} /> 開啟自拍鏡頭
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openPhotoLibrary();
+                    }}
+                    className="flex w-full items-center justify-center gap-2 border border-slate-200 bg-white py-3.5 text-sm font-bold text-slate-700 shadow-md"
+                  >
+                    <Upload size={20} /> 從相簿上傳
+                  </button>
+                </motion.div>
               </motion.div>
-            </>
-          )}
-        </AnimatePresence>
+            )}
+          </AnimatePresence>
+        </motion.div>
+        </div>
       </div>
 
-      {!hasUploadedToday && hasPhoto && (
-        <ReminderSettingsPanel
-          reminder={reminder}
-          onChange={onReminderChange}
-          showToast={showToast}
-          className="mb-4 mt-0 w-full"
-        />
-      )}
+      {!hasUploadedToday && hasPhoto ? (
+        <div className="record-screen-extras app-inset shrink-0">
+          <div className="record-screen-stack">
+            <label className="record-panel record-photo-consent flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={photoShareConsent}
+                onChange={(e) => setPhotoShareConsent(e.target.checked)}
+                className="record-photo-consent__checkbox mt-0.5 h-4 w-4 shrink-0 rounded"
+              />
+              <span className="record-photo-consent__text">
+                我同意此照片可作為其他使用者的
+                <span className="font-semibold text-stone-700">穿搭靈感</span>
+                （僅照片與天氣，不含姓名）。
+              </span>
+            </label>
+            <ReminderSettingsPanel
+              compact
+              reminder={reminder}
+              onChange={onReminderChange}
+              showToast={showToast}
+              className="w-full"
+            />
+          </div>
+        </div>
+      ) : null}
 
-      {!hasUploadedToday && hasPhoto && (
-        <label className="record-photo-consent mb-4 flex cursor-pointer gap-3 px-4 py-3.5">
-          <input
-            type="checkbox"
-            checked={photoShareConsent}
-            onChange={(e) => setPhotoShareConsent(e.target.checked)}
-            className="record-photo-consent__checkbox mt-0.5 h-4 w-4 shrink-0 rounded"
-          />
-          <span className="record-photo-consent__text text-xs leading-relaxed">
-            我已了解：這張穿搭照片可能會出現在其他使用者的
-            <span className="font-semibold">靈感參考</span>
-            中，協助大家在相近天氣下選擇穿搭（僅分享照片與天氣資訊，不含個人名字）。
-          </span>
-        </label>
-      )}
-
-      <div className="pt-2 pb-2">
+      <div className="record-screen-dock app-inset">
         {hasUploadedToday ? (
           <>
-            <BottomActionBar solo primaryLabel="前往回饋" onPrimary={onGoToFeedback} />
-            <p className="mt-3 text-center text-xs leading-relaxed text-stone-400">
+            <BottomActionBar
+              solo
+              buttonRadius="card"
+              primaryLabel="前往回饋"
+              onPrimary={onGoToFeedback}
+            />
+            <p className="record-screen-dock-hint">
               你需要完成體感回饋才可以上傳新穿搭
             </p>
           </>
         ) : (
           <BottomActionBar
             solo
+            buttonRadius="card"
             primaryLabel={
               recordSaving
                 ? outfitAnalysisLoading
@@ -1087,7 +1083,6 @@ const RecordScreen = ({
             loading={recordSaving}
           />
         )}
-      </div>
       </div>
     </div>
   );
@@ -1275,6 +1270,12 @@ export default function App() {
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [locationInput, setLocationInput] = useState("");
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
+  const [locationPicker, setLocationPicker] = useState<LocationPickerValue>({
+    county: TAIPEI_COUNTY,
+    district: TAIPEI_WHOLE_AREA,
+  });
+  const [locating, setLocating] = useState(false);
+  const homeGeoRequested = useRef(false);
   const [notionPageId, setNotionPageId] = useState<string | null>(null);
   /** 當日＋氣溫區間的 active 列（收藏／記錄／回饋皆寫入此列） */
   const [activeUserRecord, setActiveUserRecord] = useState<ActiveUserRecord | null>(
@@ -1286,7 +1287,42 @@ export default function App() {
   const [hasPendingFeedback, setHasPendingFeedback] = useState(false);
   /** 待回饋 session 更新後觸發 UI 重讀（含從 Notion 還原照片） */
   const [pendingRevision, setPendingRevision] = useState(0);
+  const [regionColorFills, setRegionColorFills] = useState<RegionColorFill[]>([]);
+  const [mapView, setMapView] = useState<MapViewMode>("counties");
+  const [selectedRegion, setSelectedRegion] = useState<MapRegion | null>(null);
+  const [regionWeather, setRegionWeather] = useState<WeatherData | null>(null);
+  const [regionWeatherLoading, setRegionWeatherLoading] = useState(false);
+  const [regionInsights, setRegionInsights] = useState<OutfitInsights | null>(null);
+  const regionInsightsRef = useRef<OutfitInsights | null>(null);
+  regionInsightsRef.current = regionInsights;
+  const [regionInsightsLoading, setRegionInsightsLoading] = useState(false);
+  /** 從地圖「看○○穿搭靈感」進入的單次篩選（可返回首頁地區選單設定） */
+  const [inspirationDrilldownRegion, setInspirationDrilldownRegion] =
+    useState<MapRegion | null>(null);
   const sessionHydrated = useRef(false);
+  const regionWeatherFetchKeyRef = useRef<string | null>(null);
+  const regionInsightsFetchKeyRef = useRef<string | null>(null);
+  const regionColorFillsKeyRef = useRef<string | null>(null);
+
+  const userCounty = useMemo((): TaiwanCounty | null => {
+    if (userLocation?.name) return parseLocationToCounty(userLocation.name);
+    if (weather?.locationName) return parseLocationToCounty(weather.locationName);
+    return null;
+  }, [userLocation?.name, weather?.locationName]);
+
+  const userDistrict = useMemo((): TaipeiDistrict | null => {
+    if (userCounty !== TAIPEI_COUNTY) return null;
+    const district = taipeiDistrictFromPicker(locationPicker);
+    if (district) return district;
+    const loc = userLocation?.name ?? weather?.locationName ?? "";
+    return parseTaipeiDistrict(loc);
+  }, [
+    userCounty,
+    locationPicker.county,
+    locationPicker.district,
+    userLocation?.name,
+    weather?.locationName,
+  ]);
 
   const toStartedAtIso = (timeHm: string) => {
     const d = new Date();
@@ -1299,7 +1335,7 @@ export default function App() {
     return d.toISOString();
   };
 
-  const loadWeather = async (lat: number, lon: number, displayName?: string) => {
+  const loadWeather = useCallback(async (lat: number, lon: number, displayName?: string) => {
     try {
       setWeatherLoading(true);
       const data = await fetchCurrentWeather(lat, lon, displayName);
@@ -1310,8 +1346,96 @@ export default function App() {
     } finally {
       setWeatherLoading(false);
     }
-  };
+  }, [showToast]);
 
+  const loadRegionWeather = useCallback(
+    async (region: MapRegion) => {
+      const { lat, lon, name } = mapRegionToLocation(region);
+      try {
+        setRegionWeatherLoading(true);
+        const data = await fetchCurrentWeather(lat, lon, name);
+        setRegionWeather(data);
+      } catch (error) {
+        console.warn("Region weather:", error);
+        setRegionWeather(null);
+        showToast("該區天氣取得失敗");
+      } finally {
+        setRegionWeatherLoading(false);
+      }
+    },
+    [showToast]
+  );
+
+  const applyLocationPicker = useCallback(
+    (value: LocationPickerValue) => {
+      setLocationPicker(value);
+      const loc = buildUserLocationFromPicker(value);
+      setUserLocation(loc);
+      setLocationInput(loc.name);
+      setSelectedRegion(null);
+      setRegionWeather(null);
+      regionWeatherFetchKeyRef.current = null;
+      regionInsightsFetchKeyRef.current = null;
+      if (value.county === TAIPEI_COUNTY) {
+        setMapView("taipei-districts");
+      } else {
+        setMapView("counties");
+      }
+      void loadWeather(loc.lat, loc.lon, loc.name);
+    },
+    [loadWeather]
+  );
+
+  const requestHomeGeolocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      showToast("此裝置不支援定位功能");
+      return;
+    }
+
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude: lat, longitude: lon } = pos.coords;
+          const name = await reverseGeocode(lat, lon);
+          const parsed = parseLocationToPickerValue(name);
+          if (parsed) {
+            applyLocationPicker(parsed);
+          } else {
+            setUserLocation({ name, lat, lon });
+            setLocationInput(name);
+            void loadWeather(lat, lon, name);
+          }
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : "";
+          showToast(msg ? `無法解析位置：${msg}` : "無法解析目前位置，請手動選擇地區");
+          applyLocationPicker(locationPicker);
+        } finally {
+          setLocating(false);
+        }
+      },
+      (err) => {
+        const code = (err as GeolocationPositionError)?.code;
+        if (code === 1) {
+          showToast("請允許定位權限，或手動選擇地區");
+        } else if (code === 3) {
+          showToast("定位逾時，請手動選擇地區");
+        } else {
+          showToast("無法取得定位，請手動選擇地區");
+        }
+        setLocating(false);
+        applyLocationPicker(locationPicker);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
+  }, [applyLocationPicker, loadWeather, locationPicker, showToast]);
+
+  useEffect(() => {
+    if (screen !== "home" || !sessionHydrated.current) return;
+    if (userLocation || homeGeoRequested.current) return;
+    homeGeoRequested.current = true;
+    requestHomeGeolocation();
+  }, [screen, userLocation, requestHomeGeolocation]);
 
   const loadOutfitInsights = useCallback(async (temp: number) => {
     try {
@@ -1326,11 +1450,92 @@ export default function App() {
     }
   }, []);
 
+  const loadRegionInsights = useCallback(
+    async (temp: number, region: MapRegion, opts?: { showLoading?: boolean }) => {
+      const fetchKey = `${regionKey(region)}@${Math.round(temp)}`;
+      const showLoading = opts?.showLoading !== false;
+      try {
+        if (showLoading) setRegionInsightsLoading(true);
+        const district = region.level === "district" ? region.district : undefined;
+        const data = await fetchOutfitInsights(temp, 2, region.county, district);
+        regionInsightsFetchKeyRef.current = fetchKey;
+        setRegionInsights(data);
+      } catch (error) {
+        console.warn("Region outfit insights:", error);
+        regionInsightsFetchKeyRef.current = fetchKey;
+        setRegionInsights(null);
+      } finally {
+        if (showLoading) setRegionInsightsLoading(false);
+      }
+    },
+    []
+  );
+
+  const loadRegionColorFills = useCallback(async (temp: number) => {
+    const key = String(Math.round(temp));
+    try {
+      const { fills } = await fetchRegionColorFills(temp, 2);
+      regionColorFillsKeyRef.current = key;
+      setRegionColorFills(fills);
+    } catch (error) {
+      console.warn("Region color fills:", error);
+      regionColorFillsKeyRef.current = null;
+      setRegionColorFills([]);
+    }
+  }, []);
+
   useEffect(() => {
     if (weather) {
       void loadOutfitInsights(weather.temp);
     }
   }, [weather?.temp, loadOutfitInsights]);
+
+  useEffect(() => {
+    if (screen !== "home") return;
+
+    const temp =
+      selectedRegion && regionWeather
+        ? regionWeather.temp
+        : weather?.temp;
+    if (temp == null) return;
+
+    const key = String(Math.round(temp));
+    if (regionColorFillsKeyRef.current === key) return;
+    void loadRegionColorFills(temp);
+  }, [
+    screen,
+    selectedRegion,
+    regionWeather?.temp,
+    weather?.temp,
+    loadRegionColorFills,
+  ]);
+
+  useEffect(() => {
+    if (!selectedRegion) {
+      regionWeatherFetchKeyRef.current = null;
+      setRegionWeather(null);
+      return;
+    }
+
+    const key = regionKey(selectedRegion);
+    if (regionWeatherFetchKeyRef.current !== key) {
+      regionWeatherFetchKeyRef.current = key;
+      regionInsightsFetchKeyRef.current = null;
+      setRegionInsights(null);
+      void loadRegionWeather(selectedRegion);
+    }
+  }, [selectedRegion, loadRegionWeather]);
+
+  useEffect(() => {
+    if (!selectedRegion || regionWeatherLoading || !regionWeather) return;
+
+    const key = `${regionKey(selectedRegion)}@${Math.round(regionWeather.temp)}`;
+    if (regionInsightsFetchKeyRef.current === key) return;
+
+    void loadRegionInsights(regionWeather.temp, selectedRegion, {
+      showLoading: !regionInsightsRef.current,
+    });
+  }, [selectedRegion, regionWeatherLoading, regionWeather, loadRegionInsights]);
 
   const syncUserFavorites = useCallback(async (name: string) => {
     const trimmed = name.trim();
@@ -1423,6 +1628,9 @@ export default function App() {
     if (session.userLocation) {
       setUserLocation(session.userLocation);
       setLocationInput(session.userLocation.name);
+      const parsed = parseLocationToPickerValue(session.userLocation.name);
+      if (parsed) setLocationPicker(parsed);
+      homeGeoRequested.current = true;
     }
     setReminder(session.reminder);
     if (session.activeUserRecord) {
@@ -1453,15 +1661,15 @@ export default function App() {
       setTimeout(() => showToast("昨日的紀錄已過期，請重新拍照"), 0);
     }
 
-    const canAutoStart = Boolean(
-      session.userName.trim() && session.gender && session.userLocation
-    );
-    if (canAutoStart && session.userLocation) {
-      void loadWeather(
-        session.userLocation.lat,
-        session.userLocation.lon,
-        session.userLocation.name
-      );
+    const canAutoStart = Boolean(session.userName.trim() && session.gender);
+    if (canAutoStart) {
+      if (session.userLocation) {
+        void loadWeather(
+          session.userLocation.lat,
+          session.userLocation.lon,
+          session.userLocation.name
+        );
+      }
       setScreen(recordId ? "feedback" : "home");
     }
 
@@ -1566,10 +1774,12 @@ export default function App() {
     if (!isPendingValidToday(pending) || !pending) return null;
     const upper = pending.upperBodyTags ?? [];
     const lower = pending.lowerBodyTags ?? [];
-    if (upper.length === 0 && lower.length === 0) return null;
+    const colors = pending.colors ?? [];
+    if (upper.length === 0 && lower.length === 0 && colors.length === 0) return null;
     return {
       upperBodyTags: upper,
       lowerBodyTags: lower,
+      colors,
       ...(pending.tagAnchors?.length ? { tagAnchors: pending.tagAnchors } : {}),
     };
   }, [pendingRevision, hasPendingFeedback]);
@@ -1602,7 +1812,94 @@ export default function App() {
     };
   }, [outfitImage, weather, currentTime, pendingRevision]);
 
-  const inspirationCards = outfitInsights?.inspiration ?? [];
+  const pickerInspirationRegion = useMemo(
+    () => locationPickerToRegion(locationPicker),
+    [locationPicker]
+  );
+
+  /** 靈感分頁預設：首頁地區選單（全區＝台北市全市） */
+  const inspirationBaselineRegion = useMemo((): MapRegion => {
+    if (isTaipeiWholeAreaPicker(locationPicker)) {
+      return TAIPEI_WHOLE_REGION;
+    }
+    return pickerInspirationRegion;
+  }, [locationPicker, pickerInspirationRegion]);
+
+  const inspirationBaselineLabel = useMemo(
+    () => regionLabel(inspirationBaselineRegion),
+    [inspirationBaselineRegion]
+  );
+
+  /** 地圖深入瀏覽時用選定區；否則用地區選單 */
+  const activeInspirationRegion = useMemo((): MapRegion => {
+    return inspirationDrilldownRegion ?? inspirationBaselineRegion;
+  }, [inspirationDrilldownRegion, inspirationBaselineRegion]);
+
+  useEffect(() => {
+    if (screen !== "inspiration") {
+      setInspirationDrilldownRegion(null);
+    }
+  }, [screen]);
+
+  const inspirationRegionLabel = useMemo(
+    () => regionLabel(activeInspirationRegion),
+    [activeInspirationRegion]
+  );
+
+  /** 與地圖排行榜同一區時，沿用該區天氣溫度查詢 */
+  const inspirationQueryTemp = useMemo(() => {
+    if (
+      selectedRegion &&
+      regionWeather &&
+      isSameRegion(selectedRegion, activeInspirationRegion)
+    ) {
+      return regionWeather.temp;
+    }
+    return weather?.temp;
+  }, [selectedRegion, regionWeather, activeInspirationRegion, weather?.temp]);
+
+  const activeInspirationKey = useMemo(() => {
+    if (inspirationQueryTemp == null) return null;
+    return `${regionKey(activeInspirationRegion)}@${Math.round(inspirationQueryTemp)}`;
+  }, [activeInspirationRegion, inspirationQueryTemp]);
+
+  /** 靈感頁／首頁「全區」時載入區域穿搭靈感 */
+  useEffect(() => {
+    if (!activeInspirationKey || inspirationQueryTemp == null) return;
+
+    const prefetchWholeTaipei =
+      isTaipeiWholeAreaPicker(locationPicker) &&
+      screen === "home" &&
+      (!selectedRegion || isSameRegion(selectedRegion, TAIPEI_WHOLE_REGION));
+    const loadForInspirationTab = screen === "inspiration";
+    if (!prefetchWholeTaipei && !loadForInspirationTab) return;
+
+    const cacheHit = regionInsightsFetchKeyRef.current === activeInspirationKey;
+    const cached = regionInsightsRef.current;
+    const stalePhotoCache =
+      cacheHit &&
+      cached != null &&
+      cached.sampleCount > 0 &&
+      cached.inspiration.length === 0;
+    if (cacheHit && cached != null && !stalePhotoCache) return;
+
+    void loadRegionInsights(inspirationQueryTemp, activeInspirationRegion, {
+      showLoading: loadForInspirationTab,
+    });
+  }, [
+    screen,
+    activeInspirationKey,
+    activeInspirationRegion,
+    inspirationQueryTemp,
+    loadRegionInsights,
+    locationPicker.county,
+    locationPicker.district,
+    selectedRegion,
+  ]);
+
+  const inspirationCards = useMemo(() => {
+    return regionInsights?.inspiration ?? [];
+  }, [regionInsights]);
 
   const favoriteCards = useMemo(
     () => listFavoriteCards(inspirationFavorites),
@@ -1661,14 +1958,12 @@ export default function App() {
   };
 
   const startApp = () => {
-    if (!userName.trim() || !userGender || !userLocation) return;
+    if (!userName.trim() || !userGender) return;
     saveSession({
       userName: userName.trim(),
       gender: userGender,
-      userLocation,
       reminder,
     });
-    void loadWeather(userLocation.lat, userLocation.lon, userLocation.name);
     setScreen("home");
   };
 
@@ -1681,6 +1976,8 @@ export default function App() {
     setUserGender(null);
     setUserLocation(null);
     setLocationInput("");
+    setLocationPicker({ county: TAIPEI_COUNTY, district: TAIPEI_WHOLE_AREA });
+    homeGeoRequested.current = false;
     setWeather(null);
     setWeatherLoading(false);
     setOutfitInsights(null);
@@ -1731,6 +2028,7 @@ export default function App() {
 
     let upperBodyTags: string[] = [];
     let lowerBodyTags: string[] = [];
+    let savedColors: string[] = [];
     let savedTagAnchors: OutfitAnalysis["tagAnchors"];
 
     try {
@@ -1741,6 +2039,7 @@ export default function App() {
         );
         upperBodyTags = analysis.upperBodyTags;
         lowerBodyTags = analysis.lowerBodyTags;
+        savedColors = analysis.colors ?? [];
         savedTagAnchors = analysis.tagAnchors;
         setOutfitAnalysisPreview(analysis);
         setOutfitAnalysisLoading(false);
@@ -1767,6 +2066,7 @@ export default function App() {
         ),
         upperBodyTags: upperBodyTags.length ? upperBodyTags : undefined,
         lowerBodyTags: lowerBodyTags.length ? lowerBodyTags : undefined,
+        colors: savedColors.length ? savedColors : undefined,
         photoBase64: outfitImage.base64,
         photoMimeType: outfitImage.mimeType,
       });
@@ -1791,9 +2091,17 @@ export default function App() {
         recordedTime: currentTime || formatTimeFromIso(new Date().toISOString()),
         ...(upperBodyTags.length ? { upperBodyTags } : {}),
         ...(lowerBodyTags.length ? { lowerBodyTags } : {}),
+        ...(savedColors.length ? { colors: savedColors } : {}),
         ...(savedTagAnchors?.length ? { tagAnchors: savedTagAnchors } : {}),
       });
       setPendingRevision((n) => n + 1);
+      const loc = userLocation ?? loadSession().userLocation;
+      if (loc && savedColors.length > 0) {
+        addMapContribution(loc.lat, loc.lon, savedColors, { id: pageId });
+      }
+      if (weather?.temp != null) {
+        void loadRegionColorFills(weather.temp);
+      }
       setHasPendingFeedback(true);
       setOutfitImage(null);
       setOutfitAnalysisPreview(null);
@@ -1811,7 +2119,7 @@ export default function App() {
       const msg = error instanceof Error ? error.message : "";
       if (msg.includes("expected to be")) {
         showToast(
-          "Notion 欄位類型不符：請確認 Upper Body Tags 為 Multi-select、Lower Body Tags 為 Select"
+          "Notion 欄位類型不符：請確認 Upper Body Tags / color 為 Multi-select、Lower Body Tags 為 Select"
         );
       } else {
         showToast(msg ? `Notion 同步失敗：${msg}` : "Notion 同步失敗");
@@ -1845,10 +2153,12 @@ export default function App() {
     }
 
     try {
+      const note = feelNote?.trim();
       await updateRecord(pageId, {
         breathability: metrics.breathability,
         wrapping: metrics.snugness,
         stuffiness: metrics.stuffiness,
+        ...(note ? { feedback: note } : {}),
       });
       markPendingFeedbackComplete();
       clearPendingRecord();
@@ -1881,6 +2191,7 @@ export default function App() {
         stuffiness: metrics.stuffiness,
       },
       tags: [],
+      colors: [],
       humidity: `${weather?.humidity || 78}%`
     };
     
@@ -1913,22 +2224,36 @@ export default function App() {
                 setUserName={setUserName}
                 userGender={userGender}
                 setUserGender={setUserGender}
-                locationInput={locationInput}
-                setLocationInput={setLocationInput}
-                userLocation={userLocation}
-                setUserLocation={setUserLocation}
                 startApp={startApp}
-                showToast={showToast}
               />
               )}
               {screen === "home" && (
                 <HomeScreen
                   userName={userName}
-                  setScreen={setScreen}
-                  weather={weather}
-                  loading={weatherLoading}
-                  insights={outfitInsights}
-                  insightsLoading={insightsLoading}
+                  mapWeather={
+                    selectedRegion ? regionWeather : weather
+                  }
+                  mapWeatherLoading={
+                    selectedRegion ? regionWeatherLoading : weatherLoading
+                  }
+                  locationPicker={locationPicker}
+                  onLocationPickerChange={applyLocationPicker}
+                  locating={locating}
+                  onRequestLocate={requestHomeGeolocation}
+                  regionColorFills={regionColorFills}
+                  userCounty={userCounty}
+                  userDistrict={userDistrict}
+                  mapView={mapView}
+                  onMapViewChange={setMapView}
+                  selectedRegion={selectedRegion}
+                  onSelectRegion={setSelectedRegion}
+                  regionInsights={regionInsights}
+                  regionInsightsLoading={regionInsightsLoading}
+                  onOpenRegionInspiration={() => {
+                    if (!selectedRegion) return;
+                    setInspirationDrilldownRegion(selectedRegion);
+                    setScreen("inspiration");
+                  }}
                   showPendingBanner={hasPendingFeedback}
                   onContinuePending={continuePendingFeedback}
                   onRequestExit={requestExit}
@@ -1938,13 +2263,22 @@ export default function App() {
                 <InspirationFeedScreen
                   cards={inspirationCards}
                   currentUserName={userName}
-                  insightsLoading={insightsLoading}
+                  insightsLoading={regionInsightsLoading}
                   favorites={inspirationFavorites}
                   favoriteBusyId={favoriteBusyId}
                   onToggleFavorite={handleToggleFavorite}
                   onGoRecord={() => setScreen("record")}
                   weather={weather}
-                  insights={outfitInsights}
+                  insights={regionInsights ?? outfitInsights}
+                  regionLabel={inspirationRegionLabel}
+                  drilldownBackLabel={
+                    inspirationDrilldownRegion ? inspirationBaselineLabel : null
+                  }
+                  onBackFromDrilldown={
+                    inspirationDrilldownRegion
+                      ? () => setInspirationDrilldownRegion(null)
+                      : undefined
+                  }
                   onRequestExit={requestExit}
                 />
               )}
@@ -2015,7 +2349,12 @@ export default function App() {
               ].map((tab) => (
                 <button 
                   key={tab.id}
-                  onClick={() => setScreen(tab.id as Screen)}
+                  onClick={() => {
+                    if (tab.id === "home") {
+                      setSelectedRegion(null);
+                    }
+                    setScreen(tab.id as Screen);
+                  }}
                   className={`flex-1 flex flex-col items-center gap-1 transition-all ${screen === tab.id ? "text-stone-800" : "text-stone-400 hover:text-stone-600"}`}
                 >
                   <div className={`rounded-xl p-1.5 transition-all ${screen === tab.id ? "bg-stone-200/70 shadow-sm" : ""}`}>

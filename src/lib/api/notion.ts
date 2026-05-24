@@ -1,5 +1,10 @@
-import type { NotionRecordPayload, OutfitRecord, UserGender } from "../../types/api";
-import { apiGet, apiPatch, apiPost } from "./client";
+import type {
+  ApiResponse,
+  NotionRecordPayload,
+  OutfitRecord,
+  UserGender,
+} from "../../types/api";
+import { ApiError, apiGet, apiPatch } from "./client";
 
 export type OutfitRecordSnapshot = {
   pageId: string;
@@ -19,8 +24,23 @@ export async function fetchRecordSnapshot(
 }
 
 /** POST /api/notion-records — 建立新穿搭列（含照片上傳） */
-export async function createRecord(payload: NotionRecordPayload): Promise<{ id: string }> {
-  return apiPost<{ id: string }>("/api/notion-records", payload);
+export async function createRecord(
+  payload: NotionRecordPayload
+): Promise<{ id: string; photoWarning?: string }> {
+  const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+  const res = await fetch(`${API_BASE}/api/notion-records`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const json = (await res.json()) as ApiResponse<{ id: string }>;
+  if (!res.ok || !json.ok || !json.data?.id) {
+    throw new ApiError(json.error ?? `建立紀錄失敗 (${res.status})`, res.status);
+  }
+  return {
+    id: json.data.id,
+    ...(json.error ? { photoWarning: json.error } : {}),
+  };
 }
 
 /** PATCH /api/notion/records — 更新體感等欄位 */

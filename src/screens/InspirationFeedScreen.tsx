@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { LogOut, Shirt } from "lucide-react";
+import { Shirt } from "lucide-react";
 import { BottomActionBar } from "../components/BottomActionBar";
 import { FeedScreenHeader } from "../components/FeedScreenHeader";
 import { InspirationCard } from "../components/InspirationCard";
@@ -14,34 +14,45 @@ import {
 } from "../lib/inspiration-favorites";
 import type { WeatherData } from "../types/api";
 
-function AppExitButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button type="button" onClick={onClick} className="app-exit-btn" aria-label="離開並返回初始頁">
-      <LogOut size={12} strokeWidth={2} />
-      離開
-    </button>
-  );
-}
-
 function InspirationEmptyState({
+  regionLabel,
+  drilldownBackLabel,
+  onBackFromDrilldown,
   onRecord,
   onRequestExit,
+  weather,
+  insights,
 }: {
+  regionLabel?: string | null;
+  drilldownBackLabel?: string | null;
+  onBackFromDrilldown?: () => void;
   onRecord: () => void;
   onRequestExit: () => void;
+  weather: WeatherData | null;
+  insights: OutfitInsights | null;
 }) {
   return (
     <div className="inspiration-feed-layout app-screen-gradient">
-      <div className="flex justify-end px-6 pt-3">
-        <AppExitButton onClick={onRequestExit} />
-      </div>
+      <FeedScreenHeader
+        title="今日靈感"
+        weather={weather}
+        insights={insights}
+        regionLabel={regionLabel}
+        drilldownBackLabel={drilldownBackLabel}
+        onBackFromDrilldown={onBackFromDrilldown}
+        onRequestExit={onRequestExit}
+      />
       <div className="inspiration-empty-body">
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/70 text-stone-500 ring-1 ring-stone-200/70">
           <Shirt size={28} strokeWidth={1.5} />
         </div>
-        <h2 className="text-base font-semibold text-stone-800">此溫度區間還沒有穿搭靈感</h2>
+        <h2 className="text-base font-semibold text-stone-800">
+          {regionLabel ? `${regionLabel}還沒有穿搭靈感` : "此溫度區間還沒有穿搭靈感"}
+        </h2>
         <p className="mx-auto mt-2 max-w-[280px] text-sm leading-relaxed text-stone-500">
-          成為第一筆相似天氣的穿搭記錄，幫助大家找到靈感。
+          {regionLabel
+            ? "此區尚無紀錄，完成一筆穿搭後就會出現在這裡。"
+            : "成為第一筆相似天氣的穿搭記錄，幫助大家找到靈感。"}
         </p>
         <button
           type="button"
@@ -83,6 +94,9 @@ export function InspirationFeedScreen({
   onGoRecord,
   weather,
   insights,
+  regionLabel,
+  drilldownBackLabel,
+  onBackFromDrilldown,
   onRequestExit,
 }: {
   cards: InspirationItem[];
@@ -94,6 +108,9 @@ export function InspirationFeedScreen({
   onGoRecord: () => void;
   weather: WeatherData | null;
   insights: OutfitInsights | null;
+  regionLabel?: string | null;
+  drilldownBackLabel?: string | null;
+  onBackFromDrilldown?: () => void;
   onRequestExit: () => void;
 }) {
   const [genderFilter, setGenderFilter] = useState<InspirationGenderFilter>("all");
@@ -107,9 +124,15 @@ export function InspirationFeedScreen({
     if (insightsLoading) {
       return (
         <div className="inspiration-feed-layout app-screen-gradient">
-          <div className="flex justify-end px-6 pt-3">
-            <AppExitButton onClick={onRequestExit} />
-          </div>
+          <FeedScreenHeader
+            title="今日靈感"
+            weather={weather}
+            insights={insights}
+            regionLabel={regionLabel}
+            drilldownBackLabel={drilldownBackLabel}
+            onBackFromDrilldown={onBackFromDrilldown}
+            onRequestExit={onRequestExit}
+          />
           <div className="inspiration-empty-body">
             <div className="glass-card-strong flex w-full max-w-sm flex-col items-center justify-center rounded-2xl p-10 animate-pulse">
               <div className="mb-3 h-10 w-10 rounded-full bg-stone-200/80" />
@@ -119,7 +142,17 @@ export function InspirationFeedScreen({
         </div>
       );
     }
-    return <InspirationEmptyState onRecord={onGoRecord} onRequestExit={onRequestExit} />;
+    return (
+      <InspirationEmptyState
+        regionLabel={regionLabel}
+        drilldownBackLabel={drilldownBackLabel}
+        onBackFromDrilldown={onBackFromDrilldown}
+        onRecord={onGoRecord}
+        onRequestExit={onRequestExit}
+        weather={weather}
+        insights={insights}
+      />
+    );
   }
 
   return (
@@ -128,6 +161,9 @@ export function InspirationFeedScreen({
         title="今日靈感"
         weather={weather}
         insights={insights}
+        regionLabel={regionLabel}
+        drilldownBackLabel={drilldownBackLabel}
+        onBackFromDrilldown={onBackFromDrilldown}
         onRequestExit={onRequestExit}
       />
 

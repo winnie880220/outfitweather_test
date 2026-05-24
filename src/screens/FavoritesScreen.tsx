@@ -28,7 +28,7 @@ export function FavoritesScreen({
   onRequestExit: () => void;
 }) {
   return (
-    <div className="inspiration-feed-layout inspiration-feed-layout--list app-screen-gradient">
+    <div className="inspiration-feed-layout inspiration-feed-layout--with-dock inspiration-feed-layout--favorites app-screen-gradient">
       <FeedScreenHeader
         title="收藏"
         weather={weather}
@@ -47,19 +47,22 @@ export function FavoritesScreen({
           </p>
         </div>
       ) : (
-        <div className="inspiration-feed-scroll app-scroll app-inset min-h-0">
-          <div className="inspiration-feed-list">
-            {cards.map((card) => (
+        <div
+          className="inspiration-feed-scroll inspiration-feed-scroll--reels app-scroll app-inset min-h-0"
+          aria-label="收藏穿搭，上下滑動切換"
+        >
+          {cards.map((card) => (
+            <div key={card.id} className="inspiration-feed-reel-slide">
               <InspirationCard
-                key={card.id}
+                layout="reel"
                 card={card}
                 currentUserName={currentUserName}
                 isSaved={isInspirationFavorite(favorites, card.id)}
                 favoriteBusy={favoriteBusyId === card.id}
                 onToggleFavorite={() => onToggleFavorite(card)}
               />
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

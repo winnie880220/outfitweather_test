@@ -27,7 +27,7 @@ export function OutfitPhotoTagOverlay({
 
   return (
     <div
-      className={`outfit-tag-overlay pointer-events-none absolute inset-0 overflow-hidden rounded-3xl ${className}`}
+      className={`outfit-tag-overlay pointer-events-none absolute inset-0 overflow-visible ${className}`}
       aria-live="polite"
       aria-busy={loading}
     >
@@ -125,7 +125,7 @@ function TagLabel({
         transition={{ duration: 0.28, delay: index * 0.08 + 0.12 }}
       />
       <motion.span
-        className="outfit-tag-pill absolute max-w-[48%] -translate-y-1/2 truncate px-2.5 py-1 font-semibold tracking-wide"
+        className="outfit-tag-pill absolute max-w-[42%] whitespace-nowrap -translate-y-1/2 px-2.5 py-1 font-semibold tracking-wide"
         style={{
           left: `${placement.labelX}%`,
           top: `${placement.labelY}%`,

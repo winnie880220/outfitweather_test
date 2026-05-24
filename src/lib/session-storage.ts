@@ -1,3 +1,4 @@
+import type { MapContributionEntry } from "./map-contributions";
 import type { UserGender, UserLocation } from "../types/api";
 import { clearAllInspirationFavoritesLocal } from "./inspiration-favorites";
 import { clearInspirationSwipe } from "./inspiration-swipe";
@@ -13,6 +14,7 @@ export interface PendingRecordSnapshot {
   recordedTime?: string;
   upperBodyTags?: string[];
   lowerBodyTags?: string[];
+  colors?: string[];
   tagAnchors?: Array<{ label: string; anchorX: number; anchorY: number }>;
 }
 
@@ -28,6 +30,7 @@ export interface PendingRecord {
   recordedTime?: string;
   upperBodyTags?: string[];
   lowerBodyTags?: string[];
+  colors?: string[];
   tagAnchors?: Array<{ label: string; anchorX: number; anchorY: number }>;
 }
 
@@ -51,6 +54,8 @@ export interface AppSession {
   pendingRecord: PendingRecord | null;
   activeUserRecord: ActiveUserRecord | null;
   reminder: ReminderSettings;
+  /** 首頁地圖：使用者上傳穿搭後累積的色票貢獻 */
+  mapContributions?: MapContributionEntry[];
 }
 
 export const DEFAULT_REMINDER: ReminderSettings = {
@@ -100,6 +105,17 @@ export function loadSession(): AppSession {
         ...DEFAULT_REMINDER,
         ...(parsed.reminder ?? {}),
       },
+      mapContributions: Array.isArray(parsed.mapContributions)
+        ? parsed.mapContributions.filter(
+            (e): e is MapContributionEntry =>
+              !!e &&
+              typeof e === "object" &&
+              typeof (e as MapContributionEntry).id === "string" &&
+              typeof (e as MapContributionEntry).lat === "number" &&
+              typeof (e as MapContributionEntry).lon === "number" &&
+              Array.isArray((e as MapContributionEntry).colors)
+          )
+        : [],
     };
   } catch {
     return { ...EMPTY_SESSION };

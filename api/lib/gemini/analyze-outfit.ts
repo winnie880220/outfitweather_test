@@ -3,6 +3,7 @@ import { env, isGeminiConfigured } from "../env";
 import {
   filterAllowedTags,
   LOWER_BODY_TAGS,
+  normalizeOutfitColors,
   OUTFIT_ANALYSIS_PROMPT,
   UPPER_BODY_TAGS,
 } from "./outfit-taxonomy";
@@ -16,6 +17,7 @@ export type OutfitTagAnchor = {
 export type OutfitAnalysisResult = {
   upperBodyTags: string[];
   lowerBodyTags: string[];
+  colors: string[];
   tagAnchors?: OutfitTagAnchor[];
 };
 
@@ -122,6 +124,7 @@ async function generateWithModel(
   let parsed: {
     upperBodyTags?: string[];
     lowerBodyTags?: string[];
+    colors?: unknown;
     tagAnchors?: unknown;
   };
   try {
@@ -137,10 +140,12 @@ async function generateWithModel(
   );
   const allowedLabels = new Set([...upperBodyTags, ...lowerBodyTags]);
   const tagAnchors = parseTagAnchors(parsed.tagAnchors, allowedLabels);
+  const colors = normalizeOutfitColors(parsed.colors);
 
   return {
     upperBodyTags,
     lowerBodyTags,
+    colors,
     ...(tagAnchors.length > 0 ? { tagAnchors } : {}),
   };
 }

@@ -1,13 +1,28 @@
 import type { UserGender } from "../types";
 import type { ParsedNotionRecord } from "./parse-page";
 import type { FeelMetrics } from "./feel-metrics";
+import { parseLocationToRegion, regionKey } from "../../../lib/map-region";
+import {
+  isTaipeiCityLocation,
+  parseLocationToCounty,
+} from "../../../lib/taiwan-county";
+import {
+  parseTaipeiDistrict,
+  TAIPEI_COUNTY,
+  type TaipeiDistrict,
+} from "../../../lib/taipei-district";
+import type { TaiwanCounty } from "../../../lib/taiwan-county";
+import { colorNameToHex } from "../../../src/lib/color-lexicon";
 import { queryRecordsByTemperature } from "./query-records";
+import { hydrateRecordPhotoUrls } from "./resolve-photo";
 
 export type OutfitTagStat = {
   name: string;
   count: number;
   percent: number;
   emoji: string;
+  /** 色名排行用 */
+  hex?: string;
 };
 
 export type InspirationItem = {
@@ -23,6 +38,7 @@ export type InspirationItem = {
   date: string;
   feelMetrics: FeelMetrics;
   tags: string[];
+  colors: string[];
   humidity: string;
   location: string;
   photoUrl?: string;
@@ -34,9 +50,20 @@ export type OutfitInsights = {
   tempMin: number;
   tempMax: number;
   sampleCount: number;
+  photoCount?: number;
   upperTop3: OutfitTagStat[];
   lowerTop3: OutfitTagStat[];
+  colorTop3: OutfitTagStat[];
   inspiration: InspirationItem[];
+};
+
+/** 各縣市／行政區在目前天氣溫度區間的顏色排行第一（地圖填色用） */
+export type RegionColorFill = {
+  regionKey: string;
+  county: TaiwanCounty;
+  district?: TaipeiDistrict;
+  colorName: string;
+  hex: string;
 };
 
 const TAG_EMOJI: Record<string, string> = {
@@ -107,6 +134,14 @@ function toTop3(counts: Map<string, number>, total: number): OutfitTagStat[] {
     }));
 }
 
+function toColorTop3(counts: Map<string, number>, total: number): OutfitTagStat[] {
+  return toTop3(counts, total).map((stat) => ({
+    ...stat,
+    emoji: "",
+    hex: colorNameToHex(stat.name),
+  }));
+}
+
 function formatRelativeDate(iso?: string): string {
   if (!iso) return "近期";
   const d = new Date(iso);
@@ -167,6 +202,7 @@ function toInspirationCard(
     date: formatRelativeDate(record.startedAt),
     feelMetrics,
     tags: tags.slice(0, 4),
+    colors: record.colors.slice(0, 3),
     humidity: record.humidity != null ? `${record.humidity}%` : "—",
     location: record.location?.split(" ")[0] || record.location || "—",
     photoUrl: record.photoUrl,
@@ -174,26 +210,59 @@ function toInspirationCard(
   };
 }
 
+function recordMatchesRegion(
+  record: ParsedNotionRecord,
+  county?: string,
+  district?: string
+): boolean {
+  const countyTrim = county?.trim();
+  const districtTrim = district?.trim();
+  if (!countyTrim) return true;
+
+  if (!districtTrim) {
+    if (countyTrim === TAIPEI_COUNTY) {
+      return isTaipeiCityLocation(record.location);
+    }
+    return parseLocationToCounty(record.location) === countyTrim;
+  }
+
+  if (countyTrim === TAIPEI_COUNTY) {
+    return parseTaipeiDistrict(record.location) === districtTrim;
+  }
+  return parseLocationToCounty(record.location) === countyTrim;
+}
+
 export async function getOutfitInsights(
   temp: number,
-  delta = 1
+  delta = 1,
+  county?: string,
+  district?: string
 ): Promise<OutfitInsights> {
   const rounded = Math.round(temp);
-  const records = await queryRecordsByTemperature(rounded, delta);
+  let records = await queryRecordsByTemperature(rounded, delta);
+
+  const countyTrim = county?.trim();
+  const districtTrim = district?.trim();
+  if (countyTrim) {
+    records = records.filter((r) =>
+      recordMatchesRegion(r, countyTrim, districtTrim)
+    );
+  }
+
+  await hydrateRecordPhotoUrls(records);
+
   const total = records.length;
+  const withPhoto = records.filter((r) => Boolean(r.photoUrl));
 
   const upperCounts = countTagFrequency(records, (r) => r.upperBodyTags);
   const lowerCounts = countTagFrequency(records, (r) => r.lowerBodyTags);
+  const colorCounts = countTagFrequency(records, (r) => r.colors);
 
   const upperTop3 = toTop3(upperCounts, total);
   const lowerTop3 = toTop3(lowerCounts, total);
+  const colorTop3 = toColorTop3(colorCounts, total);
 
-  const inspiration = records
-    .filter(
-      (r) =>
-        Boolean(r.photoUrl) &&
-        (r.upperBodyTags.length > 0 || r.lowerBodyTags.length > 0)
-    )
+  const inspiration = withPhoto
     .slice(0, 20)
     .map((r, i) => toInspirationCard(r, i, upperTop3, lowerTop3));
 
@@ -202,8 +271,104 @@ export async function getOutfitInsights(
     tempMin: rounded - delta,
     tempMax: rounded + delta,
     sampleCount: total,
+    photoCount: withPhoto.length,
     upperTop3,
     lowerTop3,
+    colorTop3,
     inspiration,
   };
+}
+
+/** 地圖填色：優先 color 多選，否則用寫入時的 CurrentRanking */
+function colorsForRegionAggregation(record: ParsedNotionRecord): string[] {
+  const fromMulti = record.colors.map((c) => c.trim()).filter(Boolean);
+  if (fromMulti.length > 0) return fromMulti;
+  const rank = record.currentRanking?.trim();
+  return rank ? [rank] : [];
+}
+
+function pickTopColorName(counts: Map<string, number>): string | null {
+  let best: string | null = null;
+  let bestCount = 0;
+  for (const [name, count] of counts) {
+    if (count > bestCount) {
+      best = name;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
+/** 一次查詢後依區域聚合顏色排行第一，供地圖行政區填色 */
+export async function getRegionColorFills(
+  temp: number,
+  delta = 1
+): Promise<RegionColorFill[]> {
+  const rounded = Math.round(temp);
+  const records = await queryRecordsByTemperature(rounded, delta);
+  const buckets = new Map<
+    string,
+    { county: TaiwanCounty; district?: TaipeiDistrict; colorCounts: Map<string, number> }
+  >();
+
+  for (const record of records) {
+    const region = parseLocationToRegion(record.location);
+    if (!region) continue;
+
+    const key = regionKey(region);
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = {
+        county: region.county,
+        ...(region.level === "district" ? { district: region.district } : {}),
+        colorCounts: new Map(),
+      };
+      buckets.set(key, bucket);
+    }
+
+    const seen = new Set<string>();
+    for (const colorName of colorsForRegionAggregation(record)) {
+      if (seen.has(colorName)) continue;
+      seen.add(colorName);
+      bucket.colorCounts.set(colorName, (bucket.colorCounts.get(colorName) ?? 0) + 1);
+    }
+  }
+
+  const fills: RegionColorFill[] = [];
+  for (const [regionKeyValue, bucket] of buckets) {
+    const top = pickTopColorName(bucket.colorCounts);
+    if (!top) continue;
+    fills.push({
+      regionKey: regionKeyValue,
+      county: bucket.county,
+      ...(bucket.district ? { district: bucket.district } : {}),
+      colorName: top,
+      hex: colorNameToHex(top),
+    });
+  }
+
+  return fills;
+}
+
+/**
+ * 依定位字串與氣溫區間，取得該區顏色排行第一（與地圖填色邏輯一致）
+ */
+export async function getRegionTopColorForLocation(
+  temp: number,
+  location: string,
+  delta = 1
+): Promise<string | null> {
+  const trimmed = location.trim();
+  if (!trimmed) return null;
+
+  const region = parseLocationToRegion(trimmed);
+  if (!region) return null;
+
+  const fills = await getRegionColorFills(temp, delta);
+  const key = regionKey(region);
+  let fill = fills.find((f) => f.regionKey === key);
+  if (!fill && region.level === "district") {
+    fill = fills.find((f) => f.regionKey === region.county && !f.district);
+  }
+  return fill?.colorName ?? null;
 }

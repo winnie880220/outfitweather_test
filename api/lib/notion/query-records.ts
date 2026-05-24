@@ -151,6 +151,45 @@ function recordIdFilter(
   };
 }
 
+/** 查詢有 color 欄位資料的紀錄（供地圖色票） */
+export async function queryRecordsWithColors(): Promise<ParsedNotionRecord[]> {
+  if (!isNotionConfigured()) {
+    return [];
+  }
+
+  const records: ParsedNotionRecord[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const body: Record<string, unknown> = {
+      page_size: 100,
+      filter: {
+        property: RECORDS_DB.color,
+        multi_select: { is_not_empty: true },
+      },
+      sorts: [{ property: RECORDS_DB.startedAt, direction: "descending" }],
+    };
+    if (cursor) body.start_cursor = cursor;
+
+    const res = await notionRequest<QueryResponse>(
+      `/databases/${getNotionDatabaseId()}/query`,
+      { method: "POST", body: JSON.stringify(body) }
+    );
+
+    for (const page of res.results) {
+      const parsed = parseNotionPage({
+        id: page.id,
+        properties: page.properties as Record<string, NotionProp>,
+      });
+      if (parsed && parsed.colors.length > 0) records.push(parsed);
+    }
+
+    cursor = res.has_more && res.next_cursor ? res.next_cursor : undefined;
+  } while (cursor);
+
+  return records;
+}
+
 /** 依「ID」欄位值查詢穿搭紀錄 */
 export async function queryRecordsByRecordIds(
   recordIds: string[],

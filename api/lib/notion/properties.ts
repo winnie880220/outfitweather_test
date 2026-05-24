@@ -68,6 +68,9 @@ export function toNotionProperties(payload: NotionRecordPayload): NotionProps {
       props[RECORDS_DB.lowerBodyTags] = { select: { name: lower[0] } };
     }
   }
+  if (payload.colors !== undefined) {
+    props[RECORDS_DB.color] = multiSelect(payload.colors);
+  }
   if (payload.breathability !== undefined) {
     props[RECORDS_DB.breathability] = { number: payload.breathability };
   }
@@ -76,6 +79,15 @@ export function toNotionProperties(payload: NotionRecordPayload): NotionProps {
   }
   if (payload.stuffiness !== undefined) {
     props[RECORDS_DB.stuffiness] = { number: payload.stuffiness };
+  }
+  if (payload.feedback !== undefined) {
+    props[RECORDS_DB.feedback] = richText(payload.feedback);
+  }
+  if (payload.currentRanking !== undefined) {
+    const name = payload.currentRanking.trim();
+    if (name) {
+      props[RECORDS_DB.currentRanking] = multiSelect([name]);
+    }
   }
   if (payload.favoriteIds !== undefined) {
     props[RECORDS_DB.favorite] = multiSelect(payload.favoriteIds);
