@@ -41,6 +41,19 @@ const TAIPEI_DISTRICTS_MIN_ZOOM = 12;
 const TAIPEI_DISTRICTS_HIDE_ZOOM = 11;
 const TAIPEI_COUNTY_HIDDEN_CLASS = "leaflet-taipei-county-hidden";
 
+function scheduleMapInvalidate(map: L.Map) {
+  const run = () => {
+    if (!map.getContainer().isConnected) return;
+    map.invalidateSize({ animate: false });
+  };
+  requestAnimationFrame(() => {
+    run();
+    requestAnimationFrame(run);
+  });
+  window.setTimeout(run, 120);
+  window.setTimeout(run, 360);
+}
+
 function hideTaipeiCountyPath(path: L.Path): void {
   path.setStyle({
     fillColor: "transparent",
@@ -652,6 +665,7 @@ export function TaiwanOutfitMap({
 
     L.control.zoom({ position: "topleft" }).addTo(map);
     mapRef.current = map;
+    scheduleMapInvalidate(map);
 
     let cancelled = false;
 
@@ -716,10 +730,12 @@ export function TaiwanOutfitMap({
         }).addTo(map);
 
         countyLayerRef.current.bringToBack();
+        scheduleMapInvalidate(map);
         setMapReady(true);
       })
       .catch((err) => {
         console.warn("TaiwanOutfitMap counties:", err);
+        scheduleMapInvalidate(map);
         setMapReady(true);
       });
 
@@ -727,15 +743,21 @@ export function TaiwanOutfitMap({
     const ro = new ResizeObserver(() => {
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        map.invalidateSize();
+        scheduleMapInvalidate(map);
       }, 120);
     });
     ro.observe(el);
+
+    const onViewportChange = () => scheduleMapInvalidate(map);
+    window.addEventListener("orientationchange", onViewportChange);
+    window.visualViewport?.addEventListener("resize", onViewportChange);
 
     return () => {
       cancelled = true;
       if (resizeTimer) clearTimeout(resizeTimer);
       ro.disconnect();
+      window.removeEventListener("orientationchange", onViewportChange);
+      window.visualViewport?.removeEventListener("resize", onViewportChange);
       map.remove();
       mapRef.current = null;
       countyLayerRef.current = null;
@@ -821,6 +843,12 @@ export function TaiwanOutfitMap({
     mapViewportCoversTaipei,
     scheduleMapPaint,
   ]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    scheduleMapInvalidate(map);
+  }, [mapReady, mapView, districtsReady, showDistrictLayers]);
 
   useEffect(() => {
     if (!mapReady) return;

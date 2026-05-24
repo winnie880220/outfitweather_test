@@ -28,7 +28,7 @@ export function FavoritesScreen({
   onRequestExit: () => void;
 }) {
   return (
-    <div className="inspiration-feed-layout inspiration-feed-layout--with-dock inspiration-feed-layout--favorites app-screen-gradient">
+    <div className="inspiration-feed-layout inspiration-feed-layout--favorites app-screen-gradient">
       <FeedScreenHeader
         title="收藏"
         weather={weather}

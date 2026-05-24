@@ -25,6 +25,7 @@
   );
   --inspiration-action-height: 4.75rem;
   --inspiration-head-height: 3.25rem;
+  --inspiration-gender-tabs-height: 2.75rem;
   --inspiration-stack-bottom: calc(
     var(--nav-safe-bottom) + var(--inspiration-action-height) + 0.35rem
   );
@@ -32,6 +33,11 @@
     100dvh - env(safe-area-inset-top, 0px) - var(--inspiration-stack-bottom) -
       var(--inspiration-head-height)
   );
+  --inspiration-reel-viewport-height: calc(
+    100dvh - env(safe-area-inset-top, 0px) - var(--inspiration-stack-bottom) -
+      var(--inspiration-head-height) - var(--inspiration-gender-tabs-height)
+  );
+  --home-map-min-height: clamp(16rem, 46dvh, 28rem);
   --app-content-max: 430px;
   --app-frame-radius: 2.25rem;
 }
@@ -274,9 +280,14 @@ body {
     padding-bottom: calc(var(--nav-safe-bottom) + 0.35rem);
   }
 
-  /* 收藏頁：標題與卡片間距對齊記錄頁（.record-screen-header margin-bottom） */
+  /* 收藏頁：無底部操作列，高度只扣導覽列（不預留「我穿好了」按鈕區） */
   .inspiration-feed-layout--favorites {
     gap: 0;
+    padding-bottom: calc(var(--nav-safe-bottom) + 0.35rem);
+    --inspiration-reel-viewport-height: calc(
+      100dvh - env(safe-area-inset-top, 0px) - var(--nav-safe-bottom) -
+        var(--inspiration-head-height) - 0.75rem
+    );
   }
 
   .inspiration-feed-layout--favorites .inspiration-feed-header {
@@ -285,6 +296,11 @@ body {
 
   .inspiration-feed-layout--favorites .inspiration-feed-scroll--reels {
     padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  .inspiration-feed-layout--favorites .inspiration-reel-card .inspiration-card-content {
+    padding-bottom: 0.75rem;
   }
 
   /* 靈感頁：操作列在流內，由 .inspiration-record-dock 負責與導覽列間距（避免雙重留白） */
@@ -477,6 +493,22 @@ body {
     overflow: hidden;
     scroll-snap-align: start;
     scroll-snap-stop: always;
+  }
+
+  /* iPhone Safari：flex 百分比高度常失效，改用 dvh 固定 Reels 捲動區與每張卡片高度 */
+  @media (max-width: 767px) {
+    .inspiration-feed-layout--with-dock .inspiration-feed-scroll--reels {
+      flex: 0 0 auto;
+      height: var(--inspiration-reel-viewport-height);
+      max-height: var(--inspiration-reel-viewport-height);
+      min-height: 14rem;
+    }
+
+    .inspiration-feed-scroll--reels .inspiration-feed-reel-slide {
+      height: var(--inspiration-reel-viewport-height);
+      min-height: var(--inspiration-reel-viewport-height);
+      max-height: var(--inspiration-reel-viewport-height);
+    }
   }
 
   .inspiration-feed-reel-slide > .inspiration-reel-card {
@@ -2243,8 +2275,10 @@ body {
 .taiwan-outfit-map__canvas .leaflet-container {
   height: 100%;
   width: 100%;
+  min-height: var(--home-map-min-height);
   font-family: inherit;
   background: #f5f1e9;
+  touch-action: none;
 }
 
 /* 放大至行政區時隱藏台北市縣市層，避免大區色塊蓋住分區 */
@@ -2443,6 +2477,13 @@ body {
 
 .home-map-stack {
   min-height: 0;
+  flex: 1 1 0%;
+}
+
+.home-map-stack .taiwan-outfit-map,
+.home-map-stack .taiwan-outfit-map__frame,
+.home-map-stack .taiwan-outfit-map__canvas {
+  min-height: var(--home-map-min-height);
 }
 
 .location-region-picker {
