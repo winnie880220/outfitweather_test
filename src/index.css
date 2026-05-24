@@ -23,19 +23,22 @@
   --nav-safe-bottom: calc(
     var(--nav-dock-height) + env(safe-area-inset-bottom, 0px)
   );
-  --inspiration-action-height: 4.75rem;
+  --inspiration-action-height: 4.25rem;
   --inspiration-head-height: 3.25rem;
-  --inspiration-gender-tabs-height: 2.75rem;
+  --inspiration-gender-tabs-height: 3rem;
+  --inspiration-feed-chrome-height: calc(
+    0.75rem + var(--inspiration-head-height) + var(--inspiration-gender-tabs-height)
+  );
   --inspiration-stack-bottom: calc(
-    var(--nav-safe-bottom) + var(--inspiration-action-height) + 0.35rem
+    var(--nav-safe-bottom) + var(--inspiration-action-height) + 0.15rem
   );
   --inspiration-card-height: calc(
     100dvh - env(safe-area-inset-top, 0px) - var(--inspiration-stack-bottom) -
-      var(--inspiration-head-height)
+      var(--inspiration-feed-chrome-height)
   );
   --inspiration-reel-viewport-height: calc(
     100dvh - env(safe-area-inset-top, 0px) - var(--inspiration-stack-bottom) -
-      var(--inspiration-head-height) - var(--inspiration-gender-tabs-height)
+      var(--inspiration-feed-chrome-height)
   );
   --home-map-min-height: clamp(16rem, 46dvh, 28rem);
   --app-content-max: 430px;
@@ -276,8 +279,8 @@ body {
 
   /* 收藏等：僅避開底部導覽列 */
   .inspiration-feed-layout--with-dock {
-    gap: 0.35rem;
-    padding-bottom: calc(var(--nav-safe-bottom) + 0.35rem);
+    gap: 0;
+    padding-bottom: 0;
   }
 
   /* 收藏頁：無底部操作列，高度只扣導覽列（不預留「我穿好了」按鈕區） */
@@ -303,13 +306,28 @@ body {
     padding-bottom: 0.75rem;
   }
 
-  /* 靈感頁：操作列在流內，由 .inspiration-record-dock 負責與導覽列間距（避免雙重留白） */
+  /* 靈感頁：卡片與按鈕緊貼，按鈕在流內、僅留導覽列間距 */
   .inspiration-feed-layout--with-dock:has(.inspiration-record-dock) {
+    position: relative;
     padding-bottom: 0;
+    min-height: 0;
   }
 
   .inspiration-feed-layout--with-dock .inspiration-feed-scroll--reels {
+    flex: 1 1 0%;
+    min-height: 0;
+    height: auto;
+    max-height: none;
+    overflow-x: hidden;
+    overflow-y: auto;
     padding-bottom: 0;
+    box-sizing: border-box;
+  }
+
+  .inspiration-feed-layout--with-dock .inspiration-feed-scroll--reels .inspiration-feed-reel-slide {
+    height: 100%;
+    min-height: 100%;
+    max-height: none;
   }
 
   .inspiration-feed-header {
@@ -495,16 +513,16 @@ body {
     scroll-snap-stop: always;
   }
 
-  /* iPhone Safari：flex 百分比高度常失效，改用 dvh 固定 Reels 捲動區與每張卡片高度 */
+  /* iPhone Safari：收藏等無底部按鈕時，用 dvh 固定 Reels 高度 */
   @media (max-width: 767px) {
-    .inspiration-feed-layout--with-dock .inspiration-feed-scroll--reels {
+    .inspiration-feed-layout--favorites .inspiration-feed-scroll--reels {
       flex: 0 0 auto;
       height: var(--inspiration-reel-viewport-height);
       max-height: var(--inspiration-reel-viewport-height);
       min-height: 14rem;
     }
 
-    .inspiration-feed-scroll--reels .inspiration-feed-reel-slide {
+    .inspiration-feed-layout--favorites .inspiration-feed-scroll--reels .inspiration-feed-reel-slide {
       height: var(--inspiration-reel-viewport-height);
       min-height: var(--inspiration-reel-viewport-height);
       max-height: var(--inspiration-reel-viewport-height);
@@ -642,13 +660,17 @@ body {
     width: 100%;
     flex-shrink: 0;
     margin-top: 0;
-    padding-top: 0;
-    padding-bottom: calc(var(--nav-safe-bottom) + 0.2rem);
+    padding: 0.1rem 0 calc(var(--nav-safe-bottom) + 0.05rem);
     pointer-events: none;
   }
 
   .inspiration-record-dock > * {
     pointer-events: auto;
+  }
+
+  .inspiration-record-dock .glass-card-strong {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
   }
 
   .inspiration-action-dock {
@@ -2267,15 +2289,23 @@ body {
 }
 
 .taiwan-outfit-map__frame {
+  position: relative;
+  flex: 1 1 0%;
+  min-height: var(--home-map-min-height);
   border: 1px solid rgba(214, 211, 209, 0.65);
   background: linear-gradient(165deg, #faf7f2 0%, #f0ebe3 55%, #e8e4dc 100%);
   box-shadow: 0 8px 28px rgba(44, 40, 37, 0.06);
 }
 
-.taiwan-outfit-map__canvas .leaflet-container {
-  height: 100%;
+.taiwan-outfit-map__canvas {
   width: 100%;
-  min-height: var(--home-map-min-height);
+  height: 100%;
+}
+
+.taiwan-outfit-map__canvas .leaflet-container {
+  height: 100% !important;
+  width: 100% !important;
+  min-height: 100% !important;
   font-family: inherit;
   background: #f5f1e9;
   touch-action: none;
@@ -2478,11 +2508,12 @@ body {
 .home-map-stack {
   min-height: 0;
   flex: 1 1 0%;
+  display: flex;
+  flex-direction: column;
 }
 
-.home-map-stack .taiwan-outfit-map,
-.home-map-stack .taiwan-outfit-map__frame,
-.home-map-stack .taiwan-outfit-map__canvas {
+.home-map-stack .taiwan-outfit-map {
+  flex: 1 1 0%;
   min-height: var(--home-map-min-height);
 }
 

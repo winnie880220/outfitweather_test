@@ -989,7 +989,7 @@ export function TaiwanOutfitMap({
   return (
     <section className="taiwan-outfit-map flex min-h-0 flex-1 flex-col" aria-label="台灣穿搭地圖">
       <div className="taiwan-outfit-map__frame relative min-h-0 flex-1 overflow-hidden rounded-3xl">
-        <div ref={containerRef} className="taiwan-outfit-map__canvas h-full w-full" />
+        <div ref={containerRef} className="taiwan-outfit-map__canvas absolute inset-0 z-0" />
 
         <MapWeatherOverlay
           weather={weather}
