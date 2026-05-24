@@ -21,10 +21,12 @@ import {
   formatShareDateLabel,
   type FeedbackShareSnapshot,
 } from "./components/FeedbackShareOverlay";
+import { resolveSharePhotoDataUrl } from "./lib/feedback-share-image";
 import { PendingFeedbackBanner } from "./components/PendingFeedbackBanner";
 import { ReminderSettingsPanel } from "./components/ReminderSettings";
 import { WeatherSummaryCard } from "./components/WeatherSummaryCard";
 import { OutfitPhotoTagOverlay } from "./components/OutfitPhotoTagOverlay";
+import { OutfitPhotoDisplay } from "./components/OutfitPhotoDisplay";
 import { motion, AnimatePresence } from "motion/react";
 import {
   analyzeOutfit,
@@ -875,33 +877,37 @@ const RecordScreen = ({
             </div>
           ) : hasPhoto && photoPreviewUrl ? (
             <>
-              <div className="record-photo-stage relative min-h-0 w-full flex-1 overflow-visible bg-[#faf7f2]">
-                <img
-                  src={photoPreviewUrl}
-                  alt="今日穿搭"
-                  className="h-full w-full object-contain object-center"
-                />
-                {(() => {
-                  const tags =
-                    outfitAnalysisPreview ?? uploadedOutfitTags;
-                  const showOverlay =
-                    outfitAnalysisLoading ||
-                    outfitAnalysisPreview ||
-                    (hasUploadedToday &&
-                      tags &&
-                      (tags.upperBodyTags.length > 0 ||
-                        tags.lowerBodyTags.length > 0 ||
-                        (tags.colors?.length ?? 0) > 0));
-                  if (!showOverlay) return null;
-                  return (
-                    <OutfitPhotoTagOverlay
-                      upperBodyTags={tags?.upperBodyTags ?? []}
-                      lowerBodyTags={tags?.lowerBodyTags ?? []}
-                      tagAnchors={tags?.tagAnchors}
-                      loading={outfitAnalysisLoading && !outfitAnalysisPreview}
-                    />
-                  );
-                })()}
+              <div className="record-photo-stage relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-[#faf7f2]">
+                <div className="record-photo-visual relative min-h-0 w-full flex-1 overflow-hidden">
+                  <OutfitPhotoDisplay
+                    photoUrl={photoPreviewUrl}
+                    emoji="🧥"
+                    objectFit="contain"
+                    bg="#faf7f2"
+                    className="absolute inset-0 h-full w-full"
+                  />
+                  {(() => {
+                    const tags =
+                      outfitAnalysisPreview ?? uploadedOutfitTags;
+                    const showOverlay =
+                      outfitAnalysisLoading ||
+                      outfitAnalysisPreview ||
+                      (hasUploadedToday &&
+                        tags &&
+                        (tags.upperBodyTags.length > 0 ||
+                          tags.lowerBodyTags.length > 0 ||
+                          (tags.colors?.length ?? 0) > 0));
+                    if (!showOverlay) return null;
+                    return (
+                      <OutfitPhotoTagOverlay
+                        upperBodyTags={tags?.upperBodyTags ?? []}
+                        lowerBodyTags={tags?.lowerBodyTags ?? []}
+                        tagAnchors={tags?.tagAnchors}
+                        loading={outfitAnalysisLoading && !outfitAnalysisPreview}
+                      />
+                    );
+                  })()}
+                </div>
               </div>
               <div
                 className={`record-photo-meta shrink-0 text-center ${
@@ -2163,14 +2169,27 @@ export default function App() {
         ...(note ? { feedback: note } : {}),
       });
 
+      const sharePhotoDataUrl = await resolveSharePhotoDataUrl([
+        outfitImage?.base64 && outfitImage?.mimeType
+          ? `data:${outfitImage.mimeType};base64,${outfitImage.base64}`
+          : undefined,
+        outfitImage?.previewUrl,
+        feedbackOutfit.photoUrl,
+        pending?.photoPreviewUrl,
+      ]);
+
       setFeedbackShareSnapshot({
-        context: { ...feedbackOutfit },
+        context: {
+          ...feedbackOutfit,
+          photoUrl: sharePhotoDataUrl ?? feedbackOutfit.photoUrl,
+        },
         analysis: uploadedOutfitTags,
         metrics,
         dateLabel: formatShareDateLabel(),
         summary: feedbackDesc,
         note: note ?? "",
-        photoFallbackUrl: outfitImage?.previewUrl,
+        photoDataUrl: sharePhotoDataUrl,
+        photoFallbackUrl: sharePhotoDataUrl,
       });
 
       markPendingFeedbackComplete();

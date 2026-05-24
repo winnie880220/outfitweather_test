@@ -280,6 +280,8 @@ body {
   /* 收藏等：僅避開底部導覽列 */
   .inspiration-feed-layout--with-dock {
     gap: 0;
+    height: 100%;
+    min-height: 0;
     padding-bottom: 0;
   }
 
@@ -325,7 +327,8 @@ body {
     padding-bottom: 0;
   }
 
-  .inspiration-feed-layout--with-dock .inspiration-feed-scroll--reels {
+  .inspiration-feed-layout--with-dock:has(.inspiration-record-dock)
+    .inspiration-feed-scroll--reels {
     height: 100%;
     min-height: 0;
     max-height: none;
@@ -333,6 +336,7 @@ body {
     overflow-y: auto;
     padding-bottom: 0;
     box-sizing: border-box;
+    -webkit-overflow-scrolling: touch;
   }
 
   .inspiration-feed-header {
@@ -511,16 +515,20 @@ body {
 
   .inspiration-feed-reel-slide {
     box-sizing: border-box;
-    height: var(--reel-slide-height, 100%);
-    min-height: var(--reel-slide-height, 100%);
-    max-height: var(--reel-slide-height, 100%);
+    display: flex;
+    flex-direction: column;
+    height: var(--reel-slide-height, var(--inspiration-reel-viewport-height));
+    min-height: var(--reel-slide-height, var(--inspiration-reel-viewport-height));
+    max-height: var(--reel-slide-height, var(--inspiration-reel-viewport-height));
     overflow: hidden;
     scroll-snap-align: start;
     scroll-snap-stop: always;
   }
 
-  /* dvh 後備：JS 量測前短暫使用 */
+  /* dvh 後備：JS 量測前短暫使用（靈感頁 + 收藏頁） */
   @media (max-width: 767px) {
+    .inspiration-feed-layout--with-dock:has(.inspiration-record-dock)
+      .inspiration-feed-scroll--reels:not([style*="--reel-slide-height"]),
     .inspiration-feed-layout--favorites .inspiration-feed-scroll--reels:not([style*="--reel-slide-height"]) {
       flex: 0 0 auto;
       height: var(--inspiration-reel-viewport-height);
@@ -528,6 +536,9 @@ body {
       min-height: 14rem;
     }
 
+    .inspiration-feed-layout--with-dock:has(.inspiration-record-dock)
+      .inspiration-feed-scroll--reels:not([style*="--reel-slide-height"])
+      .inspiration-feed-reel-slide,
     .inspiration-feed-layout--favorites
       .inspiration-feed-scroll--reels:not([style*="--reel-slide-height"])
       .inspiration-feed-reel-slide {
@@ -543,8 +554,8 @@ body {
   }
 
   .inspiration-reel-card {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
     height: 100%;
     min-height: 0;
     background: #ffffff;
@@ -553,16 +564,16 @@ body {
   }
 
   .inspiration-reel-card .inspiration-card-photo-cell {
-    flex: 1 1 0%;
-    min-height: 8rem;
+    position: relative;
+    min-height: 0;
+    min-width: 0;
     width: 100%;
     overflow: hidden;
     background: #f3f0eb;
   }
 
   .inspiration-reel-card .inspiration-card-photo-feed {
-    position: absolute;
-    inset: 0;
+    position: relative;
     width: 100%;
     height: 100%;
     min-height: 0;
@@ -1389,9 +1400,17 @@ body {
 }
 
 .outfit-tag-scan-panel {
-  background: rgba(255, 252, 248, 0.72);
+  z-index: 5;
+  min-height: 100%;
+  min-width: 100%;
+  background: rgba(255, 252, 248, 0.78);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+}
+
+.record-photo-frame--filled .record-photo-visual {
+  flex: 1 1 0%;
+  min-height: min(38vh, 20rem);
 }
 
 .outfit-tag-scan-icon {
@@ -1547,9 +1566,11 @@ body {
 
 .style-note-card__polaroid {
   position: relative;
+  display: flex;
+  flex-direction: column;
   width: min(58vw, 200px);
   max-height: min(32vh, 190px);
-  overflow: visible;
+  overflow: hidden;
   border: 0.5rem solid #fff;
   border-bottom-width: 0.95rem;
   border-radius: 0.2rem;
@@ -1648,12 +1669,41 @@ body {
 }
 
 .style-note-card--export-9x16 .style-note-card__polaroid {
+  display: flex;
+  flex-direction: column;
   width: min(80%, 228px);
   max-height: 100%;
   height: auto;
+  flex: 0 1 auto;
   aspect-ratio: 3 / 4;
   border-width: 0.45rem;
   border-bottom-width: 0.45rem;
+  overflow: hidden;
+}
+
+.style-note-card__polaroid-photo {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+  background: #f3f0eb;
+}
+
+.style-note-card__export-photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+}
+
+.style-note-card--export-9x16[data-capturing="true"],
+.style-note-card--export-9x16[data-capturing="true"] * {
+  animation: none !important;
+  transition: none !important;
+  opacity: 1 !important;
+  transform: none !important;
 }
 
 .style-note-card--export-9x16 .style-note-card__photo-color-tag {
@@ -1869,7 +1919,11 @@ body {
 
 .feedback-share-overlay__sheet {
   --feedback-share-edge-pad: max(0.65rem, env(safe-area-inset-top));
+  --feedback-share-footer-height: calc(var(--nav-safe-bottom) + 5.5rem);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   max-height: 100dvh;
+  height: 100dvh;
   padding-top: var(--feedback-share-edge-pad);
   overflow: hidden;
   overscroll-behavior: none;
@@ -1884,55 +1938,63 @@ body {
 }
 
 .feedback-share-overlay__stack {
-  display: flex;
-  width: min(92vw, 360px);
-  max-width: 100%;
-  min-height: 0;
-  flex: 1 1 auto;
-  flex-direction: column;
-  align-items: stretch;
+  display: contents;
+}
+
+.feedback-share-overlay__sheet {
+  justify-items: center;
 }
 
 .feedback-share-overlay__header {
+  grid-row: 1;
   flex-shrink: 0;
-  margin-bottom: 0.45rem;
+  margin-bottom: 0.35rem;
+  padding-inline: 0.25rem;
 }
 
 .feedback-share-overlay__preview {
+  grid-row: 2;
   display: flex;
   width: 100%;
   min-height: 0;
-  flex: 1 1 auto;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
-  padding: 0.5rem 0.35rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.25rem 0.35rem;
 }
 
-/* 預覽外框：強制直式 9:16（寬:高），與下載 PNG 一致 */
+/* 預覽外框：強制直式 9:16，縮放以完整顯示在可視區 */
 .feedback-share-overlay__preview-frame {
   aspect-ratio: 9 / 16;
-  width: 100%;
-  max-width: 100%;
-  max-height: 100%;
+  width: min(
+    100%,
+    calc((100dvh - var(--feedback-share-footer-height) - 5.5rem) * 9 / 16)
+  );
+  max-width: 360px;
+  max-height: calc(100dvh - var(--feedback-share-footer-height) - 5.5rem);
   height: auto;
   flex-shrink: 0;
+  margin-inline: auto;
 }
 
 .feedback-share-overlay__preview-frame .style-note-card--export-9x16 {
   width: 100%;
-  height: 100%;
+  height: auto;
   max-height: none;
   flex-shrink: 0;
   aspect-ratio: 9 / 16;
 }
 
 .feedback-share-overlay__footer {
+  grid-row: 3;
   flex-shrink: 0;
   width: min(92vw, 360px);
   max-width: 100%;
+  margin-inline: auto;
   margin-top: 0;
-  padding-top: 0.55rem;
+  padding-top: 0.45rem;
   padding-bottom: max(0.65rem, env(safe-area-inset-bottom));
   background: transparent;
   border: none;
@@ -2001,6 +2063,21 @@ body {
   isolation: isolate;
 }
 
+.record-photo-visual {
+  position: relative;
+  flex: 1 1 0%;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.record-photo-visual .outfit-tag-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
 .record-photo-meta {
   position: relative;
   z-index: 2;
@@ -2049,9 +2126,9 @@ body {
 }
 
 .record-screen-layout--with-extras .record-screen-photo {
-  flex: 0 1 auto;
-  min-height: min(42vh, 22rem);
-  max-height: min(46vh, 24rem);
+  flex: 1 1 0%;
+  min-height: min(36vh, 18rem);
+  max-height: none;
 }
 
 .record-screen-photo-inset {
@@ -2202,11 +2279,17 @@ body {
 
 .record-photo-frame--filled {
   min-height: 0;
+  flex: 1 1 0%;
+}
+
+.record-photo-frame--filled .record-photo-visual {
+  flex: 1 1 0%;
+  min-height: min(38vh, 20rem);
 }
 
 .record-photo-frame--filled .record-photo-stage {
   flex: 1 1 0%;
-  height: auto;
+  height: 100%;
   max-height: none;
   min-height: 0;
 }

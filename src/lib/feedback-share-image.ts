@@ -20,6 +20,44 @@ function computePixelRatio(element: HTMLElement): number {
   return Math.min(MAX_PIXEL_RATIO, Math.max(MIN_PIXEL_RATIO, ratio));
 }
 
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("無法讀取圖片"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function ensureDataUrl(src: string): Promise<string> {
+  if (!src) return src;
+  if (src.startsWith("data:")) return src;
+  const res = await fetch(src);
+  if (!res.ok) throw new Error("圖片載入失敗");
+  return blobToDataUrl(await res.blob());
+}
+
+/** 提交回饋時先固定 data URL，避免 iOS 撤銷 blob 後匯出空白 */
+export async function resolveSharePhotoDataUrl(
+  sources: Array<string | undefined | null>
+): Promise<string | undefined> {
+  for (const src of sources) {
+    if (!src) continue;
+    if (src.startsWith("data:")) return src;
+  }
+
+  for (const src of sources) {
+    if (!src) continue;
+    try {
+      return await ensureDataUrl(src);
+    } catch {
+      /* try next source */
+    }
+  }
+
+  return sources.find((src): src is string => Boolean(src));
+}
+
 function shouldIncludeNode(node: Node): boolean {
   if (!(node instanceof HTMLElement)) return true;
   if (
@@ -32,24 +70,56 @@ function shouldIncludeNode(node: Node): boolean {
   return true;
 }
 
+/** iOS Safari：html-to-image 需 inline data URL 且等 img decode 完成 */
+export async function prepareShareCardForCapture(element: HTMLElement): Promise<void> {
+  element.setAttribute("data-capturing", "true");
+
+  const imgs = Array.from(element.querySelectorAll("img"));
+  await Promise.all(
+    imgs.map(async (img) => {
+      if (!img.src) return;
+      try {
+        img.src = await ensureDataUrl(img.src);
+        img.removeAttribute("crossorigin");
+        await img.decode();
+      } catch {
+        /* 保留原 src，避免整張匯出失敗 */
+      }
+    })
+  );
+
+  await document.fonts.ready;
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+}
+
+export function releaseShareCardCaptureState(element: HTMLElement): void {
+  element.removeAttribute("data-capturing");
+}
+
 export async function captureShareCardElement(
   element: HTMLElement
 ): Promise<Blob> {
-  await document.fonts.ready;
+  await prepareShareCardForCapture(element);
 
-  const pixelRatio = computePixelRatio(element);
-  const dataUrl = await toPng(element, {
-    pixelRatio,
-    backgroundColor: "#fffef9",
-    cacheBust: true,
-    skipAutoScale: true,
-    filter: shouldIncludeNode,
-  });
+  try {
+    const pixelRatio = computePixelRatio(element);
+    const dataUrl = await toPng(element, {
+      pixelRatio,
+      backgroundColor: "#fffef9",
+      cacheBust: true,
+      skipAutoScale: true,
+      filter: shouldIncludeNode,
+    });
 
-  const res = await fetch(dataUrl);
-  const blob = await res.blob();
-  if (!blob.size) throw new Error("匯出失敗");
-  return blob;
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    if (!blob.size) throw new Error("匯出失敗");
+    return blob;
+  } finally {
+    releaseShareCardCaptureState(element);
+  }
 }
 
 function defaultFilename(): string {

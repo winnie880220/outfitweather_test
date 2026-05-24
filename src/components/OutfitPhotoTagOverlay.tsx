@@ -28,8 +28,8 @@ export function OutfitPhotoTagOverlay({
   const showTags = !loading && placements.length > 0;
 
   return (
-    <div
-      className={`outfit-tag-overlay pointer-events-none absolute inset-0 overflow-visible ${className}`}
+    <motion.div
+      className={`outfit-tag-overlay pointer-events-none absolute inset-0 overflow-hidden ${className}`}
       aria-live="polite"
       aria-busy={loading}
     >
@@ -86,7 +86,7 @@ export function OutfitPhotoTagOverlay({
             ))
           : null}
       </AnimatePresence>
-    </div>
+    </motion.div>
   );
 }
 

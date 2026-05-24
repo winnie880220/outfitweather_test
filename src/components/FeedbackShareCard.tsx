@@ -1,7 +1,6 @@
 import { motion } from "motion/react";
 import { forwardRef, useMemo } from "react";
 import { dominantOutfitColor } from "../../lib/outfit-colors";
-import { OutfitPhotoDisplay } from "./OutfitPhotoDisplay";
 import { OutfitPhotoTagOverlay } from "./OutfitPhotoTagOverlay";
 import { OutfitColorChip } from "./OutfitColorChip";
 import type { FeedbackOutfitContext } from "./FeedbackOutfitCard";
@@ -70,12 +69,14 @@ export const FeedbackShareCard = forwardRef<HTMLElement, FeedbackShareCardProps>
       note,
       aiConclusion,
       aiLoading = false,
+      photoFallbackUrl,
       className = "",
       animated = true,
     },
     ref
   ) {
     const badgeText = useMemo(() => contextBadgeText(context), [context]);
+    const photoSrc = context.photoUrl ?? photoFallbackUrl;
     const feelInline = useMemo(
       () =>
         feelMetricChips({
@@ -142,13 +143,13 @@ export const FeedbackShareCard = forwardRef<HTMLElement, FeedbackShareCardProps>
           >
             <div className="style-note-card__polaroid-wrap">
               <div className="style-note-card__polaroid">
-                {context.photoUrl ? (
-                  <OutfitPhotoDisplay
-                    photoUrl={context.photoUrl}
-                    emoji="🧥"
-                    objectFit="contain"
-                    bg="#f3f0eb"
-                    className="style-note-card__photo h-full w-full"
+                <div className="style-note-card__polaroid-photo">
+                {photoSrc ? (
+                  <img
+                    src={photoSrc}
+                    alt="穿搭"
+                    className="style-note-card__export-photo"
+                    decoding="sync"
                   />
                 ) : (
                   <div className="flex h-full min-h-[80px] items-center justify-center text-4xl">
@@ -171,6 +172,7 @@ export const FeedbackShareCard = forwardRef<HTMLElement, FeedbackShareCardProps>
                     <OutfitColorChip name={dominantColor} variant="on-photo" />
                   </div>
                 ) : null}
+                </div>
               </div>
             </div>
           </MotionBlock>

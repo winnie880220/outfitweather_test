@@ -40,14 +40,14 @@ export function InspirationCard({
       }
     >
       <div
-        className={`inspiration-card-photo-cell relative ${isReel ? "min-h-0 flex-1" : "min-h-[14rem]"}`}
+        className={`inspiration-card-photo-cell relative ${isReel ? "min-h-0" : "min-h-[14rem]"}`}
       >
         <OutfitPhotoDisplay
           photoUrl={card.photoUrl}
           emoji={card.emoji}
           bg={card.bg}
           objectFit="contain"
-          className="inspiration-card-photo-feed"
+          className={isReel ? "h-full w-full min-h-0" : "inspiration-card-photo-feed"}
         />
         {showFavorite ? (
           <button

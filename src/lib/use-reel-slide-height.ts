@@ -21,10 +21,10 @@ export function useReelSlideHeight<T extends HTMLElement>(deps: unknown[] = []) 
 
     window.visualViewport?.addEventListener("resize", sync);
     window.addEventListener("orientationchange", sync);
-    const t = window.setTimeout(sync, 80);
+    const timers = [80, 240, 480].map((ms) => window.setTimeout(sync, ms));
 
     return () => {
-      window.clearTimeout(t);
+      timers.forEach((t) => window.clearTimeout(t));
       ro.disconnect();
       window.visualViewport?.removeEventListener("resize", sync);
       window.removeEventListener("orientationchange", sync);

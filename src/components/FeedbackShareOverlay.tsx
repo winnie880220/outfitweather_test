@@ -17,6 +17,8 @@ export type FeedbackShareSnapshot = {
   dateLabel: string;
   summary: string;
   note: string;
+  /** 下載用 data URL，避免 iOS 清除 blob 後匯出空白 */
+  photoDataUrl?: string;
   photoFallbackUrl?: string;
 };
 
@@ -139,47 +141,50 @@ export function FeedbackShareOverlay({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 32, scale: 0.98 }}
             transition={{ type: "spring", stiffness: 320, damping: 30 }}
-            className="feedback-share-overlay__sheet relative z-[1] mx-auto flex h-[100dvh] w-full max-w-lg flex-col items-center overflow-hidden px-4"
+            className="feedback-share-overlay__sheet relative z-[1] mx-auto w-full max-w-lg px-4"
             onClick={(e) => e.stopPropagation()}
           >
             <motion.div
-              className="feedback-share-overlay__stack"
+              className="feedback-share-overlay__header shrink-0 text-center"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.08, duration: 0.22 }}
+            >
+              <h2
+                id="feedback-share-overlay-title"
+                className="font-semibold text-white"
+              >
+                體感已記錄！
+              </h2>
+              <p className="mt-2 max-w-full px-1 text-sm leading-relaxed text-stone-300">
+                這是今天的穿搭體感卡片，可選擇下載保存
+              </p>
+            </motion.div>
+
+            <motion.div
+              className="feedback-share-overlay__preview"
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.08, duration: 0.25 }}
             >
-              <motion.div
-                className="feedback-share-overlay__header shrink-0 text-center"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.08, duration: 0.22 }}
-              >
-                <h2
-                  id="feedback-share-overlay-title"
-                  className="font-semibold text-white"
-                >
-                  體感已記錄！
-                </h2>
-                <p className="mt-2 max-w-full px-1 text-sm leading-relaxed text-stone-300">
-                  這是今天的穿搭體感卡片，可選擇下載保存
-                </p>
-              </motion.div>
-
-              <motion.div className="feedback-share-overlay__preview">
-                <div className="feedback-share-overlay__preview-frame">
-                  <FeedbackShareCard
-                    ref={cardRef}
-                    context={snapshot.context}
-                    analysis={snapshot.analysis}
-                    metrics={snapshot.metrics}
-                    dateLabel={snapshot.dateLabel}
-                    summary={snapshot.summary}
-                    note={snapshot.note}
-                    aiConclusion={aiConclusion}
-                    aiLoading={aiLoading}
-                    animated
-                  />
-                </div>
+              <motion.div className="feedback-share-overlay__preview-frame">
+                <FeedbackShareCard
+                  ref={cardRef}
+                  context={snapshot.context}
+                  analysis={snapshot.analysis}
+                  metrics={snapshot.metrics}
+                  dateLabel={snapshot.dateLabel}
+                  summary={snapshot.summary}
+                  note={snapshot.note}
+                  aiConclusion={aiConclusion}
+                  aiLoading={aiLoading}
+                  photoFallbackUrl={
+                    snapshot.photoDataUrl ??
+                    snapshot.photoFallbackUrl ??
+                    snapshot.context.photoUrl
+                  }
+                  animated
+                />
               </motion.div>
             </motion.div>
 
@@ -193,7 +198,14 @@ export function FeedbackShareOverlay({
                 <motion.button
                   type="button"
                   onClick={handleDownload}
-                  disabled={downloading || !snapshot.context.photoUrl}
+                  disabled={
+                    downloading ||
+                    !(
+                      snapshot.photoDataUrl ??
+                      snapshot.photoFallbackUrl ??
+                      snapshot.context.photoUrl
+                    )
+                  }
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.45, duration: 0.2 }}
