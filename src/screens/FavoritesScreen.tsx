@@ -59,6 +59,7 @@ export function FavoritesScreen({
                 currentUserName={currentUserName}
                 isSaved={isInspirationFavorite(favorites, card.id)}
                 favoriteBusy={favoriteBusyId === card.id}
+                showFavoriteButton
                 onToggleFavorite={() => onToggleFavorite(card)}
               />
             </div>

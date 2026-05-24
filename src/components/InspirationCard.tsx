@@ -16,6 +16,8 @@ export function InspirationCard({
   onToggleFavorite,
   favoriteBusy = false,
   layout = "list",
+  /** 收藏頁一律顯示愛心，以便取消收藏（含自己的穿搭） */
+  showFavoriteButton,
 }: {
   card: InspirationItem;
   currentUserName?: string;
@@ -23,8 +25,10 @@ export function InspirationCard({
   onToggleFavorite: () => void;
   favoriteBusy?: boolean;
   layout?: "list" | "reel";
+  showFavoriteButton?: boolean;
 }) {
-  const showFavorite = !isOwnOutfit(card, currentUserName);
+  const showFavorite =
+    showFavoriteButton ?? !isOwnOutfit(card, currentUserName);
   const isReel = layout === "reel";
 
   return (

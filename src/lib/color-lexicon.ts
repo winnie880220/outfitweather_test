@@ -62,6 +62,19 @@ function hashHue(input: string): number {
 }
 
 /** 將色名轉為地圖用 hex；未知色名以穩定色相生成 */
+/** 地圖淺色填色需較深邊框，避免與底圖米色融在一起 */
+export function isLightMapFillHex(hex: string): boolean {
+  const trimmed = hex.trim().toLowerCase();
+  if (trimmed.startsWith("hsl")) return false;
+  const raw = trimmed.replace("#", "");
+  if (raw.length < 6) return false;
+  const r = parseInt(raw.slice(0, 2), 16) / 255;
+  const g = parseInt(raw.slice(2, 4), 16) / 255;
+  const b = parseInt(raw.slice(4, 6), 16) / 255;
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return luminance > 0.82;
+}
+
 export function colorNameToHex(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return "#a8a29e";

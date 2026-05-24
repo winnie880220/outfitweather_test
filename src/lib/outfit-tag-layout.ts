@@ -35,13 +35,13 @@ const UPPER_SLOTS: Record<
   Array<{ anchorX: number; anchorY: number; labelX: number; labelY: number }>
 > = {
   outer: [
-    { anchorX: 62, anchorY: 36, labelX: 86, labelY: 22 },
-    { anchorX: 58, anchorY: 32, labelX: 88, labelY: 14 },
+    { anchorX: 62, anchorY: 36, labelX: 90, labelY: 22 },
+    { anchorX: 58, anchorY: 32, labelX: 10, labelY: 14 },
   ],
   mid: [
-    { anchorX: 50, anchorY: 44, labelX: 12, labelY: 36 },
-    { anchorX: 48, anchorY: 40, labelX: 86, labelY: 38 },
-    { anchorX: 52, anchorY: 48, labelX: 14, labelY: 52 },
+    { anchorX: 50, anchorY: 44, labelX: 10, labelY: 36 },
+    { anchorX: 48, anchorY: 40, labelX: 90, labelY: 38 },
+    { anchorX: 52, anchorY: 48, labelX: 10, labelY: 52 },
   ],
 };
 
@@ -51,28 +51,27 @@ const LOWER_SLOTS: Array<{
   labelX: number;
   labelY: number;
 }> = [
-  { anchorX: 50, anchorY: 70, labelX: 14, labelY: 64 },
-  { anchorX: 48, anchorY: 74, labelX: 86, labelY: 68 },
+  { anchorX: 50, anchorY: 70, labelX: 10, labelY: 64 },
+  { anchorX: 48, anchorY: 74, labelX: 90, labelY: 68 },
 ];
 
 function clampPct(n: number): number {
-  return Math.min(92, Math.max(8, n));
+  return Math.min(90, Math.max(10, n));
 }
 
-/** 下著錨點：標籤改放左右側，避免落在照片底部被 UI 遮住 */
+/** 下著錨點：標籤放左右側邊緣，避免落在身體上 */
 function labelPositionForLowerBody(
   anchorX: number,
   anchorY: number
 ): { labelX: number; labelY: number } {
   const toLeft = anchorX >= 46;
-  const rawX = toLeft ? anchorX - 26 : anchorX + 26;
   return {
-    labelX: clampPct(toLeft ? Math.max(rawX, 22) : Math.min(rawX, 78)),
+    labelX: clampPct(toLeft ? 10 : 90),
     labelY: clampPct(anchorY - 8),
   };
 }
 
-/** 標籤 pill 往照片邊緣推開，避免遮住身體 */
+/** 標籤 pill 往照片左右邊緣推開，避免遮住身體 */
 function labelPositionFromAnchor(
   anchorX: number,
   anchorY: number,
@@ -82,31 +81,48 @@ function labelPositionFromAnchor(
     return labelPositionForLowerBody(anchorX, anchorY);
   }
 
-  const cx = 50;
-  const cy = 50;
-  const dx = anchorX - cx;
-  const dy = anchorY - cy;
-  const dist = Math.hypot(dx, dy) || 1;
-  const push = 24;
-  let labelY = clampPct(anchorY + (dy / dist) * push);
-  labelY = Math.min(labelY, 80);
-  const labelX = clampPct(anchorX + (dx / dist) * push);
-  return { labelX, labelY };
+  const toLeft = anchorX < 50;
+  return {
+    labelX: clampPct(toLeft ? 10 : 90),
+    labelY: clampPct(anchorY - 4),
+  };
 }
 
 type LabelBox = { left: number; top: number; w: number; h: number };
 
-function labelOnRight(p: OutfitTagPlacement): boolean {
-  return p.labelX > p.anchorX;
+/** 照片中央人體區域（pill 不可侵入） */
+const BODY_ZONE = { left: 28, top: 14, right: 72, bottom: 88 };
+
+const MAX_LABEL_WIDTH_PCT = 26;
+
+function labelOnRightSide(p: OutfitTagPlacement): boolean {
+  return p.labelX >= 50;
 }
 
 /** 依文字長度估算 pill 在 viewBox 上的佔比（%） */
 function estimateLabelBox(p: OutfitTagPlacement): LabelBox {
-  const onRight = labelOnRight(p);
-  const w = Math.min(44, 8 + p.label.length * 2.6);
+  const onRight = labelOnRightSide(p);
+  const w = Math.min(MAX_LABEL_WIDTH_PCT, 8 + p.label.length * 2.4);
   const h = 7.5;
   const left = onRight ? p.labelX - w : p.labelX;
   return { left, top: p.labelY - h / 2, w, h };
+}
+
+function labelBoxInBodyZone(box: LabelBox): boolean {
+  return !(
+    box.left + box.w <= BODY_ZONE.left ||
+    box.left >= BODY_ZONE.right ||
+    box.top + box.h <= BODY_ZONE.top ||
+    box.top >= BODY_ZONE.bottom
+  );
+}
+
+function snapLabelAwayFromBody(p: OutfitTagPlacement): OutfitTagPlacement {
+  const box = estimateLabelBox(p);
+  if (!labelBoxInBodyZone(box)) return p;
+
+  const toLeft = p.anchorX < 50;
+  return { ...p, labelX: clampPct(toLeft ? 10 : 90) };
 }
 
 function boxesOverlap(a: LabelBox, b: LabelBox, gap = 2): boolean {
@@ -120,7 +136,7 @@ function boxesOverlap(a: LabelBox, b: LabelBox, gap = 2): boolean {
 
 /** 避免多個標籤 pill 重疊（迭代推開直到無碰撞或達上限） */
 function refinePlacements(placements: OutfitTagPlacement[]): OutfitTagPlacement[] {
-  const result = placements.map((p) => ({ ...p }));
+  const result = placements.map((p) => snapLabelAwayFromBody(p));
   const maxPasses = 16;
 
   for (let pass = 0; pass < maxPasses; pass++) {
@@ -162,7 +178,7 @@ function refinePlacements(placements: OutfitTagPlacement[]): OutfitTagPlacement[
     if (!moved) break;
   }
 
-  return result;
+  return result.map((p) => snapLabelAwayFromBody(p));
 }
 
 function buildFromAnchors(
@@ -193,8 +209,8 @@ function buildFromAnchors(
       if (!isLower && Math.abs(ax - 50) < 14 && ay < 56) {
         const toLeft = upperSpreadIndex % 2 === 0;
         labelPos = {
-          labelX: clampPct(toLeft ? 16 : 84),
-          labelY: clampPct(ay - 6 + upperSpreadIndex * 7),
+          labelX: clampPct(toLeft ? 10 : 90),
+          labelY: clampPct(ay - 8 + upperSpreadIndex * 8),
         };
         upperSpreadIndex += 1;
       }

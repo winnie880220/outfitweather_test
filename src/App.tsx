@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { BottomActionBar } from "./components/BottomActionBar";
 import { FeelSliderField } from "./components/FeelSliderField";
 import { FEEL_TONES } from "./lib/feel-metrics";
@@ -15,6 +16,11 @@ import {
   FeedbackOutfitCard,
   type FeedbackOutfitContext,
 } from "./components/FeedbackOutfitCard";
+import {
+  FeedbackShareOverlay,
+  formatShareDateLabel,
+  type FeedbackShareSnapshot,
+} from "./components/FeedbackShareOverlay";
 import { PendingFeedbackBanner } from "./components/PendingFeedbackBanner";
 import { ReminderSettingsPanel } from "./components/ReminderSettings";
 import { WeatherSummaryCard } from "./components/WeatherSummaryCard";
@@ -119,8 +125,6 @@ import {
   CloudRain,
   Clock,
   Globe,
-  Sun,
-  Cloud,
   Upload,
   Wind,
   User,
@@ -184,17 +188,72 @@ const Toast = ({ message, onClear }: { message: string; onClear: () => void }) =
   useEffect(() => {
     const timer = setTimeout(onClear, 2000);
     return () => clearTimeout(timer);
-  }, [onClear]);
+  }, [onClear, message]);
 
-  return (
-    <motion.div 
-      initial={{ opacity: 0, y: 50 }}
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <motion.div
+      role="status"
+      aria-live="polite"
+      initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 50 }}
-      className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-stone-800 text-white px-5 py-2.5 rounded-full text-sm font-medium whitespace-nowrap shadow-lg"
+      exit={{ opacity: 0, y: 12 }}
+      transition={{ duration: 0.2 }}
+      className="app-toast"
     >
       {message}
-    </motion.div>
+    </motion.div>,
+    document.body
+  );
+};
+
+const AppDialogOverlay = ({
+  open,
+  onDismiss,
+  children,
+  labelledBy,
+  describedBy,
+}: {
+  open: boolean;
+  onDismiss: () => void;
+  children: React.ReactNode;
+  labelledBy: string;
+  describedBy: string;
+}) => {
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <AnimatePresence>
+      {open ? (
+        <motion.div
+          key="app-dialog-overlay"
+          className="app-dialog-overlay fixed inset-0 flex items-center justify-center p-6"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18 }}
+          role="presentation"
+          onClick={onDismiss}
+        >
+          <motion.div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby={labelledBy}
+            aria-describedby={describedBy}
+            initial={{ scale: 0.96, y: 8 }}
+            animate={{ scale: 1, y: 0 }}
+            exit={{ scale: 0.96, y: 8 }}
+            transition={{ duration: 0.18 }}
+            className="app-dialog-panel w-full max-w-[300px] rounded-2xl bg-white p-5 shadow-xl ring-1 ring-stone-200/80"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {children}
+          </motion.div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>,
+    document.body
   );
 };
 
@@ -207,57 +266,38 @@ const ExitConfirmDialog = ({
   onCancel: () => void;
   onConfirm: () => void;
 }) => (
-  <AnimatePresence>
-    {open ? (
-      <motion.div
-        className="fixed inset-0 z-[60] flex items-center justify-center p-6"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        role="presentation"
+  <AppDialogOverlay
+    open={open}
+    onDismiss={onCancel}
+    labelledBy="exit-dialog-title"
+    describedBy="exit-dialog-desc"
+  >
+    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-stone-100 text-stone-600">
+      <LogOut size={22} strokeWidth={1.75} />
+    </div>
+    <h2 id="exit-dialog-title" className="text-center text-base font-semibold text-stone-800">
+      確定要離開嗎？
+    </h2>
+    <p id="exit-dialog-desc" className="mt-2 text-center text-sm leading-relaxed text-stone-500">
+      離開後將回到初始頁面，你的名稱與地點等身分資料<strong className="font-semibold text-stone-700">無法保留</strong>，需重新設定。
+    </p>
+    <div className="mt-5 flex gap-2">
+      <button
+        type="button"
         onClick={onCancel}
+        className="flex-1 rounded-xl border border-stone-200 bg-white py-2.5 text-sm font-semibold text-stone-600 transition-colors hover:bg-stone-50"
       >
-        <motion.div
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="exit-dialog-title"
-          aria-describedby="exit-dialog-desc"
-          initial={{ opacity: 0, scale: 0.96, y: 8 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.96, y: 8 }}
-          transition={{ duration: 0.18 }}
-          className="w-full max-w-[300px] rounded-2xl bg-white p-5 shadow-xl ring-1 ring-stone-200/80"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-stone-100 text-stone-600">
-            <LogOut size={22} strokeWidth={1.75} />
-          </div>
-          <h2 id="exit-dialog-title" className="text-center text-base font-semibold text-stone-800">
-            確定要離開嗎？
-          </h2>
-          <p id="exit-dialog-desc" className="mt-2 text-center text-sm leading-relaxed text-stone-500">
-            離開後將回到初始頁面，你的名稱與地點等身分資料<strong className="font-semibold text-stone-700">無法保留</strong>，需重新設定。
-          </p>
-          <div className="mt-5 flex gap-2">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="flex-1 rounded-xl border border-stone-200 bg-white py-2.5 text-sm font-semibold text-stone-600 transition-colors hover:bg-stone-50"
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              onClick={onConfirm}
-              className="flex-1 rounded-xl bg-stone-800 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-stone-900 active:scale-[0.98]"
-            >
-              確定離開
-            </button>
-          </div>
-        </motion.div>
-      </motion.div>
-    ) : null}
-  </AnimatePresence>
+        取消
+      </button>
+      <button
+        type="button"
+        onClick={onConfirm}
+        className="flex-1 rounded-xl bg-stone-800 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-stone-900 active:scale-[0.98]"
+      >
+        確定離開
+      </button>
+    </div>
+  </AppDialogOverlay>
 );
 
 const PendingExitBlockDialog = ({
@@ -269,63 +309,44 @@ const PendingExitBlockDialog = ({
   onCancel: () => void;
   onGoFeedback: () => void;
 }) => (
-  <AnimatePresence>
-    {open ? (
-      <motion.div
-        className="fixed inset-0 z-[60] flex items-center justify-center p-6"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        role="presentation"
+  <AppDialogOverlay
+    open={open}
+    onDismiss={onCancel}
+    labelledBy="pending-exit-title"
+    describedBy="pending-exit-desc"
+  >
+    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-stone-100 text-stone-600">
+      <Smile size={22} strokeWidth={1.75} />
+    </div>
+    <h2
+      id="pending-exit-title"
+      className="text-center text-base font-semibold text-stone-800"
+    >
+      請先完成體感回饋
+    </h2>
+    <p
+      id="pending-exit-desc"
+      className="mt-2 text-center text-sm leading-relaxed text-stone-500"
+    >
+      你今日已上傳穿搭照片，請先完成體感回饋後再離開，資料才會完整保存。
+    </p>
+    <div className="mt-5 flex gap-2">
+      <button
+        type="button"
         onClick={onCancel}
+        className="flex-1 rounded-xl border border-stone-200 bg-white py-2.5 text-sm font-semibold text-stone-600 transition-colors hover:bg-stone-50"
       >
-        <motion.div
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="pending-exit-title"
-          aria-describedby="pending-exit-desc"
-          initial={{ opacity: 0, scale: 0.96, y: 8 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.96, y: 8 }}
-          transition={{ duration: 0.18 }}
-          className="w-full max-w-[300px] rounded-2xl bg-white p-5 shadow-xl ring-1 ring-stone-200/80"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <motion.div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-stone-100 text-stone-600">
-            <Smile size={22} strokeWidth={1.75} />
-          </motion.div>
-          <h2
-            id="pending-exit-title"
-            className="text-center text-base font-semibold text-stone-800"
-          >
-            請先完成體感回饋
-          </h2>
-          <p
-            id="pending-exit-desc"
-            className="mt-2 text-center text-sm leading-relaxed text-stone-500"
-          >
-            你今日已上傳穿搭照片，請先完成體感回饋後再離開，資料才會完整保存。
-          </p>
-          <div className="mt-5 flex gap-2">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="flex-1 rounded-xl border border-stone-200 bg-white py-2.5 text-sm font-semibold text-stone-600 transition-colors hover:bg-stone-50"
-            >
-              稍後再說
-            </button>
-            <button
-              type="button"
-              onClick={onGoFeedback}
-              className="flex-1 rounded-xl bg-stone-800 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-stone-900 active:scale-[0.98]"
-            >
-              前往回饋
-            </button>
-          </div>
-        </motion.div>
-      </motion.div>
-    ) : null}
-  </AnimatePresence>
+        稍後再說
+      </button>
+      <button
+        type="button"
+        onClick={onGoFeedback}
+        className="flex-1 rounded-xl bg-stone-800 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-stone-900 active:scale-[0.98]"
+      >
+        前往回饋
+      </button>
+    </div>
+  </AppDialogOverlay>
 );
 
 const AppExitButton = ({ onClick }: { onClick: () => void }) => (
@@ -358,175 +379,136 @@ const WelcomeScreen = ({
       animate={{ opacity: 1 }}
       className="welcome-screen screen-scroll app-scroll"
     >
+      <div className="welcome-bg" aria-hidden />
+
       <motion.div
-        className="welcome-ambient"
-        aria-hidden
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.8 }}
+        className="app-inset welcome-body"
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
       >
-        <span className="welcome-ambient-blob welcome-ambient-blob--sun" />
-        <span className="welcome-ambient-blob welcome-ambient-blob--sky" />
-      </motion.div>
-
-      <motion.div className="app-inset welcome-body">
-        <motion.header
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-          className="welcome-hero"
-        >
-          <motion.div className="welcome-hero-icons" aria-hidden>
-            <motion.span
-              className="welcome-hero-icon welcome-hero-icon--sun"
-              initial={{ opacity: 0, x: -10, scale: 0.85 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              transition={{ delay: 0.08, duration: 0.4 }}
-            >
-              <Sun size={17} strokeWidth={1.75} />
-            </motion.span>
-            <motion.span
-              className="welcome-hero-icon welcome-hero-icon--main"
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.14, duration: 0.45, type: "spring", stiffness: 260, damping: 22 }}
-            >
-              <Shirt size={28} strokeWidth={1.5} />
-            </motion.span>
-            <motion.span
-              className="welcome-hero-icon welcome-hero-icon--cloud"
-              initial={{ opacity: 0, x: 10, scale: 0.85 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              transition={{ delay: 0.2, duration: 0.4 }}
-            >
-              <Cloud size={17} strokeWidth={1.75} />
-            </motion.span>
-          </motion.div>
-
-          <h1 className="welcome-title">衣氣象</h1>
-          <p className="welcome-subtitle">Outfit Weather</p>
-          <p className="welcome-tagline">依天氣記錄穿搭，晚上回饋穿著體感</p>
-        </motion.header>
-
-        <AnimatePresence initial={false}>
-          {canStart && (
+        <div className="welcome-shell">
+          <div className="welcome-emblem-anchor" aria-hidden>
             <motion.div
-              key="welcome-preview"
-              initial={{ opacity: 0, y: 10, height: 0 }}
-              animate={{ opacity: 1, y: 0, height: "auto" }}
-              exit={{ opacity: 0, y: -6, height: 0 }}
-              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-              className="welcome-preview-wrap"
+              className="welcome-emblem"
+              initial={{ opacity: 0, scale: 0.88 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.06, duration: 0.42, type: "spring", stiffness: 280, damping: 22 }}
             >
-              <p className="welcome-preview">
-                <User size={14} className="shrink-0 text-[#8b7355]" aria-hidden />
-                <span className="min-w-0 truncate">
-                  嗨，<strong className="font-semibold text-stone-800">{userName.trim()}</strong>
-                  <span className="text-stone-400"> · </span>
-                  <span className="text-stone-600">{userGender}</span>
-                </span>
-              </p>
+              <Shirt size={26} strokeWidth={1.35} className="welcome-emblem-icon" />
             </motion.div>
-          )}
-        </AnimatePresence>
-
-        <motion.div
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.12, duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-          className="welcome-setup-card"
-        >
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.18, duration: 0.35 }}
-          >
-            <label htmlFor="welcome-name" className="welcome-field-label">
-              你的名字
-            </label>
-            <input
-              id="welcome-name"
-              className="welcome-field-input"
-              placeholder="輸入名字"
-              value={userName}
-              onChange={(e) => setUserName(e.target.value)}
-              autoComplete="name"
-              autoFocus
-            />
-          </motion.div>
-
-          <div className="welcome-field-divider" aria-hidden />
+          </div>
 
           <motion.div
-            initial={{ opacity: 0, y: 8 }}
+            className="welcome-card"
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.21, duration: 0.35 }}
+            transition={{ delay: 0.1, duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
           >
-            <label htmlFor="welcome-gender" className="welcome-field-label">
-              性別
-            </label>
-            <select
-              id="welcome-gender"
-              className="welcome-field-select"
-              value={userGender ?? ""}
-              onChange={(e) => {
-                const value = e.target.value;
-                setUserGender(isUserGender(value) ? value : null);
-              }}
-              required
+            <header className="welcome-brand">
+              <p className="welcome-eyebrow">衣氣象</p>
+              <h1 className="welcome-title">Outfit Weather</h1>
+              <p className="welcome-tagline">依天氣記錄穿搭，晚上回饋穿著體感</p>
+            </header>
+
+            <div className="welcome-form">
+              <div className="welcome-field">
+                <label htmlFor="welcome-name" className="welcome-field-label">
+                  你的名字
+                </label>
+                <input
+                  id="welcome-name"
+                  className="welcome-field-input"
+                  placeholder="輸入名字"
+                  value={userName}
+                  onChange={(e) => setUserName(e.target.value)}
+                  autoComplete="name"
+                  autoFocus
+                />
+              </div>
+
+              <div className="welcome-field">
+                <label htmlFor="welcome-gender" className="welcome-field-label">
+                  性別
+                </label>
+                <select
+                  id="welcome-gender"
+                  className="welcome-field-select"
+                  value={userGender ?? ""}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setUserGender(isUserGender(value) ? value : null);
+                  }}
+                  required
+                >
+                  <option value="" disabled>
+                    請選擇
+                  </option>
+                  {USER_GENDER_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <AnimatePresence initial={false}>
+              {canStart ? (
+                <motion.p
+                  key="welcome-preview"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="welcome-preview-wrap"
+                >
+                  <span className="welcome-preview">
+                    <User size={13} className="shrink-0 text-[#8b7355]" aria-hidden />
+                    <span className="min-w-0 truncate">
+                      嗨，<strong>{userName.trim()}</strong>
+                      <span className="text-stone-400"> · </span>
+                      {userGender}
+                    </span>
+                  </span>
+                </motion.p>
+              ) : null}
+            </AnimatePresence>
+
+            <button
+              type="button"
+              onClick={startApp}
+              disabled={!canStart}
+              className={`welcome-start-btn ${canStart ? "welcome-start-btn--ready" : ""}`}
             >
-              <option value="" disabled>
-                請選擇
-              </option>
-              {USER_GENDER_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+              開始
+              {canStart ? <ArrowRight size={16} className="welcome-start-arrow" /> : null}
+            </button>
+
+            <AnimatePresence mode="wait" initial={false}>
+              {!canStart ? (
+                <motion.p
+                  key="hint"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="welcome-hint"
+                >
+                  請先填寫名字與性別
+                </motion.p>
+              ) : (
+                <motion.p
+                  key="ready"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="welcome-hint welcome-hint--ready"
+                >
+                  進入首頁後會先定位，也可自行切換地區
+                </motion.p>
+              )}
+            </AnimatePresence>
           </motion.div>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.28, duration: 0.38 }}
-          className="welcome-actions"
-        >
-          <button
-            type="button"
-            onClick={startApp}
-            disabled={!canStart}
-            className={`welcome-start-btn ${canStart ? "welcome-start-btn--ready btn-gradient-primary" : ""}`}
-          >
-            開始
-            <ArrowRight size={17} className={canStart ? "welcome-start-arrow" : ""} />
-          </button>
-
-          <AnimatePresence mode="wait" initial={false}>
-            {!canStart ? (
-              <motion.p
-                key="hint"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="welcome-hint"
-              >
-                請先填寫名字與性別
-              </motion.p>
-            ) : (
-              <motion.p
-                key="ready"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="welcome-hint welcome-hint--ready"
-              >
-                進入首頁後會先定位，也可自行切換地區
-              </motion.p>
-            )}
-          </AnimatePresence>
-        </motion.div>
+        </div>
       </motion.div>
     </motion.div>
   );
@@ -893,7 +875,7 @@ const RecordScreen = ({
             </div>
           ) : hasPhoto && photoPreviewUrl ? (
             <>
-              <div className="record-photo-stage relative min-h-0 w-full flex-1 overflow-hidden bg-[#faf7f2]">
+              <div className="record-photo-stage relative min-h-0 w-full flex-1 overflow-visible bg-[#faf7f2]">
                 <img
                   src={photoPreviewUrl}
                   alt="今日穿搭"
@@ -1262,6 +1244,8 @@ export default function App() {
   const [toastMsg, setToastMsg] = useState("");
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [showPendingExitBlock, setShowPendingExitBlock] = useState(false);
+  const [feedbackShareSnapshot, setFeedbackShareSnapshot] =
+    useState<FeedbackShareSnapshot | null>(null);
   const [currentTime, setCurrentTime] = useState("");
 
   const showToast = (msg: string) => setToastMsg(msg);
@@ -1386,6 +1370,12 @@ export default function App() {
     [loadWeather]
   );
 
+  /** 地區選單為台北市時，地圖需進入台北分區模式（含 session 還原） */
+  useEffect(() => {
+    if (!sessionHydrated.current) return;
+    setMapView(locationPicker.county === TAIPEI_COUNTY ? "taipei-districts" : "counties");
+  }, [locationPicker.county]);
+
   const requestHomeGeolocation = useCallback(() => {
     if (!navigator.geolocation) {
       showToast("此裝置不支援定位功能");
@@ -1472,9 +1462,9 @@ export default function App() {
   );
 
   const loadRegionColorFills = useCallback(async (temp: number) => {
-    const key = String(Math.round(temp));
+    const key = `${Math.round(temp)}@d3r3`;
     try {
-      const { fills } = await fetchRegionColorFills(temp, 2);
+      const { fills } = await fetchRegionColorFills(temp, 3);
       regionColorFillsKeyRef.current = key;
       setRegionColorFills(fills);
     } catch (error) {
@@ -1499,7 +1489,7 @@ export default function App() {
         : weather?.temp;
     if (temp == null) return;
 
-    const key = String(Math.round(temp));
+    const key = `${Math.round(temp)}@d3r3`;
     if (regionColorFillsKeyRef.current === key) return;
     void loadRegionColorFills(temp);
   }, [
@@ -1629,7 +1619,12 @@ export default function App() {
       setUserLocation(session.userLocation);
       setLocationInput(session.userLocation.name);
       const parsed = parseLocationToPickerValue(session.userLocation.name);
-      if (parsed) setLocationPicker(parsed);
+      if (parsed) {
+        setLocationPicker(parsed);
+        if (parsed.county === TAIPEI_COUNTY) {
+          setMapView("taipei-districts");
+        }
+      }
       homeGeoRequested.current = true;
     }
     setReminder(session.reminder);
@@ -1917,12 +1912,12 @@ export default function App() {
       showToast("此穿搭缺少 Notion 紀錄，無法收藏");
       return;
     }
-    if (targetUserName && trimmedName === targetUserName) {
+    const saved = isInspirationFavorite(inspirationFavorites, card.id);
+    if (targetUserName && trimmedName === targetUserName && !saved) {
       showToast("無法收藏自己的穿搭");
       return;
     }
     if (favoriteBusyId === card.id) return;
-    const saved = isInspirationFavorite(inspirationFavorites, card.id);
     setFavoriteBusyId(card.id);
     try {
       const session = loadSession();
@@ -2129,6 +2124,13 @@ export default function App() {
     }
   };
 
+  const dismissFeedbackShareOverlay = useCallback(() => {
+    setFeedbackShareSnapshot(null);
+    setFeelSet(false);
+    setFeedbackDesc("尚未標記");
+    setScreen("home");
+  }, []);
+
   const submitFeedback = async (
     metrics: {
       breathability: number;
@@ -2160,6 +2162,17 @@ export default function App() {
         stuffiness: metrics.stuffiness,
         ...(note ? { feedback: note } : {}),
       });
+
+      setFeedbackShareSnapshot({
+        context: { ...feedbackOutfit },
+        analysis: uploadedOutfitTags,
+        metrics,
+        dateLabel: formatShareDateLabel(),
+        summary: feedbackDesc,
+        note: note ?? "",
+        photoFallbackUrl: outfitImage?.previewUrl,
+      });
+
       markPendingFeedbackComplete();
       clearPendingRecord();
       setHasPendingFeedback(false);
@@ -2196,12 +2209,6 @@ export default function App() {
     };
     
     setOutfitList([newOutfit, ...outfitList]);
-    showToast(
-      feelNote?.trim()
-        ? "體感數據與你的感受已記錄，謝謝你的貢獻 🌏"
-        : "體感數據已記錄，謝謝你的貢獻 🌏"
-    );
-    setTimeout(() => setScreen("home"), 1000);
   };
 
   return (
@@ -2216,7 +2223,7 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
               transition={{ duration: 0.2 }}
-              className="app-screen-gradient app-screen-page"
+              className={`app-screen-page ${screen === "welcome" ? "welcome-screen-page" : "app-screen-gradient"}`}
             >
               {screen === "welcome" && (
               <WelcomeScreen
@@ -2369,7 +2376,9 @@ export default function App() {
 
         {/* Toast Notification */}
         <AnimatePresence>
-          {toastMsg && <Toast message={toastMsg} onClear={() => setToastMsg("")} />}
+          {toastMsg ? (
+            <Toast key="app-toast" message={toastMsg} onClear={() => setToastMsg("")} />
+          ) : null}
         </AnimatePresence>
 
         <ExitConfirmDialog
@@ -2381,6 +2390,13 @@ export default function App() {
           open={showPendingExitBlock}
           onCancel={() => setShowPendingExitBlock(false)}
           onGoFeedback={goFeedbackFromPendingExit}
+        />
+        <FeedbackShareOverlay
+          open={feedbackShareSnapshot != null}
+          snapshot={feedbackShareSnapshot}
+          onDismiss={dismissFeedbackShareOverlay}
+          onDownloadSuccess={showToast}
+          onDownloadError={showToast}
         />
       </div>
     </div>

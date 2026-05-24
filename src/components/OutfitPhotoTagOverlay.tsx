@@ -10,12 +10,14 @@ export function OutfitPhotoTagOverlay({
   lowerBodyTags,
   tagAnchors,
   loading = false,
+  compactTags = false,
   className = "",
 }: {
   upperBodyTags: string[];
   lowerBodyTags: string[];
   tagAnchors?: Array<{ label: string; anchorX: number; anchorY: number }>;
   loading?: boolean;
+  compactTags?: boolean;
   className?: string;
 }) {
   const placements = buildOutfitTagPlacements(
@@ -75,7 +77,12 @@ export function OutfitPhotoTagOverlay({
       <AnimatePresence>
         {showTags
           ? placements.map((p, i) => (
-              <TagLabel key={`${p.label}-${i}`} placement={p} index={i} />
+              <TagLabel
+                key={`${p.label}-${i}`}
+                placement={p}
+                index={i}
+                compact={compactTags}
+              />
             ))
           : null}
       </AnimatePresence>
@@ -109,11 +116,13 @@ function TagConnector({
 function TagLabel({
   placement,
   index,
+  compact = false,
 }: {
   placement: OutfitTagPlacement;
   index: number;
+  compact?: boolean;
 }) {
-  const anchorOnRight = placement.labelX > placement.anchorX;
+  const onRight = placement.labelX >= 50;
 
   return (
     <>
@@ -125,14 +134,17 @@ function TagLabel({
         transition={{ duration: 0.28, delay: index * 0.08 + 0.12 }}
       />
       <motion.span
-        className="outfit-tag-pill absolute max-w-[42%] whitespace-nowrap -translate-y-1/2 px-2.5 py-1 font-semibold tracking-wide"
+        className={`outfit-tag-pill absolute whitespace-nowrap -translate-y-1/2 px-2.5 py-1 font-semibold tracking-wide ${
+          compact ? "outfit-tag-pill--compact max-w-none" : "max-w-[28%]"
+        }`}
         style={{
-          left: `${placement.labelX}%`,
+          ...(onRight
+            ? { right: `${100 - placement.labelX}%`, left: "auto" }
+            : { left: `${placement.labelX}%`, right: "auto" }),
           top: `${placement.labelY}%`,
-          transform: `translate(${anchorOnRight ? "-100%" : "0"}, -50%)`,
         }}
-        initial={{ opacity: 0, scale: 0.9, y: 4 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
         transition={{
           type: "spring",
           stiffness: 380,

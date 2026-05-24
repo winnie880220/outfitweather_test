@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { getCurrentWeather, getWeatherProvider } from "../api/lib/weather";
 import { reverseGeocode, searchLocations } from "../api/lib/geocode";
 import { analyzeOutfitImage } from "../api/lib/gemini/analyze-outfit";
+import { summarizeFeelFeedback } from "../api/lib/gemini/summarize-feel";
 import { isGeminiConfigured } from "../api/lib/env";
 import {
   getOutfitInsights,
@@ -99,6 +100,39 @@ async function handleApi(
         body.imageBase64,
         body.mimeType ?? "image/jpeg"
       );
+      return send(res, 200, { ok: true, data, source: "gemini" });
+    }
+
+    if (url.pathname === "/api/feedback-feel-summary" && req.method === "POST") {
+      const body = (await readBody(req)) as {
+        breathability?: number;
+        wrapping?: number;
+        stuffiness?: number;
+        upperBodyTags?: string[];
+        lowerBodyTags?: string[];
+        temp?: number;
+        condition?: string;
+        locationName?: string;
+        userNote?: string;
+      };
+      if (
+        body?.breathability == null ||
+        body?.wrapping == null ||
+        body?.stuffiness == null
+      ) {
+        return send(res, 400, { ok: false, error: "缺少體感數值" });
+      }
+      const data = await summarizeFeelFeedback({
+        breathability: body.breathability,
+        wrapping: body.wrapping,
+        stuffiness: body.stuffiness,
+        upperBodyTags: body.upperBodyTags,
+        lowerBodyTags: body.lowerBodyTags,
+        temp: body.temp,
+        condition: body.condition,
+        locationName: body.locationName,
+        userNote: body.userNote,
+      });
       return send(res, 200, { ok: true, data, source: "gemini" });
     }
 

@@ -21,4 +21,5 @@ export {
   listInspiration,
   listOutfits,
 } from "./notion";
-export type { OutfitRecordSnapshot } from "./notion";
+export { fetchFeedbackFeelSummary } from "./feedback-feel-summary";
+export type { FeelSummaryRequest, FeelSummaryResult } from "./feedback-feel-summary";

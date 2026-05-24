@@ -279,24 +279,47 @@ export async function getOutfitInsights(
   };
 }
 
-/** 地圖填色：優先 color 多選，否則用寫入時的 CurrentRanking */
+/** 地圖填色：與區域排行榜 colorTop3 相同，僅統計 Color 多選 */
 function colorsForRegionAggregation(record: ParsedNotionRecord): string[] {
-  const fromMulti = record.colors.map((c) => c.trim()).filter(Boolean);
-  if (fromMulti.length > 0) return fromMulti;
-  const rank = record.currentRanking?.trim();
-  return rank ? [rank] : [];
+  return record.colors.map((c) => c.trim()).filter(Boolean);
 }
 
 function pickTopColorName(counts: Map<string, number>): string | null {
-  let best: string | null = null;
-  let bestCount = 0;
-  for (const [name, count] of counts) {
-    if (count > bestCount) {
-      best = name;
-      bestCount = count;
-    }
+  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  return sorted[0]?.[0] ?? null;
+}
+
+function ensureColorBucket(
+  buckets: Map<
+    string,
+    { county: TaiwanCounty; district?: TaipeiDistrict; colorCounts: Map<string, number> }
+  >,
+  key: string,
+  county: TaiwanCounty,
+  district?: TaipeiDistrict
+) {
+  let bucket = buckets.get(key);
+  if (!bucket) {
+    bucket = {
+      county,
+      ...(district ? { district } : {}),
+      colorCounts: new Map(),
+    };
+    buckets.set(key, bucket);
   }
-  return best;
+  return bucket;
+}
+
+function addRecordColorsToBucket(
+  bucket: { colorCounts: Map<string, number> },
+  record: ParsedNotionRecord
+) {
+  const seen = new Set<string>();
+  for (const colorName of colorsForRegionAggregation(record)) {
+    if (seen.has(colorName)) continue;
+    seen.add(colorName);
+    bucket.colorCounts.set(colorName, (bucket.colorCounts.get(colorName) ?? 0) + 1);
+  }
 }
 
 /** 一次查詢後依區域聚合顏色排行第一，供地圖行政區填色 */
@@ -315,22 +338,25 @@ export async function getRegionColorFills(
     const region = parseLocationToRegion(record.location);
     if (!region) continue;
 
-    const key = regionKey(region);
-    let bucket = buckets.get(key);
-    if (!bucket) {
-      bucket = {
-        county: region.county,
-        ...(region.level === "district" ? { district: region.district } : {}),
-        colorCounts: new Map(),
-      };
-      buckets.set(key, bucket);
+    if (region.level === "district") {
+      const districtKey = regionKey(region);
+      addRecordColorsToBucket(
+        ensureColorBucket(buckets, districtKey, region.county, region.district),
+        record
+      );
     }
 
-    const seen = new Set<string>();
-    for (const colorName of colorsForRegionAggregation(record)) {
-      if (seen.has(colorName)) continue;
-      seen.add(colorName);
-      bucket.colorCounts.set(colorName, (bucket.colorCounts.get(colorName) ?? 0) + 1);
+    if (region.county === TAIPEI_COUNTY) {
+      /** 台北市大區：含「台北市」與各行政區紀錄，供縮小地圖整市填色 */
+      addRecordColorsToBucket(
+        ensureColorBucket(buckets, TAIPEI_COUNTY, TAIPEI_COUNTY),
+        record
+      );
+    } else if (region.level === "county") {
+      addRecordColorsToBucket(
+        ensureColorBucket(buckets, region.county, region.county),
+        record
+      );
     }
   }
 

@@ -112,7 +112,7 @@ export async function toggleOutfitFavorite(
   if (!outfitPageId) return { ok: false, error: "缺少 outfitPageId" };
 
   const owner = await fetchOutfitPageOwner(outfitPageId);
-  if (owner && owner === favoriter) {
+  if (params.favorited && owner && owner === favoriter) {
     return { ok: false, error: "無法收藏自己的穿搭" };
   }
 
