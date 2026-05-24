@@ -73,6 +73,30 @@ function shouldIncludeNode(node: Node): boolean {
   return true;
 }
 
+function readPhotoSrc(element: HTMLElement): string | undefined {
+  const bg = element.querySelector<HTMLElement>(".style-note-card__export-photo-bg");
+  const fromBg = bg?.style.backgroundImage.match(/url\(["']?([^"')]+)["']?\)/)?.[1];
+  if (fromBg) return fromBg;
+  return element.querySelector<HTMLImageElement>(".style-note-card__export-photo-helper")
+    ?.src;
+}
+
+type PhotoRegion = { dx: number; dy: number; dw: number; dh: number };
+
+function measurePhotoRegion(element: HTMLElement): PhotoRegion | null {
+  const cardRect = element.getBoundingClientRect();
+  const photoEl = element.querySelector(".style-note-card__polaroid-photo");
+  if (!photoEl) return null;
+  const rect = photoEl.getBoundingClientRect();
+  if (rect.width < 1 || rect.height < 1) return null;
+  return {
+    dx: rect.left - cardRect.left,
+    dy: rect.top - cardRect.top,
+    dw: rect.width,
+    dh: rect.height,
+  };
+}
+
 async function loadImage(src: string): Promise<HTMLImageElement> {
   const dataUrl = await ensureDataUrl(src);
   const img = new Image();
@@ -82,61 +106,37 @@ async function loadImage(src: string): Promise<HTMLImageElement> {
   return img;
 }
 
-/** iOS Safari：html-to-image 需 inline data URL；照片用 background-image 較穩定 */
-export async function prepareShareCardForCapture(element: HTMLElement): Promise<void> {
+/** 擷取前僅 inline 圖片，不調整版面（避免陰影／拍立得框位移） */
+export async function prepareShareCardForCapture(
+  element: HTMLElement,
+  photoDataUrl?: string
+): Promise<void> {
   element.setAttribute("data-capturing", "true");
 
-  const photoSrc =
-    element
-      .querySelector<HTMLElement>(".style-note-card__export-photo-bg")
-      ?.style.backgroundImage.match(/url\(["']?([^"')]+)["']?\)/)?.[1] ??
-    element.querySelector<HTMLImageElement>(".style-note-card__export-photo-helper")?.src;
-
-  let dataUrl: string | undefined;
-  if (photoSrc) {
-    try {
-      dataUrl = await ensureDataUrl(photoSrc);
-    } catch {
-      dataUrl = photoSrc.startsWith("data:") ? photoSrc : undefined;
-    }
-  }
-
-  const polaroidPhoto = element.querySelector<HTMLElement>(
-    ".style-note-card__polaroid-photo"
-  );
   const bgEl = element.querySelector<HTMLElement>(".style-note-card__export-photo-bg");
-
-  if (dataUrl && bgEl) {
-    bgEl.style.backgroundImage = `url("${dataUrl}")`;
-    const img = await loadImage(dataUrl);
-    const boxW = Math.max(polaroidPhoto?.clientWidth ?? 0, bgEl.clientWidth, 120);
-    const boxH = Math.max(polaroidPhoto?.clientHeight ?? 0, bgEl.clientHeight, 160);
-    bgEl.style.width = `${boxW}px`;
-    bgEl.style.height = `${boxH}px`;
-    bgEl.style.minHeight = `${boxH}px`;
-    bgEl.style.backgroundSize = "contain";
-    bgEl.style.backgroundPosition = "center";
-    bgEl.style.backgroundRepeat = "no-repeat";
-    if (polaroidPhoto) {
-      polaroidPhoto.style.minHeight = `${boxH}px`;
+  const src = photoDataUrl ?? readPhotoSrc(element);
+  if (src && bgEl) {
+    try {
+      const dataUrl = await ensureDataUrl(src);
+      bgEl.style.backgroundImage = `url("${dataUrl}")`;
+    } catch {
+      if (src.startsWith("data:")) {
+        bgEl.style.backgroundImage = `url("${src}")`;
+      }
     }
-    void img;
   }
 
-  const imgs = Array.from(
-    element.querySelectorAll<HTMLImageElement>(".style-note-card__export-photo-helper")
+  const helper = element.querySelector<HTMLImageElement>(
+    ".style-note-card__export-photo-helper"
   );
-  await Promise.all(
-    imgs.map(async (img) => {
-      if (!img.src || !dataUrl) return;
-      img.src = dataUrl;
-      try {
-        await img.decode();
-      } catch {
-        /* helper only */
-      }
-    })
-  );
+  if (helper && src) {
+    try {
+      helper.src = await ensureDataUrl(src);
+      await helper.decode();
+    } catch {
+      /* optional */
+    }
+  }
 
   await document.fonts.ready;
   await new Promise<void>((resolve) => {
@@ -146,39 +146,57 @@ export async function prepareShareCardForCapture(element: HTMLElement): Promise<
 
 export function releaseShareCardCaptureState(element: HTMLElement): void {
   element.removeAttribute("data-capturing");
-  element.querySelectorAll<HTMLElement>(".style-note-card__export-photo-bg").forEach((el) => {
-    el.style.removeProperty("width");
-    el.style.removeProperty("height");
-    el.style.removeProperty("min-height");
-  });
-  element.querySelectorAll<HTMLElement>(".style-note-card__polaroid-photo").forEach((el) => {
-    el.style.removeProperty("min-height");
-  });
 }
 
-async function compositePhotoOntoPng(
+function samplePhotoPresent(
+  cardImg: HTMLImageElement,
+  region: PhotoRegion,
+  cardCssWidth: number
+): boolean {
+  const scale = cardImg.width / Math.max(1, cardCssWidth);
+  const sx = Math.max(0, Math.round(region.dx * scale));
+  const sy = Math.max(0, Math.round(region.dy * scale));
+  const sw = Math.min(32, Math.round(region.dw * scale));
+  const sh = Math.min(32, Math.round(region.dh * scale));
+  if (sw < 4 || sh < 4) return false;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = sw;
+  canvas.height = sh;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return false;
+  ctx.drawImage(cardImg, sx, sy, sw, sh, 0, 0, sw, sh);
+  const data = ctx.getImageData(0, 0, sw, sh).data;
+  let nonBg = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const a = data[i + 3];
+    if (a < 20) continue;
+    if (!(r > 228 && g > 224 && b > 216)) nonBg += 1;
+  }
+  return nonBg > sw * sh * 0.06;
+}
+
+/** 僅在 toPng 未帶出照片時才合成，且用擷取前的區域座標 */
+async function compositePhotoFallback(
   element: HTMLElement,
   pngDataUrl: string,
-  photoDataUrl: string
+  photoDataUrl: string,
+  region: PhotoRegion
 ): Promise<Blob> {
   const [cardImg, photoImg] = await Promise.all([
     loadImage(pngDataUrl),
     loadImage(photoDataUrl),
   ]);
 
-  const bgEl = element.querySelector<HTMLElement>(".style-note-card__export-photo-bg");
-  const cardRect = element.getBoundingClientRect();
-  const bgRect = bgEl?.getBoundingClientRect();
-  if (!bgRect || bgRect.width < 1 || bgRect.height < 1) {
-    const res = await fetch(pngDataUrl);
-    return res.blob();
-  }
-
-  const scale = cardImg.width / Math.max(1, cardRect.width);
-  const dx = Math.round((bgRect.left - cardRect.left) * scale);
-  const dy = Math.round((bgRect.top - cardRect.top) * scale);
-  const dw = Math.round(bgRect.width * scale);
-  const dh = Math.round(bgRect.height * scale);
+  const cardCssWidth = element.getBoundingClientRect().width;
+  const scale = cardImg.width / Math.max(1, cardCssWidth);
+  const dx = Math.round(region.dx * scale);
+  const dy = Math.round(region.dy * scale);
+  const dw = Math.round(region.dw * scale);
+  const dh = Math.round(region.dh * scale);
 
   const canvas = document.createElement("canvas");
   canvas.width = cardImg.width;
@@ -196,61 +214,20 @@ async function compositePhotoOntoPng(
   const ph = Math.round(photoImg.height * fitScale);
   const px = dx + Math.round((dw - pw) / 2);
   const py = dy + Math.round((dh - ph) / 2);
-
-  const photoCanvas = document.createElement("canvas");
-  photoCanvas.width = dw;
-  photoCanvas.height = dh;
-  const photoCtx = photoCanvas.getContext("2d");
-  if (!photoCtx) {
-    const res = await fetch(pngDataUrl);
-    return res.blob();
-  }
-  photoCtx.fillStyle = "#f3f0eb";
-  photoCtx.fillRect(0, 0, dw, dh);
-  photoCtx.drawImage(
-    photoImg,
-    Math.round((dw - pw) / 2),
-    Math.round((dh - ph) / 2),
-    pw,
-    ph
-  );
-
-  const region = ctx.getImageData(dx, dy, dw, dh);
-  const photoData = photoCtx.getImageData(0, 0, dw, dh);
-  const isBg = (r: number, g: number, b: number, a: number) => {
-    if (a < 16) return true;
-    return r > 228 && g > 224 && b > 216 && r - b < 28;
-  };
-
-  for (let i = 0; i < region.data.length; i += 4) {
-    const r = region.data[i];
-    const g = region.data[i + 1];
-    const b = region.data[i + 2];
-    const a = region.data[i + 3];
-    if (isBg(r, g, b, a)) {
-      region.data[i] = photoData.data[i];
-      region.data[i + 1] = photoData.data[i + 1];
-      region.data[i + 2] = photoData.data[i + 2];
-      region.data[i + 3] = photoData.data[i + 3];
-    }
-  }
-
-  ctx.putImageData(region, dx, dy);
+  ctx.drawImage(photoImg, px, py, pw, ph);
 
   const res = await fetch(canvas.toDataURL("image/png"));
   return res.blob();
 }
 
 export async function captureShareCardElement(
-  element: HTMLElement
+  element: HTMLElement,
+  photoDataUrl?: string
 ): Promise<Blob> {
-  const photoSrc =
-    element
-      .querySelector<HTMLElement>(".style-note-card__export-photo-bg")
-      ?.style.backgroundImage.match(/url\(["']?([^"')]+)["']?\)/)?.[1] ??
-    element.querySelector<HTMLImageElement>(".style-note-card__export-photo-helper")?.src;
+  const photoSrc = photoDataUrl ?? readPhotoSrc(element);
+  const region = measurePhotoRegion(element);
 
-  await prepareShareCardForCapture(element);
+  await prepareShareCardForCapture(element, photoSrc);
 
   try {
     const pixelRatio = computePixelRatio(element);
@@ -262,20 +239,26 @@ export async function captureShareCardElement(
       filter: shouldIncludeNode,
     });
 
-    let blob: Blob;
-    if (photoSrc) {
-      try {
-        const photoDataUrl = await ensureDataUrl(photoSrc);
-        blob = await compositePhotoOntoPng(element, dataUrl, photoDataUrl);
-      } catch {
-        const res = await fetch(dataUrl);
-        blob = await res.blob();
-      }
-    } else {
-      const res = await fetch(dataUrl);
-      blob = await res.blob();
+    const cardImg = await loadImage(dataUrl);
+    const cardCssWidth = element.getBoundingClientRect().width;
+
+    if (
+      photoSrc &&
+      region &&
+      !samplePhotoPresent(cardImg, region, cardCssWidth)
+    ) {
+      const blob = await compositePhotoFallback(
+        element,
+        dataUrl,
+        photoSrc,
+        region
+      );
+      if (!blob.size) throw new Error("匯出失敗");
+      return blob;
     }
 
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
     if (!blob.size) throw new Error("匯出失敗");
     return blob;
   } finally {
@@ -291,9 +274,10 @@ function defaultFilename(): string {
 
 export async function downloadShareCardElement(
   element: HTMLElement,
+  photoDataUrl?: string,
   filename?: string
 ): Promise<void> {
-  const blob = await captureShareCardElement(element);
+  const blob = await captureShareCardElement(element, photoDataUrl);
   const file = new File([blob], filename ?? defaultFilename(), {
     type: "image/png",
   });

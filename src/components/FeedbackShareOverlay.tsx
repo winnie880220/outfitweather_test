@@ -29,6 +29,9 @@ export function formatShareDateLabel(date = new Date()): string {
   return `${y}/${m}/${d}`;
 }
 
+/** 預覽區額外縮小，避免遮住底部按鈕（含 Safari 工具列） */
+const SHARE_PREVIEW_SCALE_FACTOR = 0.9;
+
 export function FeedbackShareOverlay({
   open,
   snapshot,
@@ -109,18 +112,21 @@ export function FeedbackShareOverlay({
     const syncScale = () => {
       const card = scaler.firstElementChild as HTMLElement | null;
       if (!card) return;
-      card.style.transform = "";
-      card.style.marginBottom = "";
+      scaler.style.transform = "";
+      scaler.style.height = "";
+      scaler.style.marginBottom = "";
       const availableW = area.clientWidth;
       const availableH = area.clientHeight;
       const naturalW = card.offsetWidth;
       const naturalH = card.offsetHeight;
       if (!availableW || !availableH || !naturalW || !naturalH) return;
-      const scale = Math.min(1, availableW / naturalW, availableH / naturalH);
+      const fit = Math.min(1, availableW / naturalW, availableH / naturalH);
+      const scale = fit * SHARE_PREVIEW_SCALE_FACTOR;
       if (scale < 0.999) {
-        card.style.transform = `scale(${scale})`;
-        card.style.transformOrigin = "top center";
-        card.style.marginBottom = `${naturalH * (scale - 1)}px`;
+        scaler.style.transform = `scale(${scale})`;
+        scaler.style.transformOrigin = "top center";
+        scaler.style.height = `${naturalH * scale}px`;
+        scaler.style.marginBottom = "0";
       }
     };
 
@@ -134,9 +140,13 @@ export function FeedbackShareOverlay({
 
   const handleDownload = useCallback(async () => {
     if (!snapshot || downloading || !cardRef.current) return;
+    const photoUrl =
+      snapshot.photoDataUrl ??
+      snapshot.photoFallbackUrl ??
+      snapshot.context.photoUrl;
     setDownloading(true);
     try {
-      await downloadShareCardElement(cardRef.current);
+      await downloadShareCardElement(cardRef.current, photoUrl);
       onDownloadSuccess?.("穿搭卡片已儲存");
     } catch (err) {
       onDownloadError?.(

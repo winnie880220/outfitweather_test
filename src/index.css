@@ -1705,20 +1705,20 @@ body {
   pointer-events: none;
 }
 
-.style-note-card--export-9x16[data-capturing="true"] .style-note-card__polaroid-photo {
-  min-height: 180px;
-}
-
-.style-note-card--export-9x16[data-capturing="true"] .style-note-card__export-photo-bg {
-  min-height: 180px;
-}
-
 .style-note-card--export-9x16[data-capturing="true"],
 .style-note-card--export-9x16[data-capturing="true"] * {
   animation: none !important;
   transition: none !important;
   opacity: 1 !important;
-  transform: none !important;
+}
+
+.style-note-card--export-9x16[data-capturing="true"] .style-note-card__polaroid {
+  transform: none;
+}
+
+.style-note-card--export-9x16[data-capturing="true"] .style-note-card__polaroid-photo,
+.style-note-card--export-9x16[data-capturing="true"] .style-note-card__export-photo-bg {
+  min-height: unset;
 }
 
 .style-note-card--export-9x16 .style-note-card__photo-color-tag {
@@ -1934,7 +1934,7 @@ body {
 
 .feedback-share-overlay__sheet {
   --feedback-share-edge-pad: max(0.65rem, env(safe-area-inset-top));
-  --feedback-share-footer-height: calc(var(--nav-safe-bottom) + 5.5rem);
+  --feedback-share-footer-height: calc(var(--nav-safe-bottom) + 6.25rem);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   max-height: 100dvh;
@@ -1977,13 +1977,14 @@ body {
   overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 0.2rem 0.35rem 0.35rem;
+  padding: 0.15rem 0.35rem 0.5rem;
 }
 
 .feedback-share-overlay__preview-scaler {
   width: min(92vw, 360px);
   max-width: 100%;
   margin-inline: auto;
+  flex-shrink: 0;
 }
 
 .feedback-share-overlay__preview-scaler .style-note-card--export-9x16 {
