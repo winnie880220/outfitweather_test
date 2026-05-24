@@ -31,7 +31,6 @@ export function OutfitPhotoDisplay({
           src={photoUrl}
           alt="穿搭"
           decoding="async"
-          referrerPolicy="no-referrer"
           className={`absolute inset-0 block h-full w-full ${imgFitClass} object-center`}
           onError={() => setBroken(true)}
         />

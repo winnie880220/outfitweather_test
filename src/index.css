@@ -1403,14 +1403,9 @@ body {
   z-index: 5;
   min-height: 100%;
   min-width: 100%;
-  background: rgba(255, 252, 248, 0.78);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-}
-
-.record-photo-frame--filled .record-photo-visual {
-  flex: 1 1 0%;
-  min-height: min(38vh, 20rem);
+  background: rgba(255, 252, 248, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .outfit-tag-scan-icon {
@@ -1690,12 +1685,32 @@ body {
   background: #f3f0eb;
 }
 
-.style-note-card__export-photo {
+.style-note-card__export-photo-bg {
   display: block;
+  flex: 1 1 auto;
   width: 100%;
+  min-height: 120px;
   height: 100%;
-  object-fit: contain;
-  object-position: center;
+  background-color: #f3f0eb;
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.style-note-card__export-photo-helper {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.style-note-card--export-9x16[data-capturing="true"] .style-note-card__polaroid-photo {
+  min-height: 180px;
+}
+
+.style-note-card--export-9x16[data-capturing="true"] .style-note-card__export-photo-bg {
+  min-height: 180px;
 }
 
 .style-note-card--export-9x16[data-capturing="true"],
@@ -1957,32 +1972,24 @@ body {
   display: flex;
   width: 100%;
   min-height: 0;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 0.25rem 0.35rem;
+  padding: 0.2rem 0.35rem 0.35rem;
 }
 
-/* 預覽外框：強制直式 9:16，縮放以完整顯示在可視區 */
-.feedback-share-overlay__preview-frame {
-  aspect-ratio: 9 / 16;
-  width: min(
-    100%,
-    calc((100dvh - var(--feedback-share-footer-height) - 5.5rem) * 9 / 16)
-  );
-  max-width: 360px;
-  max-height: calc(100dvh - var(--feedback-share-footer-height) - 5.5rem);
-  height: auto;
-  flex-shrink: 0;
+.feedback-share-overlay__preview-scaler {
+  width: min(92vw, 360px);
+  max-width: 100%;
   margin-inline: auto;
 }
 
-.feedback-share-overlay__preview-frame .style-note-card--export-9x16 {
-  width: 100%;
+.feedback-share-overlay__preview-scaler .style-note-card--export-9x16 {
+  width: min(92vw, 360px);
+  max-width: 100%;
   height: auto;
-  max-height: none;
   flex-shrink: 0;
   aspect-ratio: 9 / 16;
 }
@@ -2060,21 +2067,28 @@ body {
 }
 
 .record-photo-stage {
-  isolation: isolate;
-}
-
-.record-photo-visual {
   position: relative;
-  flex: 1 1 0%;
-  min-height: 0;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
   width: 100%;
-  height: 100%;
+  min-height: min(48dvh, 26rem);
+  max-height: min(58dvh, 32rem);
+  aspect-ratio: 3 / 4;
   overflow: hidden;
 }
 
-.record-photo-visual .outfit-tag-overlay {
+.record-photo-stage > .relative.h-full {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+
+.record-photo-stage .outfit-tag-overlay {
   position: absolute;
   inset: 0;
+  z-index: 5;
   overflow: hidden;
 }
 
@@ -2126,9 +2140,13 @@ body {
 }
 
 .record-screen-layout--with-extras .record-screen-photo {
-  flex: 1 1 0%;
-  min-height: min(36vh, 18rem);
+  flex: 0 0 auto;
+  min-height: 0;
   max-height: none;
+}
+
+.record-screen-layout--with-extras .record-photo-frame--filled {
+  flex: 0 0 auto;
 }
 
 .record-screen-photo-inset {
@@ -2280,18 +2298,22 @@ body {
 .record-photo-frame--filled {
   min-height: 0;
   flex: 1 1 0%;
-}
-
-.record-photo-frame--filled .record-photo-visual {
-  flex: 1 1 0%;
-  min-height: min(38vh, 20rem);
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
 }
 
 .record-photo-frame--filled .record-photo-stage {
-  flex: 1 1 0%;
-  height: 100%;
-  max-height: none;
-  min-height: 0;
+  flex: 1 1 auto;
+  height: auto;
+  max-height: min(58dvh, 32rem);
+  min-height: min(42dvh, 22rem);
+  width: 100%;
+  margin-inline: auto;
+}
+
+.record-screen-layout--with-extras .record-photo-frame--filled .record-photo-stage {
+  min-height: min(40dvh, 20rem);
+  max-height: min(50dvh, 26rem);
 }
 
 .record-photo-frame--empty {

@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { forwardRef, useMemo } from "react";
+import { forwardRef, useEffect, useMemo, useRef } from "react";
 import { dominantOutfitColor } from "../../lib/outfit-colors";
 import { OutfitPhotoTagOverlay } from "./OutfitPhotoTagOverlay";
 import { OutfitColorChip } from "./OutfitColorChip";
@@ -77,6 +77,17 @@ export const FeedbackShareCard = forwardRef<HTMLElement, FeedbackShareCardProps>
   ) {
     const badgeText = useMemo(() => contextBadgeText(context), [context]);
     const photoSrc = context.photoUrl ?? photoFallbackUrl;
+    const photoBgRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+      const el = photoBgRef.current;
+      if (!el) return;
+      if (photoSrc) {
+        el.style.backgroundImage = `url("${photoSrc}")`;
+      } else {
+        el.style.removeProperty("background-image");
+      }
+    }, [photoSrc]);
     const feelInline = useMemo(
       () =>
         feelMetricChips({
@@ -145,12 +156,21 @@ export const FeedbackShareCard = forwardRef<HTMLElement, FeedbackShareCardProps>
               <div className="style-note-card__polaroid">
                 <div className="style-note-card__polaroid-photo">
                 {photoSrc ? (
-                  <img
-                    src={photoSrc}
-                    alt="穿搭"
-                    className="style-note-card__export-photo"
-                    decoding="sync"
-                  />
+                  <>
+                    <div
+                      ref={photoBgRef}
+                      className="style-note-card__export-photo-bg"
+                      role="img"
+                      aria-label="穿搭"
+                    />
+                    <img
+                      src={photoSrc}
+                      alt=""
+                      aria-hidden
+                      className="style-note-card__export-photo-helper"
+                      decoding="sync"
+                    />
+                  </>
                 ) : (
                   <div className="flex h-full min-h-[80px] items-center justify-center text-4xl">
                     🧥

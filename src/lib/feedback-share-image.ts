@@ -60,6 +60,9 @@ export async function resolveSharePhotoDataUrl(
 
 function shouldIncludeNode(node: Node): boolean {
   if (!(node instanceof HTMLElement)) return true;
+  if (node.classList.contains("style-note-card__export-photo-helper")) {
+    return false;
+  }
   if (
     node.tagName === "IMG" &&
     node.classList.contains("opacity-0") &&
@@ -70,20 +73,67 @@ function shouldIncludeNode(node: Node): boolean {
   return true;
 }
 
-/** iOS Safari：html-to-image 需 inline data URL 且等 img decode 完成 */
+async function loadImage(src: string): Promise<HTMLImageElement> {
+  const dataUrl = await ensureDataUrl(src);
+  const img = new Image();
+  img.decoding = "sync";
+  img.src = dataUrl;
+  await img.decode();
+  return img;
+}
+
+/** iOS Safari：html-to-image 需 inline data URL；照片用 background-image 較穩定 */
 export async function prepareShareCardForCapture(element: HTMLElement): Promise<void> {
   element.setAttribute("data-capturing", "true");
 
-  const imgs = Array.from(element.querySelectorAll("img"));
+  const photoSrc =
+    element
+      .querySelector<HTMLElement>(".style-note-card__export-photo-bg")
+      ?.style.backgroundImage.match(/url\(["']?([^"')]+)["']?\)/)?.[1] ??
+    element.querySelector<HTMLImageElement>(".style-note-card__export-photo-helper")?.src;
+
+  let dataUrl: string | undefined;
+  if (photoSrc) {
+    try {
+      dataUrl = await ensureDataUrl(photoSrc);
+    } catch {
+      dataUrl = photoSrc.startsWith("data:") ? photoSrc : undefined;
+    }
+  }
+
+  const polaroidPhoto = element.querySelector<HTMLElement>(
+    ".style-note-card__polaroid-photo"
+  );
+  const bgEl = element.querySelector<HTMLElement>(".style-note-card__export-photo-bg");
+
+  if (dataUrl && bgEl) {
+    bgEl.style.backgroundImage = `url("${dataUrl}")`;
+    const img = await loadImage(dataUrl);
+    const boxW = Math.max(polaroidPhoto?.clientWidth ?? 0, bgEl.clientWidth, 120);
+    const boxH = Math.max(polaroidPhoto?.clientHeight ?? 0, bgEl.clientHeight, 160);
+    bgEl.style.width = `${boxW}px`;
+    bgEl.style.height = `${boxH}px`;
+    bgEl.style.minHeight = `${boxH}px`;
+    bgEl.style.backgroundSize = "contain";
+    bgEl.style.backgroundPosition = "center";
+    bgEl.style.backgroundRepeat = "no-repeat";
+    if (polaroidPhoto) {
+      polaroidPhoto.style.minHeight = `${boxH}px`;
+    }
+    void img;
+  }
+
+  const imgs = Array.from(
+    element.querySelectorAll<HTMLImageElement>(".style-note-card__export-photo-helper")
+  );
   await Promise.all(
     imgs.map(async (img) => {
-      if (!img.src) return;
+      if (!img.src || !dataUrl) return;
+      img.src = dataUrl;
       try {
-        img.src = await ensureDataUrl(img.src);
-        img.removeAttribute("crossorigin");
         await img.decode();
       } catch {
-        /* 保留原 src，避免整張匯出失敗 */
+        /* helper only */
       }
     })
   );
@@ -96,11 +146,110 @@ export async function prepareShareCardForCapture(element: HTMLElement): Promise<
 
 export function releaseShareCardCaptureState(element: HTMLElement): void {
   element.removeAttribute("data-capturing");
+  element.querySelectorAll<HTMLElement>(".style-note-card__export-photo-bg").forEach((el) => {
+    el.style.removeProperty("width");
+    el.style.removeProperty("height");
+    el.style.removeProperty("min-height");
+  });
+  element.querySelectorAll<HTMLElement>(".style-note-card__polaroid-photo").forEach((el) => {
+    el.style.removeProperty("min-height");
+  });
+}
+
+async function compositePhotoOntoPng(
+  element: HTMLElement,
+  pngDataUrl: string,
+  photoDataUrl: string
+): Promise<Blob> {
+  const [cardImg, photoImg] = await Promise.all([
+    loadImage(pngDataUrl),
+    loadImage(photoDataUrl),
+  ]);
+
+  const bgEl = element.querySelector<HTMLElement>(".style-note-card__export-photo-bg");
+  const cardRect = element.getBoundingClientRect();
+  const bgRect = bgEl?.getBoundingClientRect();
+  if (!bgRect || bgRect.width < 1 || bgRect.height < 1) {
+    const res = await fetch(pngDataUrl);
+    return res.blob();
+  }
+
+  const scale = cardImg.width / Math.max(1, cardRect.width);
+  const dx = Math.round((bgRect.left - cardRect.left) * scale);
+  const dy = Math.round((bgRect.top - cardRect.top) * scale);
+  const dw = Math.round(bgRect.width * scale);
+  const dh = Math.round(bgRect.height * scale);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = cardImg.width;
+  canvas.height = cardImg.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    const res = await fetch(pngDataUrl);
+    return res.blob();
+  }
+
+  ctx.drawImage(cardImg, 0, 0);
+
+  const fitScale = Math.min(dw / photoImg.width, dh / photoImg.height);
+  const pw = Math.round(photoImg.width * fitScale);
+  const ph = Math.round(photoImg.height * fitScale);
+  const px = dx + Math.round((dw - pw) / 2);
+  const py = dy + Math.round((dh - ph) / 2);
+
+  const photoCanvas = document.createElement("canvas");
+  photoCanvas.width = dw;
+  photoCanvas.height = dh;
+  const photoCtx = photoCanvas.getContext("2d");
+  if (!photoCtx) {
+    const res = await fetch(pngDataUrl);
+    return res.blob();
+  }
+  photoCtx.fillStyle = "#f3f0eb";
+  photoCtx.fillRect(0, 0, dw, dh);
+  photoCtx.drawImage(
+    photoImg,
+    Math.round((dw - pw) / 2),
+    Math.round((dh - ph) / 2),
+    pw,
+    ph
+  );
+
+  const region = ctx.getImageData(dx, dy, dw, dh);
+  const photoData = photoCtx.getImageData(0, 0, dw, dh);
+  const isBg = (r: number, g: number, b: number, a: number) => {
+    if (a < 16) return true;
+    return r > 228 && g > 224 && b > 216 && r - b < 28;
+  };
+
+  for (let i = 0; i < region.data.length; i += 4) {
+    const r = region.data[i];
+    const g = region.data[i + 1];
+    const b = region.data[i + 2];
+    const a = region.data[i + 3];
+    if (isBg(r, g, b, a)) {
+      region.data[i] = photoData.data[i];
+      region.data[i + 1] = photoData.data[i + 1];
+      region.data[i + 2] = photoData.data[i + 2];
+      region.data[i + 3] = photoData.data[i + 3];
+    }
+  }
+
+  ctx.putImageData(region, dx, dy);
+
+  const res = await fetch(canvas.toDataURL("image/png"));
+  return res.blob();
 }
 
 export async function captureShareCardElement(
   element: HTMLElement
 ): Promise<Blob> {
+  const photoSrc =
+    element
+      .querySelector<HTMLElement>(".style-note-card__export-photo-bg")
+      ?.style.backgroundImage.match(/url\(["']?([^"')]+)["']?\)/)?.[1] ??
+    element.querySelector<HTMLImageElement>(".style-note-card__export-photo-helper")?.src;
+
   await prepareShareCardForCapture(element);
 
   try {
@@ -113,8 +262,20 @@ export async function captureShareCardElement(
       filter: shouldIncludeNode,
     });
 
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
+    let blob: Blob;
+    if (photoSrc) {
+      try {
+        const photoDataUrl = await ensureDataUrl(photoSrc);
+        blob = await compositePhotoOntoPng(element, dataUrl, photoDataUrl);
+      } catch {
+        const res = await fetch(dataUrl);
+        blob = await res.blob();
+      }
+    } else {
+      const res = await fetch(dataUrl);
+      blob = await res.blob();
+    }
+
     if (!blob.size) throw new Error("匯出失敗");
     return blob;
   } finally {

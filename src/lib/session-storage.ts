@@ -8,6 +8,8 @@ const STORAGE_KEY = "outfitweather_session";
 
 export interface PendingRecordSnapshot {
   photoPreviewUrl?: string;
+  /** 分享卡下載用，固定 data URL（避免 blob 失效） */
+  photoDataUrl?: string;
   locationName?: string;
   temp?: number;
   condition?: string;
@@ -24,6 +26,7 @@ export interface PendingRecord {
   photoSavedAt: string;
   hasFeedback: boolean;
   photoPreviewUrl?: string;
+  photoDataUrl?: string;
   locationName?: string;
   temp?: number;
   condition?: string;

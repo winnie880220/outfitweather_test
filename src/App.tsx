@@ -877,37 +877,35 @@ const RecordScreen = ({
             </div>
           ) : hasPhoto && photoPreviewUrl ? (
             <>
-              <div className="record-photo-stage relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-[#faf7f2]">
-                <div className="record-photo-visual relative min-h-0 w-full flex-1 overflow-hidden">
-                  <OutfitPhotoDisplay
-                    photoUrl={photoPreviewUrl}
-                    emoji="🧥"
-                    objectFit="contain"
-                    bg="#faf7f2"
-                    className="absolute inset-0 h-full w-full"
-                  />
-                  {(() => {
-                    const tags =
-                      outfitAnalysisPreview ?? uploadedOutfitTags;
-                    const showOverlay =
-                      outfitAnalysisLoading ||
-                      outfitAnalysisPreview ||
-                      (hasUploadedToday &&
-                        tags &&
-                        (tags.upperBodyTags.length > 0 ||
-                          tags.lowerBodyTags.length > 0 ||
-                          (tags.colors?.length ?? 0) > 0));
-                    if (!showOverlay) return null;
-                    return (
-                      <OutfitPhotoTagOverlay
-                        upperBodyTags={tags?.upperBodyTags ?? []}
-                        lowerBodyTags={tags?.lowerBodyTags ?? []}
-                        tagAnchors={tags?.tagAnchors}
-                        loading={outfitAnalysisLoading && !outfitAnalysisPreview}
-                      />
-                    );
-                  })()}
-                </div>
+              <div className="record-photo-stage relative w-full min-h-0 flex-1 overflow-hidden bg-[#faf7f2]">
+                <OutfitPhotoDisplay
+                  photoUrl={photoPreviewUrl}
+                  emoji="🧥"
+                  objectFit="contain"
+                  bg="#faf7f2"
+                  className="h-full w-full min-h-0"
+                />
+                {(() => {
+                  const tags =
+                    outfitAnalysisPreview ?? uploadedOutfitTags;
+                  const showOverlay =
+                    outfitAnalysisLoading ||
+                    outfitAnalysisPreview ||
+                    (hasUploadedToday &&
+                      tags &&
+                      (tags.upperBodyTags.length > 0 ||
+                        tags.lowerBodyTags.length > 0 ||
+                        (tags.colors?.length ?? 0) > 0));
+                  if (!showOverlay) return null;
+                  return (
+                    <OutfitPhotoTagOverlay
+                      upperBodyTags={tags?.upperBodyTags ?? []}
+                      lowerBodyTags={tags?.lowerBodyTags ?? []}
+                      tagAnchors={tags?.tagAnchors}
+                      loading={outfitAnalysisLoading && !outfitAnalysisPreview}
+                    />
+                  );
+                })()}
               </div>
               <div
                 className={`record-photo-meta shrink-0 text-center ${
@@ -1791,7 +1789,10 @@ export default function App() {
 
     if (useUploadSnapshot) {
       return {
-        photoUrl: outfitImage?.previewUrl ?? pending.photoPreviewUrl,
+        photoUrl:
+          pending.photoDataUrl ??
+          outfitImage?.previewUrl ??
+          pending.photoPreviewUrl,
         locationName: pending.locationName,
         temp: pending.temp,
         condition: pending.condition,
@@ -2072,6 +2073,7 @@ export default function App() {
         photoMimeType: outfitImage.mimeType,
       });
       let photoPreviewUrl = outfitImage.previewUrl;
+      let photoDataUrl = `data:${outfitImage.mimeType};base64,${outfitImage.base64}`;
       try {
         const thumb = await compressDataUrl(
           `data:${outfitImage.mimeType};base64,${outfitImage.base64}`,
@@ -2079,6 +2081,7 @@ export default function App() {
           0.72
         );
         photoPreviewUrl = thumb.previewUrl;
+        photoDataUrl = thumb.previewUrl;
       } catch {
         /* 沿用原預覽圖 */
       }
@@ -2086,6 +2089,7 @@ export default function App() {
       setNotionPageId(pageId);
       setPendingRecord(pageId, {
         photoPreviewUrl,
+        photoDataUrl,
         locationName: weather.locationName,
         temp: weather.temp,
         condition: weather.condition,
@@ -2173,6 +2177,7 @@ export default function App() {
         outfitImage?.base64 && outfitImage?.mimeType
           ? `data:${outfitImage.mimeType};base64,${outfitImage.base64}`
           : undefined,
+        pending?.photoDataUrl,
         outfitImage?.previewUrl,
         feedbackOutfit.photoUrl,
         pending?.photoPreviewUrl,

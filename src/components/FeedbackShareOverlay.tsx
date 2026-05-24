@@ -47,6 +47,8 @@ export function FeedbackShareOverlay({
   const [aiScore, setAiScore] = useState<number | null>(null);
   const [aiConclusion, setAiConclusion] = useState<string | null>(null);
   const cardRef = useRef<HTMLElement>(null);
+  const previewAreaRef = useRef<HTMLDivElement>(null);
+  const previewScalerRef = useRef<HTMLDivElement>(null);
   const aiRequestRef = useRef(0);
 
   useEffect(() => {
@@ -97,6 +99,38 @@ export function FeedbackShareOverlay({
         setAiLoading(false);
       });
   }, [open, snapshot]);
+
+  useEffect(() => {
+    if (!open || !snapshot) return;
+    const area = previewAreaRef.current;
+    const scaler = previewScalerRef.current;
+    if (!area || !scaler) return;
+
+    const syncScale = () => {
+      const card = scaler.firstElementChild as HTMLElement | null;
+      if (!card) return;
+      card.style.transform = "";
+      card.style.marginBottom = "";
+      const availableW = area.clientWidth;
+      const availableH = area.clientHeight;
+      const naturalW = card.offsetWidth;
+      const naturalH = card.offsetHeight;
+      if (!availableW || !availableH || !naturalW || !naturalH) return;
+      const scale = Math.min(1, availableW / naturalW, availableH / naturalH);
+      if (scale < 0.999) {
+        card.style.transform = `scale(${scale})`;
+        card.style.transformOrigin = "top center";
+        card.style.marginBottom = `${naturalH * (scale - 1)}px`;
+      }
+    };
+
+    syncScale();
+    const ro = new ResizeObserver(syncScale);
+    ro.observe(area);
+    ro.observe(scaler);
+    const t1 = window.setTimeout(syncScale, 60);
+    const t2 = window.setTimeout(syncScale, 280);
+  }, [open, snapshot, aiLoading, aiConclusion]);
 
   const handleDownload = useCallback(async () => {
     if (!snapshot || downloading || !cardRef.current) return;
@@ -162,12 +196,16 @@ export function FeedbackShareOverlay({
             </motion.div>
 
             <motion.div
+              ref={previewAreaRef}
               className="feedback-share-overlay__preview"
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.08, duration: 0.25 }}
             >
-              <motion.div className="feedback-share-overlay__preview-frame">
+              <div
+                ref={previewScalerRef}
+                className="feedback-share-overlay__preview-scaler"
+              >
                 <FeedbackShareCard
                   ref={cardRef}
                   context={snapshot.context}
@@ -185,7 +223,7 @@ export function FeedbackShareOverlay({
                   }
                   animated
                 />
-              </motion.div>
+              </div>
             </motion.div>
 
             <footer className="feedback-share-overlay__footer">
