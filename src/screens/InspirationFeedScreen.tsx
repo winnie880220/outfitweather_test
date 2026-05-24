@@ -12,6 +12,7 @@ import {
   isInspirationFavorite,
   type InspirationFavoritesState,
 } from "../lib/inspiration-favorites";
+import { useReelSlideHeight } from "../lib/use-reel-slide-height";
 import type { WeatherData } from "../types/api";
 
 function InspirationEmptyState({
@@ -119,6 +120,7 @@ export function InspirationFeedScreen({
     () => filterCardsByGender(cards, genderFilter),
     [cards, genderFilter]
   );
+  const reelScrollRef = useReelSlideHeight<HTMLDivElement>([filteredCards.length, genderFilter]);
 
   if (cards.length === 0) {
     if (insightsLoading) {
@@ -170,6 +172,7 @@ export function InspirationFeedScreen({
       <InspirationGenderTabs value={genderFilter} onChange={setGenderFilter} />
 
       <div
+        ref={reelScrollRef}
         className="inspiration-feed-scroll inspiration-feed-scroll--reels app-scroll app-inset min-h-0"
         aria-label="穿搭靈感，上下滑動切換"
       >

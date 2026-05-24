@@ -6,6 +6,7 @@ import {
   isInspirationFavorite,
   type InspirationFavoritesState,
 } from "../lib/inspiration-favorites";
+import { useReelSlideHeight } from "../lib/use-reel-slide-height";
 import type { WeatherData } from "../types/api";
 
 export function FavoritesScreen({
@@ -27,6 +28,8 @@ export function FavoritesScreen({
   insights: OutfitInsights | null;
   onRequestExit: () => void;
 }) {
+  const reelScrollRef = useReelSlideHeight<HTMLDivElement>([cards.length]);
+
   return (
     <div className="inspiration-feed-layout inspiration-feed-layout--favorites app-screen-gradient">
       <FeedScreenHeader
@@ -48,6 +51,7 @@ export function FavoritesScreen({
         </div>
       ) : (
         <div
+          ref={reelScrollRef}
           className="inspiration-feed-scroll inspiration-feed-scroll--reels app-scroll app-inset min-h-0"
           aria-label="收藏穿搭，上下滑動切換"
         >

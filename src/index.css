@@ -283,14 +283,23 @@ body {
     padding-bottom: 0;
   }
 
-  /* 收藏頁：無底部操作列，高度只扣導覽列（不預留「我穿好了」按鈕區） */
+  /* 收藏頁：Grid + dvh 後備高度（量測前） */
   .inspiration-feed-layout--favorites {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
     gap: 0;
     padding-bottom: calc(var(--nav-safe-bottom) + 0.35rem);
     --inspiration-reel-viewport-height: calc(
       100dvh - env(safe-area-inset-top, 0px) - var(--nav-safe-bottom) -
         var(--inspiration-head-height) - 0.75rem
     );
+  }
+
+  .inspiration-feed-layout--favorites .inspiration-feed-scroll--reels {
+    height: 100%;
+    min-height: 0;
   }
 
   .inspiration-feed-layout--favorites .inspiration-feed-header {
@@ -306,28 +315,24 @@ body {
     padding-bottom: 0.75rem;
   }
 
-  /* 靈感頁：卡片與按鈕緊貼，按鈕在流內、僅留導覽列間距 */
+  /* 靈感頁：Grid 固定捲動區高度，slide 高度由 JS 量測 --reel-slide-height */
   .inspiration-feed-layout--with-dock:has(.inspiration-record-dock) {
-    position: relative;
-    padding-bottom: 0;
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    height: 100%;
     min-height: 0;
+    overflow: hidden;
+    padding-bottom: 0;
   }
 
   .inspiration-feed-layout--with-dock .inspiration-feed-scroll--reels {
-    flex: 1 1 0%;
+    height: 100%;
     min-height: 0;
-    height: auto;
     max-height: none;
     overflow-x: hidden;
     overflow-y: auto;
     padding-bottom: 0;
     box-sizing: border-box;
-  }
-
-  .inspiration-feed-layout--with-dock .inspiration-feed-scroll--reels .inspiration-feed-reel-slide {
-    height: 100%;
-    min-height: 100%;
-    max-height: none;
   }
 
   .inspiration-feed-header {
@@ -506,23 +511,26 @@ body {
 
   .inspiration-feed-reel-slide {
     box-sizing: border-box;
-    height: 100%;
-    min-height: 0;
+    height: var(--reel-slide-height, 100%);
+    min-height: var(--reel-slide-height, 100%);
+    max-height: var(--reel-slide-height, 100%);
     overflow: hidden;
     scroll-snap-align: start;
     scroll-snap-stop: always;
   }
 
-  /* iPhone Safari：收藏等無底部按鈕時，用 dvh 固定 Reels 高度 */
+  /* dvh 後備：JS 量測前短暫使用 */
   @media (max-width: 767px) {
-    .inspiration-feed-layout--favorites .inspiration-feed-scroll--reels {
+    .inspiration-feed-layout--favorites .inspiration-feed-scroll--reels:not([style*="--reel-slide-height"]) {
       flex: 0 0 auto;
       height: var(--inspiration-reel-viewport-height);
       max-height: var(--inspiration-reel-viewport-height);
       min-height: 14rem;
     }
 
-    .inspiration-feed-layout--favorites .inspiration-feed-scroll--reels .inspiration-feed-reel-slide {
+    .inspiration-feed-layout--favorites
+      .inspiration-feed-scroll--reels:not([style*="--reel-slide-height"])
+      .inspiration-feed-reel-slide {
       height: var(--inspiration-reel-viewport-height);
       min-height: var(--inspiration-reel-viewport-height);
       max-height: var(--inspiration-reel-viewport-height);
