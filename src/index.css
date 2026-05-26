@@ -2939,6 +2939,12 @@ body {
     display: none;
   }
 
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
   html,
   body,
   #root {
@@ -2949,7 +2955,15 @@ body {
     overflow-y: visible;
   }
 
-  .app-shell,
+  .app-shell {
+    height: auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: visible;
+    flex: 1 0 auto;
+    padding-top: 0;
+  }
+
   .app-frame,
   .app-screen-host,
   .app-screen-flow {
@@ -2968,24 +2982,28 @@ body {
   }
 
   /* 可捲動頁面：取消內部滾動，讓內容流向 body */
-  .screen-scroll {
+  .screen-scroll:not(.welcome-screen) {
     overflow-y: visible !important;
     overflow-x: hidden;
     height: auto;
     flex: 1 0 auto;
+    padding-top: env(safe-area-inset-top, 0px);
   }
 
   .record-screen-layout--with-extras {
     overflow-y: visible !important;
     overflow-x: hidden;
+    padding-top: env(safe-area-inset-top, 0px);
   }
 
-  /* 固定畫面頁（不可 body scroll）: 鎖定 100dvh */
+  /* 固定畫面頁（不可 body scroll）: 鎖定 100dvh，含 safe-area */
   .home-map-screen {
     height: 100dvh;
     max-height: 100dvh;
     overflow: hidden;
     flex: none;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
   }
 
   .app-screen-page.welcome-screen-page {
@@ -2994,6 +3012,8 @@ body {
     min-height: 100dvh;
     overflow: hidden;
     flex: none;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
   }
 
   .inspiration-layout {
@@ -3001,6 +3021,8 @@ body {
     max-height: 100dvh;
     overflow: hidden;
     flex: none;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
   }
 
   .inspiration-feed-layout {
@@ -3008,6 +3030,8 @@ body {
     max-height: 100dvh;
     overflow: hidden;
     flex: none;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
   }
 
   .record-screen-layout:not(.record-screen-layout--with-extras) {
@@ -3015,6 +3039,8 @@ body {
     max-height: 100dvh;
     overflow: hidden;
     flex: none;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
   }
 
   /* 導覽列：固定在 viewport 底部 */
