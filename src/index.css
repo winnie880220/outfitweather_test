@@ -2514,7 +2514,7 @@ body {
 /* Leaflet 預設 control z-index 1000，會蓋過全螢幕遮罩；限制在 map 區塊內 */
 .taiwan-outfit-map__canvas .leaflet-top,
 .taiwan-outfit-map__canvas .leaflet-bottom {
-  z-index: 35;
+  z-index: 600;
 }
 
 /* 縮放鈕固定左上，預留空間不與天氣卡重疊 */
