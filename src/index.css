@@ -2925,3 +2925,100 @@ body {
 .feedback-feel-note__input {
   font-family: inherit;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Safari 導覽列收合：手機版 body-scroll 佈局
+   讓可捲動頁面的內容超出 viewport → body 產生滾動 → Safari 導覽列自動收合
+   ═══════════════════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+  html {
+    scrollbar-width: none;
+  }
+
+  html::-webkit-scrollbar {
+    display: none;
+  }
+
+  html,
+  body,
+  #root {
+    height: auto;
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
+    overflow: visible;
+  }
+
+  .app-shell,
+  .app-frame,
+  .app-screen-host,
+  .app-screen-flow {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+    flex: 1 0 auto;
+  }
+
+  .app-screen-page {
+    min-height: 100dvh;
+    overflow: visible;
+    flex: 1 0 auto;
+  }
+
+  /* 可捲動頁面：取消內部滾動，讓內容流向 body */
+  .screen-scroll {
+    overflow-y: visible !important;
+    overflow-x: hidden;
+    height: auto;
+    flex: 1 0 auto;
+  }
+
+  .record-screen-layout--with-extras {
+    overflow-y: visible !important;
+    overflow-x: hidden;
+  }
+
+  /* 固定畫面頁（不可 body scroll）: 鎖定 100dvh */
+  .home-map-screen {
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+    flex: none;
+  }
+
+  .app-screen-page.welcome-screen-page {
+    height: 100dvh;
+    max-height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+    flex: none;
+  }
+
+  .inspiration-layout {
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+    flex: none;
+  }
+
+  .inspiration-feed-layout {
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+    flex: none;
+  }
+
+  .record-screen-layout:not(.record-screen-layout--with-extras) {
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+    flex: none;
+  }
+
+  /* 導覽列：固定在 viewport 底部 */
+  .app-nav-dock {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+  }
+}

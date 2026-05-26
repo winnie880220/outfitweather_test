@@ -43,8 +43,10 @@ const TAIPEI_COUNTY_HIDDEN_CLASS = "leaflet-taipei-county-hidden";
 
 function scheduleMapInvalidate(map: L.Map) {
   const run = () => {
-    if (!map.getContainer().isConnected) return;
-    map.invalidateSize({ animate: false });
+    try {
+      if (!map.getContainer()?.isConnected) return;
+      map.invalidateSize({ animate: false });
+    } catch { /* map panes not ready yet */ }
   };
   requestAnimationFrame(() => {
     run();

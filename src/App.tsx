@@ -1292,6 +1292,10 @@ export default function App() {
   const regionInsightsFetchKeyRef = useRef<string | null>(null);
   const regionColorFillsKeyRef = useRef<string | null>(null);
 
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [screen]);
+
   const userCounty = useMemo((): TaiwanCounty | null => {
     if (userLocation?.name) return parseLocationToCounty(userLocation.name);
     if (weather?.locationName) return parseLocationToCounty(weather.locationName);
