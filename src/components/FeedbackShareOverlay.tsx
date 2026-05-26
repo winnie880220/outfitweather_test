@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import { Download, Loader2 } from "lucide-react";
 import { FeedbackShareCard } from "./FeedbackShareCard";
@@ -56,6 +57,7 @@ export function FeedbackShareOverlay({
 
   useEffect(() => {
     if (!open) return;
+    console.log("[FeedbackShareOverlay] OPEN — snapshot:", snapshot != null);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
@@ -157,7 +159,7 @@ export function FeedbackShareOverlay({
     }
   }, [snapshot, downloading, onDownloadSuccess, onDownloadError]);
 
-  return (
+  return createPortal(
     <AnimatePresence>
       {open && snapshot ? (
         <motion.div
@@ -282,6 +284,7 @@ export function FeedbackShareOverlay({
           </motion.div>
         </motion.div>
       ) : null}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }

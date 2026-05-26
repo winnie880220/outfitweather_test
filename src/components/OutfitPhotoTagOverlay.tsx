@@ -47,10 +47,10 @@ export function OutfitPhotoTagOverlay({
               {placements.map((p, i) => (
                 <line
                   key={`line-${p.label}-${i}`}
-                  x1={placement.labelX}
-                  y1={placement.labelY}
-                  x2={placement.anchorX}
-                  y2={placement.anchorY}
+                  x1={p.labelX}
+                  y1={p.labelY}
+                  x2={p.anchorX}
+                  y2={p.anchorY}
                   stroke="rgba(120, 113, 108, 0.55)"
                   strokeWidth={0.28}
                   strokeLinecap="round"
