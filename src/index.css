@@ -2945,7 +2945,8 @@ body {
     height: auto;
     min-height: 100dvh;
     min-height: -webkit-fill-available;
-    overflow: visible;
+    overflow-x: hidden;
+    overflow-y: visible;
   }
 
   .app-shell,
@@ -2954,13 +2955,15 @@ body {
   .app-screen-flow {
     height: auto;
     min-height: 0;
-    overflow: visible;
+    overflow-x: hidden;
+    overflow-y: visible;
     flex: 1 0 auto;
   }
 
   .app-screen-page {
     min-height: 100dvh;
-    overflow: visible;
+    overflow-x: hidden;
+    overflow-y: visible;
     flex: 1 0 auto;
   }
 
