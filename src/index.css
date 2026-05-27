@@ -2066,7 +2066,7 @@ body {
 }
 
 .feedback-share-overlay__header h2 {
-  font-family: "Caveat", "PingFang TC", cursive;
+  font-family: var(--font-sans);
   font-size: 1.32rem;
   font-weight: 700;
   line-height: 1.15;
@@ -2998,6 +2998,10 @@ body {
   .record-screen-layout--with-extras {
     overflow-y: visible !important;
     overflow-x: hidden;
+    height: auto;
+    min-height: 100dvh;
+    flex: 1 0 auto;
+    touch-action: pan-y;
     padding-top: env(safe-area-inset-top, 0px);
   }
 

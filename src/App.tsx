@@ -29,6 +29,7 @@ import { OutfitPhotoTagOverlay } from "./components/OutfitPhotoTagOverlay";
 import { OutfitPhotoDisplay } from "./components/OutfitPhotoDisplay";
 import { motion, AnimatePresence } from "motion/react";
 import {
+  ApiError,
   analyzeOutfit,
   buildRecordFromWeather,
   createRecord,
@@ -176,6 +177,19 @@ function getInsightTempDelta(weather: WeatherData | null | undefined): 1 | 2 {
   }
   const spread = Math.abs(weather.tempMax - weather.tempMin);
   return spread >= 8 ? 2 : 1;
+}
+
+function isRateLimitedError(error: unknown): boolean {
+  if (error instanceof ApiError) {
+    if (error.status === 429) return true;
+    const msg = error.message.toLowerCase();
+    return msg.includes("rate limit") || msg.includes("rate limited");
+  }
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    return msg.includes("rate limit") || msg.includes("rate limited") || msg.includes("429");
+  }
+  return false;
 }
 
 // --- Types ---
@@ -1228,7 +1242,7 @@ const FeedbackScreen = ({
           htmlFor="feel-note-input"
           className="mb-2 block text-xs font-semibold text-stone-600"
         >
-          穿搭感受
+          穿搭小故事（場景/心情）
           <span className="ml-1 font-normal text-stone-400">（選填）</span>
         </label>
         <textarea
@@ -1328,6 +1342,10 @@ export default function App() {
   const regionWeatherFetchKeyRef = useRef<string | null>(null);
   const regionInsightsFetchKeyRef = useRef<string | null>(null);
   const regionColorFillsKeyRef = useRef<string | null>(null);
+  const regionInsightsInFlightRef = useRef<Set<string>>(new Set());
+  const regionColorFillsInFlightRef = useRef<Set<string>>(new Set());
+  const regionInsightsLastRequestAtRef = useRef<Map<string, number>>(new Map());
+  const regionColorFillsLastRequestAtRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -1508,13 +1526,24 @@ export default function App() {
   }, []);
 
   const loadRegionInsights = useCallback(
-    async (weatherSnapshot: WeatherData, region: MapRegion, opts?: { showLoading?: boolean }) => {
+    async (
+      weatherSnapshot: WeatherData,
+      region: MapRegion,
+      opts?: { showLoading?: boolean; force?: boolean }
+    ) => {
       const temp = weatherSnapshot.temp;
       if (typeof temp !== "number" || Number.isNaN(temp)) return;
 
       const delta = getInsightTempDelta(weatherSnapshot);
       const fetchKey = `${regionKey(region)}@${Math.round(temp)}@d${delta}`;
       const showLoading = opts?.showLoading !== false;
+      const force = opts?.force === true;
+      const now = Date.now();
+      const lastAt = regionInsightsLastRequestAtRef.current.get(fetchKey) ?? 0;
+      if (!force && now - lastAt < 2500) return;
+      if (regionInsightsInFlightRef.current.has(fetchKey)) return;
+      regionInsightsInFlightRef.current.add(fetchKey);
+      regionInsightsLastRequestAtRef.current.set(fetchKey, now);
       try {
         if (showLoading) setRegionInsightsLoading(true);
         const district = region.level === "district" ? region.district : undefined;
@@ -1523,9 +1552,16 @@ export default function App() {
         setRegionInsights(data);
       } catch (error) {
         console.warn("Region outfit insights:", error);
-        regionInsightsFetchKeyRef.current = fetchKey;
-        setRegionInsights(null);
+        if (isRateLimitedError(error)) {
+          // 限流時保留目前畫面資料，避免閃空並減少重打。
+          regionInsightsFetchKeyRef.current = fetchKey;
+          regionInsightsLastRequestAtRef.current.set(fetchKey, Date.now() + 6000);
+        } else {
+          regionInsightsFetchKeyRef.current = fetchKey;
+          setRegionInsights(null);
+        }
       } finally {
+        regionInsightsInFlightRef.current.delete(fetchKey);
         if (showLoading) setRegionInsightsLoading(false);
       }
     },
@@ -1542,7 +1578,7 @@ export default function App() {
           : weather);
       if (!snap || typeof snap.temp !== "number" || Number.isNaN(snap.temp)) return;
       regionInsightsFetchKeyRef.current = null;
-      void loadRegionInsights(snap, region, { showLoading: false });
+      void loadRegionInsights(snap, region, { showLoading: false, force: true });
     },
     [weather, regionWeather, selectedRegion, loadRegionInsights]
   );
@@ -1552,14 +1588,28 @@ export default function App() {
     if (typeof temp !== "number" || Number.isNaN(temp)) return;
     const delta = getInsightTempDelta(weatherSnapshot);
     const key = `${Math.round(temp)}@d${delta}r3`;
+    const now = Date.now();
+    const lastAt = regionColorFillsLastRequestAtRef.current.get(key) ?? 0;
+    if (now - lastAt < 2500) return;
+    if (regionColorFillsInFlightRef.current.has(key)) return;
+    regionColorFillsInFlightRef.current.add(key);
+    regionColorFillsLastRequestAtRef.current.set(key, now);
     try {
       const { fills } = await fetchRegionColorFills(temp, delta);
       regionColorFillsKeyRef.current = key;
       setRegionColorFills(fills);
     } catch (error) {
       console.warn("Region color fills:", error);
-      regionColorFillsKeyRef.current = null;
-      setRegionColorFills([]);
+      if (isRateLimitedError(error)) {
+        // 限流時保留前一次成功填色，避免地圖瞬間全部清空。
+        regionColorFillsKeyRef.current = key;
+        regionColorFillsLastRequestAtRef.current.set(key, Date.now() + 6000);
+      } else {
+        regionColorFillsKeyRef.current = null;
+        setRegionColorFills([]);
+      }
+    } finally {
+      regionColorFillsInFlightRef.current.delete(key);
     }
   }, []);
 
