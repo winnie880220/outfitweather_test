@@ -34,7 +34,6 @@ import {
   createRecord,
   toggleOutfitFavorite,
   fetchUserFavorites,
-  ensureActiveUserRecordApi,
   fetchCurrentWeather,
   fetchOutfitInsights,
   fetchRegionColorFills,
@@ -1316,6 +1315,9 @@ export default function App() {
   const [regionWeather, setRegionWeather] = useState<WeatherData | null>(null);
   const [regionWeatherLoading, setRegionWeatherLoading] = useState(false);
   const [regionInsights, setRegionInsights] = useState<OutfitInsights | null>(null);
+  const [optimisticInspirationCards, setOptimisticInspirationCards] = useState<
+    InspirationItem[]
+  >([]);
   const regionInsightsRef = useRef<OutfitInsights | null>(null);
   regionInsightsRef.current = regionInsights;
   const [regionInsightsLoading, setRegionInsightsLoading] = useState(false);
@@ -1507,18 +1509,16 @@ export default function App() {
 
   const loadRegionInsights = useCallback(
     async (weatherSnapshot: WeatherData, region: MapRegion, opts?: { showLoading?: boolean }) => {
+      const temp = weatherSnapshot.temp;
+      if (typeof temp !== "number" || Number.isNaN(temp)) return;
+
       const delta = getInsightTempDelta(weatherSnapshot);
-      const fetchKey = `${regionKey(region)}@${Math.round(weatherSnapshot.temp)}@d${delta}`;
+      const fetchKey = `${regionKey(region)}@${Math.round(temp)}@d${delta}`;
       const showLoading = opts?.showLoading !== false;
       try {
         if (showLoading) setRegionInsightsLoading(true);
         const district = region.level === "district" ? region.district : undefined;
-        const data = await fetchOutfitInsights(
-          weatherSnapshot.temp,
-          delta,
-          region.county,
-          district
-        );
+        const data = await fetchOutfitInsights(temp, delta, region.county, district);
         regionInsightsFetchKeyRef.current = fetchKey;
         setRegionInsights(data);
       } catch (error) {
@@ -1530,6 +1530,21 @@ export default function App() {
       }
     },
     []
+  );
+
+  /** 上傳／回饋後強制重抓靈感（略過快取） */
+  const refreshInspirationInsights = useCallback(
+    (region: MapRegion, weatherSnapshot?: WeatherData | null) => {
+      const snap =
+        weatherSnapshot ??
+        (selectedRegion && regionWeather && isSameRegion(selectedRegion, region)
+          ? regionWeather
+          : weather);
+      if (!snap || typeof snap.temp !== "number" || Number.isNaN(snap.temp)) return;
+      regionInsightsFetchKeyRef.current = null;
+      void loadRegionInsights(snap, region, { showLoading: false });
+    },
+    [weather, regionWeather, selectedRegion, loadRegionInsights]
   );
 
   const loadRegionColorFills = useCallback(async (temp: number) => {
@@ -1619,67 +1634,6 @@ export default function App() {
   useEffect(() => {
     void syncUserFavorites(userName);
   }, [userName, syncUserFavorites]);
-
-  const syncActiveUserRecord = useCallback(async () => {
-    const trimmed = userName.trim();
-    if (!trimmed || !weather) return null;
-
-    try {
-      const session = loadSession();
-      const result = await ensureActiveUserRecordApi({
-        userName: trimmed,
-        temp: weather.temp,
-        ...(typeof weather.tempMin === "number" ? { tempMin: weather.tempMin } : {}),
-        ...(typeof weather.tempMax === "number" ? { tempMax: weather.tempMax } : {}),
-        location: weather.locationName ?? userLocation?.name,
-        gender: userGender,
-        weather: weather.condition,
-        humidity: weather.humidity,
-        rainProb: weather.rainProb,
-        apparentTemp: weather.apparentTemp,
-        uvIndex: weather.uvIndex,
-        activeUserRecord: session.activeUserRecord,
-      });
-
-      const prev = session.activeUserRecord;
-      const active: ActiveUserRecord = {
-        pageId: result.pageId,
-        date: result.date,
-        tempBand: result.tempBand,
-      };
-      saveSession({ activeUserRecord: active });
-      setActiveUserRecord(active);
-
-      const pending = loadSession().pendingRecord;
-      const pendingToday = isPendingValidToday(pending);
-
-      // 有待回饋時維持綁定「已上傳照片」的那一列，不因 active 列換日／換溫區間而清除
-      if (pendingToday && pending) {
-        setNotionPageId(pending.pageId);
-      } else if (!notionPageId || notionPageId === prev?.pageId) {
-        setNotionPageId(active.pageId);
-      }
-
-      return active;
-    } catch (error) {
-      console.warn("ensureActiveUserRecord:", error);
-      return null;
-    }
-  }, [userName, weather, userGender, userLocation, notionPageId]);
-
-  useEffect(() => {
-    if (!sessionHydrated.current) return;
-    const trimmed = userName.trim();
-    if (!trimmed || !weather) return;
-    void syncActiveUserRecord();
-  }, [
-    weather?.temp,
-    weather?.condition,
-    weather?.locationName,
-    userName,
-    userGender,
-    syncActiveUserRecord,
-  ]);
 
   useEffect(() => {
     const expired = expireStalePending();
@@ -1917,16 +1871,21 @@ export default function App() {
   );
 
   /** 與地圖排行榜同一區時，沿用該區天氣溫度查詢 */
-  const inspirationQueryTemp = useMemo(() => {
+  const weatherSnapshotForInspiration = useMemo((): WeatherData | null => {
     if (
       selectedRegion &&
       regionWeather &&
       isSameRegion(selectedRegion, activeInspirationRegion)
     ) {
-      return regionWeather.temp;
+      return regionWeather;
     }
-    return weather?.temp;
-  }, [selectedRegion, regionWeather, activeInspirationRegion, weather?.temp]);
+    return weather ?? null;
+  }, [selectedRegion, regionWeather, activeInspirationRegion, weather]);
+
+  const inspirationQueryTemp = useMemo(() => {
+    const t = weatherSnapshotForInspiration?.temp;
+    return typeof t === "number" && !Number.isNaN(t) ? t : null;
+  }, [weatherSnapshotForInspiration]);
 
   const activeInspirationKey = useMemo(() => {
     if (inspirationQueryTemp == null) return null;
@@ -1936,6 +1895,7 @@ export default function App() {
   /** 靈感頁／首頁「全區」時載入區域穿搭靈感 */
   useEffect(() => {
     if (!activeInspirationKey || inspirationQueryTemp == null) return;
+    if (!weatherSnapshotForInspiration) return;
 
     const prefetchWholeTaipei =
       isTaipeiWholeAreaPicker(locationPicker) &&
@@ -1953,7 +1913,7 @@ export default function App() {
       cached.inspiration.length === 0;
     if (cacheHit && cached != null && !stalePhotoCache) return;
 
-    void loadRegionInsights(inspirationQueryTemp, activeInspirationRegion, {
+    void loadRegionInsights(weatherSnapshotForInspiration, activeInspirationRegion, {
       showLoading: loadForInspirationTab,
     });
   }, [
@@ -1961,15 +1921,28 @@ export default function App() {
     activeInspirationKey,
     activeInspirationRegion,
     inspirationQueryTemp,
+    weatherSnapshotForInspiration,
     loadRegionInsights,
     locationPicker.county,
     locationPicker.district,
     selectedRegion,
   ]);
 
-  const inspirationCards = useMemo(() => {
-    return regionInsights?.inspiration ?? [];
+  useEffect(() => {
+    if (!regionInsights?.inspiration.length) return;
+    setOptimisticInspirationCards((prev) =>
+      prev.filter(
+        (o) => !regionInsights.inspiration.some((item) => item.id === o.id)
+      )
+    );
   }, [regionInsights]);
+
+  const inspirationCards = useMemo(() => {
+    const fromApi = regionInsights?.inspiration ?? [];
+    const seen = new Set(fromApi.map((c) => c.id));
+    const optimistic = optimisticInspirationCards.filter((c) => !seen.has(c.id));
+    return [...optimistic, ...fromApi];
+  }, [regionInsights, optimisticInspirationCards]);
 
   const favoriteCards = useMemo(
     () => listFavoriteCards(inspirationFavorites),
@@ -2181,7 +2154,32 @@ export default function App() {
       setOutfitAnalysisLoading(false);
       setShowActionSheet(false);
       setIsCameraOpen(false);
-      void loadOutfitInsights(weather.temp);
+
+      const inspRegion = locationPickerToRegion(locationPicker);
+      const tags = [...upperBodyTags, ...lowerBodyTags];
+      setOptimisticInspirationCards((prev) => {
+        const next = prev.filter((c) => c.id !== pageId);
+        next.unshift({
+          id: pageId,
+          emoji: upperBodyTags[0] ? "👕" : lowerBodyTags[0] ? "👖" : "🧥",
+          bg: "#e8f4ff",
+          match: "-",
+          temp: `${Math.round(weather.temp)}°C・${weather.condition}`,
+          who: userName.trim() || "我",
+          date: "今天",
+          feelMetrics: {},
+          tags: tags.slice(0, 4),
+          colors: savedColors.slice(0, 3),
+          humidity:
+            weather.humidity != null ? `${Math.round(weather.humidity)}%` : "—",
+          location: weather.locationName?.split(" ")[0] || weather.locationName || "—",
+          photoUrl: photoPreviewUrl,
+          ...(userGender ? { gender: userGender } : {}),
+        });
+        return next;
+      });
+      refreshInspirationInsights(inspRegion, weather);
+      void loadOutfitInsights(weather);
 
       await scheduleEveningReminder(pageId, reminder);
       const link = buildRecordUrl(pageId);
@@ -2270,6 +2268,14 @@ export default function App() {
       setHasPendingFeedback(false);
       setOutfitImage(null);
       void cancelEveningReminder();
+
+      if (weather) {
+        refreshInspirationInsights(
+          inspirationDrilldownRegion ?? locationPickerToRegion(locationPicker),
+          weather
+        );
+        void loadOutfitInsights(weather);
+      }
     } catch (error) {
       console.warn("Notion update record:", error);
       showToast(
