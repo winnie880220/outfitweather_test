@@ -1193,7 +1193,7 @@ const FeedbackScreen = ({
   }
 
   return (
-    <div className="screen-scroll app-scroll app-screen-gradient">
+    <div className="feedback-screen-scroll screen-scroll app-scroll app-screen-gradient">
       <div className="app-inset pt-4 pb-[var(--nav-safe-bottom)]">
       <header className="mb-4 flex items-center justify-between gap-2">
         <div className="min-w-0">

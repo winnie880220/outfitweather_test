@@ -3009,6 +3009,19 @@ body {
     padding-top: env(safe-area-inset-top, 0px);
   }
 
+  .feedback-screen-scroll {
+    overflow-y: auto !important;
+    overflow-x: hidden;
+    height: 100dvh;
+    min-height: 100dvh;
+    max-height: 100dvh;
+    flex: none;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
   /* 固定畫面頁（不可 body scroll）: 鎖定 100dvh，含 safe-area */
   .home-map-screen {
     height: 100dvh;
