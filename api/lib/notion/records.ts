@@ -5,6 +5,20 @@ import { getRegionTopColorForLocation } from "./outfit-insights";
 import { toNotionProperties } from "./properties";
 import { uploadImageToNotion } from "./upload-photo";
 
+function rankingDeltaFromPayload(payload: NotionRecordPayload): 1 | 2 {
+  const min = payload.minTemp;
+  const max = payload.maxTemp;
+  if (
+    typeof min !== "number" ||
+    Number.isNaN(min) ||
+    typeof max !== "number" ||
+    Number.isNaN(max)
+  ) {
+    return 1;
+  }
+  return Math.abs(max - min) >= 8 ? 2 : 1;
+}
+
 /** 寫入 CurrentRanking：該區在此氣溫下顏色排行第一 */
 async function withCurrentRanking(
   payload: NotionRecordPayload
@@ -13,9 +27,11 @@ async function withCurrentRanking(
   if (!payload.location?.trim() || payload.temperature === undefined) return payload;
 
   try {
+    const delta = rankingDeltaFromPayload(payload);
     const top = await getRegionTopColorForLocation(
       payload.temperature,
-      payload.location
+      payload.location,
+      delta
     );
     if (top) return { ...payload, currentRanking: top };
   } catch (error) {
