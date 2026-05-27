@@ -2238,6 +2238,7 @@ body {
   position: relative;
   border: 1px solid rgba(231, 229, 228, 0.9);
   background: #faf7f2;
+  touch-action: pan-y;
 }
 
 .record-photo-time-badge {

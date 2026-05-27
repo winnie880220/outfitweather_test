@@ -198,7 +198,7 @@ export function FeedbackShareOverlay({
             >
               <h2
                 id="feedback-share-overlay-title"
-                className="font-semibold text-white"
+                className="font-sans not-italic font-semibold text-white"
               >
                 體感已記錄！
               </h2>

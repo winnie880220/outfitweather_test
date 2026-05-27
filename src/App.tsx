@@ -879,7 +879,7 @@ const RecordScreen = ({
         />
 
         <motion.div
-          whileTap={hasUploadedToday ? undefined : { scale: 0.98 }}
+          whileTap={hasUploadedToday || hasPhoto ? undefined : { scale: 0.98 }}
           onClick={() =>
             !hasUploadedToday &&
             !hasPhoto &&

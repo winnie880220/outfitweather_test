@@ -94,6 +94,80 @@ function parseTagAnchors(
   return anchors;
 }
 
+function extractJsonObject(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  // 先處理常見的 ```json ... ``` 包裝
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenced?.[1]) return fenced[1].trim();
+
+  // 再從回傳中擷取第一段平衡的大括號 JSON
+  const start = trimmed.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < trimmed.length; i += 1) {
+    const ch = trimmed[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (ch === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") depth += 1;
+    if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return trimmed.slice(start, i + 1).trim();
+      }
+    }
+  }
+  return null;
+}
+
+function parseGeminiJson(text: string): {
+  upperBodyTags?: string[];
+  lowerBodyTags?: string[];
+  colors?: unknown;
+  tagAnchors?: unknown;
+} {
+  const candidate = extractJsonObject(text) ?? text;
+  return JSON.parse(candidate) as {
+    upperBodyTags?: string[];
+    lowerBodyTags?: string[];
+    colors?: unknown;
+    tagAnchors?: unknown;
+  };
+}
+
+function coerceStringArray(input: unknown): string[] {
+  if (Array.isArray(input)) {
+    return input
+      .map((v) => (typeof v === "string" ? v.trim() : ""))
+      .filter(Boolean);
+  }
+  if (typeof input === "string") {
+    const v = input.trim();
+    return v ? [v] : [];
+  }
+  return [];
+}
+
 async function generateWithModel(
   ai: GoogleGenAI,
   model: string,
@@ -128,23 +202,26 @@ async function generateWithModel(
     tagAnchors?: unknown;
   };
   try {
-    parsed = JSON.parse(text) as typeof parsed;
+    parsed = parseGeminiJson(text);
   } catch {
     throw new Error("Gemini 回傳格式無法解析");
   }
 
-  const upperBodyTags = filterAllowedTags(parsed.upperBodyTags, UPPER_BODY_TAGS);
-  const lowerBodyTags = filterAllowedTags(parsed.lowerBodyTags, LOWER_BODY_TAGS).slice(
-    0,
-    1
+  const normalizedUpperBodyTags = filterAllowedTags(
+    coerceStringArray(parsed.upperBodyTags),
+    UPPER_BODY_TAGS
   );
-  const allowedLabels = new Set([...upperBodyTags, ...lowerBodyTags]);
+  const normalizedLowerBodyTags = filterAllowedTags(
+    coerceStringArray(parsed.lowerBodyTags),
+    LOWER_BODY_TAGS
+  ).slice(0, 1);
+  const allowedLabels = new Set([...normalizedUpperBodyTags, ...normalizedLowerBodyTags]);
   const tagAnchors = parseTagAnchors(parsed.tagAnchors, allowedLabels);
-  const colors = normalizeOutfitColors(parsed.colors);
+  const colors = normalizeOutfitColors(coerceStringArray(parsed.colors));
 
   return {
-    upperBodyTags,
-    lowerBodyTags,
+    upperBodyTags: normalizedUpperBodyTags,
+    lowerBodyTags: normalizedLowerBodyTags,
     colors,
     ...(tagAnchors.length > 0 ? { tagAnchors } : {}),
   };
