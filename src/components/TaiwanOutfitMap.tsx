@@ -278,6 +278,7 @@ export function TaiwanOutfitMap({
   userDistrict,
   mapView,
   onMapViewChange,
+  locateFocusTick = 0,
   selectedRegion,
   onSelectRegion,
 }: {
@@ -289,6 +290,7 @@ export function TaiwanOutfitMap({
   userDistrict: TaipeiDistrict | null;
   mapView: MapViewMode;
   onMapViewChange: (view: MapViewMode) => void;
+  locateFocusTick?: number;
   selectedRegion: MapRegion | null;
   onSelectRegion: (region: MapRegion | null) => void;
 }) {
@@ -981,6 +983,43 @@ export function TaiwanOutfitMap({
       if (b) focusBounds(b, 10);
     }
   }, [selectedRegion, mapView, mapReady, focusBounds, focusDistrict, districtsReady]);
+
+  /** 「使用目前定位」成功後，強制聚焦到該縣市／台北行政區 */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || locateFocusTick <= 0) return;
+
+    if (userDistrict && mapView === "taipei-districts") {
+      void loadDistrictLayer(map).then(() => {
+        districtsVisibleRef.current = true;
+        setDistrictsVisibleByZoom(true);
+        focusDistrict(userDistrict);
+        scheduleMapPaint();
+      });
+      return;
+    }
+
+    if (userCounty) {
+      const bounds =
+        userCounty === TAIPEI_COUNTY
+          ? getTaipeiBounds() ?? countyBoundsRef.current.get(TAIPEI_COUNTY)
+          : countyBoundsRef.current.get(userCounty);
+      if (bounds?.isValid()) {
+        focusBounds(bounds, userCounty === TAIPEI_COUNTY ? 12 : 10);
+      }
+    }
+  }, [
+    locateFocusTick,
+    mapReady,
+    mapView,
+    userCounty,
+    userDistrict,
+    loadDistrictLayer,
+    focusDistrict,
+    focusBounds,
+    getTaipeiBounds,
+    scheduleMapPaint,
+  ]);
 
   const displayLabel = selectedRegion
     ? regionLabel(selectedRegion)

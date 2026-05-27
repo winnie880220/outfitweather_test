@@ -77,9 +77,12 @@ export function parseLocationToCounty(location: string): TaiwanCounty | null {
   if (!text) return null;
 
   const compact = text.replace(/\s/g, "");
+  const lower = text.toLowerCase();
   if (compact.includes("台北市")) return "台北市";
   if (parseTaipeiDistrict(text)) return "台北市";
   if (/^台北(市)?/.test(compact) && !compact.includes("新北")) return "台北市";
+  if (lower.includes("new taipei")) return "新北市";
+  if (lower.includes("taipei") && !lower.includes("new taipei")) return "台北市";
 
   for (const county of TAIWAN_COUNTIES) {
     if (text.includes(county)) return county;

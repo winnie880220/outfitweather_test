@@ -45,6 +45,7 @@ export function isTaipeiDistrict(name: string): name is TaipeiDistrict {
 export function parseTaipeiDistrict(location: string): TaipeiDistrict | null {
   const text = location.replace(/臺/g, "台").trim();
   if (!text) return null;
+  const lower = text.toLowerCase();
 
   const sorted = [...TAIPEI_DISTRICTS].sort((a, b) => b.length - a.length);
   for (const district of sorted) {
@@ -68,6 +69,26 @@ export function parseTaipeiDistrict(location: string): TaipeiDistrict | null {
 
   for (const [key, district] of Object.entries(shortAliases)) {
     if (text.includes(key)) return district;
+  }
+
+  const englishAliases: Record<string, TaipeiDistrict> = {
+    zhongzheng: "中正區",
+    datong: "大同區",
+    zhongshan: "中山區",
+    songshan: "松山區",
+    daan: "大安區",
+    "da an": "大安區",
+    wanhua: "萬華區",
+    xinyi: "信義區",
+    shilin: "士林區",
+    beitou: "北投區",
+    neihu: "內湖區",
+    nangang: "南港區",
+    wenshan: "文山區",
+  };
+
+  for (const [key, district] of Object.entries(englishAliases)) {
+    if (lower.includes(key)) return district;
   }
 
   return null;

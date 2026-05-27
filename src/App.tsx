@@ -51,6 +51,7 @@ import {
   buildUserLocationFromPicker,
   isTaipeiWholeAreaPicker,
   parseLocationToPickerValue,
+  TAIPEI_DISTRICTS,
   TAIPEI_COUNTY,
   TAIPEI_WHOLE_AREA,
   taipeiDistrictFromPicker,
@@ -67,7 +68,11 @@ import {
   TAIPEI_WHOLE_REGION,
   type MapRegion,
 } from "../lib/map-region";
-import { parseTaipeiDistrict, type TaipeiDistrict } from "../lib/taipei-district";
+import {
+  parseTaipeiDistrict,
+  TAIPEI_DISTRICT_CENTROIDS,
+  type TaipeiDistrict,
+} from "../lib/taipei-district";
 import { parseLocationToCounty, type TaiwanCounty } from "../lib/taiwan-county";
 import { captureVideoFrame, compressDataUrl } from "./lib/image";
 import { hydratePendingRecordFromNotion } from "./lib/pending-record-hydrate";
@@ -119,7 +124,6 @@ import {
   Shirt, 
   MapPin, 
   ArrowRight, 
-  ChevronLeft,
   ChevronRight, 
   Heart,
   Droplets,
@@ -132,6 +136,48 @@ import {
   User,
   LogOut,
 } from "lucide-react";
+
+function haversineKm(aLat: number, aLon: number, bLat: number, bLon: number): number {
+  const toRad = (n: number) => (n * Math.PI) / 180;
+  const dLat = toRad(bLat - aLat);
+  const dLon = toRad(bLon - aLon);
+  const aa =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
+}
+
+function inferTaipeiDistrictByCoords(
+  lat: number,
+  lon: number
+): TaipeiDistrict | null {
+  let nearest: TaipeiDistrict | null = null;
+  let bestKm = Number.POSITIVE_INFINITY;
+  for (const district of TAIPEI_DISTRICTS) {
+    const [dLat, dLon] = TAIPEI_DISTRICT_CENTROIDS[district];
+    const km = haversineKm(lat, lon, dLat, dLon);
+    if (km < bestKm) {
+      bestKm = km;
+      nearest = district;
+    }
+  }
+  // 台北市範圍內到行政區質心通常不會太遠，超出門檻代表不在台北
+  return bestKm <= 12 ? nearest : null;
+}
+
+function getInsightTempDelta(weather: WeatherData | null | undefined): 1 | 2 {
+  if (
+    !weather ||
+    typeof weather.tempMin !== "number" ||
+    Number.isNaN(weather.tempMin) ||
+    typeof weather.tempMax !== "number" ||
+    Number.isNaN(weather.tempMax)
+  ) {
+    return 1;
+  }
+  const spread = Math.abs(weather.tempMax - weather.tempMin);
+  return spread >= 8 ? 2 : 1;
+}
 
 // --- Types ---
 type Screen = "welcome" | "home" | "inspiration" | "favorites" | "record" | "feedback";
@@ -529,6 +575,7 @@ const HomeScreen = ({
   userDistrict,
   mapView,
   onMapViewChange,
+  locateFocusTick,
   selectedRegion,
   onSelectRegion,
   regionInsights,
@@ -550,6 +597,7 @@ const HomeScreen = ({
   userDistrict: TaipeiDistrict | null;
   mapView: MapViewMode;
   onMapViewChange: (view: MapViewMode) => void;
+  locateFocusTick: number;
   selectedRegion: MapRegion | null;
   onSelectRegion: (region: MapRegion | null) => void;
   regionInsights: OutfitInsights | null;
@@ -588,6 +636,7 @@ const HomeScreen = ({
           userDistrict={userDistrict}
           mapView={mapView}
           onMapViewChange={onMapViewChange}
+          locateFocusTick={locateFocusTick}
           selectedRegion={selectedRegion}
           onSelectRegion={onSelectRegion}
         />
@@ -615,21 +664,6 @@ const HomeScreen = ({
                 transition={{ duration: 0.22 }}
                 className="home-county-sheet shrink-0"
               >
-                {mapView === "taipei-districts" &&
-                selectedRegion.level === "district" ? (
-                  <div className="home-county-sheet__nav">
-                    <button
-                      type="button"
-                      className="home-taipei-overview-btn"
-                      onClick={() =>
-                        onSelectRegion({ level: "county", county: TAIPEI_COUNTY })
-                      }
-                    >
-                      <ChevronLeft size={14} aria-hidden />
-                      整個台北市
-                    </button>
-                  </div>
-                ) : null}
                 <div className="home-county-sheet__head">
                   <div className="min-w-0 flex-1">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">
@@ -1278,6 +1312,7 @@ export default function App() {
   const [regionColorFills, setRegionColorFills] = useState<RegionColorFill[]>([]);
   const [mapView, setMapView] = useState<MapViewMode>("counties");
   const [selectedRegion, setSelectedRegion] = useState<MapRegion | null>(null);
+  const [locateFocusTick, setLocateFocusTick] = useState(0);
   const [regionWeather, setRegionWeather] = useState<WeatherData | null>(null);
   const [regionWeatherLoading, setRegionWeatherLoading] = useState(false);
   const [regionInsights, setRegionInsights] = useState<OutfitInsights | null>(null);
@@ -1396,13 +1431,28 @@ export default function App() {
         try {
           const { latitude: lat, longitude: lon } = pos.coords;
           const name = await reverseGeocode(lat, lon);
-          const parsed = parseLocationToPickerValue(name);
+          const parsedFromName = parseLocationToPickerValue(name);
+          const inferredDistrict = inferTaipeiDistrictByCoords(lat, lon);
+          const parsed =
+            parsedFromName?.county === TAIPEI_COUNTY
+              ? {
+                  county: TAIPEI_COUNTY,
+                  district: parsedFromName.district ?? inferredDistrict ?? TAIPEI_WHOLE_AREA,
+                }
+              : parsedFromName;
+
           if (parsed) {
             applyLocationPicker(parsed);
+            setLocateFocusTick((v) => v + 1);
+          } else if (inferredDistrict) {
+            applyLocationPicker({ county: TAIPEI_COUNTY, district: inferredDistrict });
+            setLocateFocusTick((v) => v + 1);
           } else {
             setUserLocation({ name, lat, lon });
             setLocationInput(name);
+            setSelectedRegion(null);
             void loadWeather(lat, lon, name);
+            setLocateFocusTick((v) => v + 1);
           }
         } catch (error) {
           const msg = error instanceof Error ? error.message : "";
@@ -1435,10 +1485,13 @@ export default function App() {
     requestHomeGeolocation();
   }, [screen, userLocation, requestHomeGeolocation]);
 
-  const loadOutfitInsights = useCallback(async (temp: number) => {
+  const loadOutfitInsights = useCallback(async (weatherSnapshot: WeatherData) => {
     try {
       setInsightsLoading(true);
-      const data = await fetchOutfitInsights(temp, 1);
+      const data = await fetchOutfitInsights(
+        weatherSnapshot.temp,
+        getInsightTempDelta(weatherSnapshot)
+      );
       setOutfitInsights(data);
     } catch (error) {
       console.warn("Outfit insights:", error);
@@ -1449,13 +1502,19 @@ export default function App() {
   }, []);
 
   const loadRegionInsights = useCallback(
-    async (temp: number, region: MapRegion, opts?: { showLoading?: boolean }) => {
-      const fetchKey = `${regionKey(region)}@${Math.round(temp)}`;
+    async (weatherSnapshot: WeatherData, region: MapRegion, opts?: { showLoading?: boolean }) => {
+      const delta = getInsightTempDelta(weatherSnapshot);
+      const fetchKey = `${regionKey(region)}@${Math.round(weatherSnapshot.temp)}@d${delta}`;
       const showLoading = opts?.showLoading !== false;
       try {
         if (showLoading) setRegionInsightsLoading(true);
         const district = region.level === "district" ? region.district : undefined;
-        const data = await fetchOutfitInsights(temp, 2, region.county, district);
+        const data = await fetchOutfitInsights(
+          weatherSnapshot.temp,
+          delta,
+          region.county,
+          district
+        );
         regionInsightsFetchKeyRef.current = fetchKey;
         setRegionInsights(data);
       } catch (error) {
@@ -1484,9 +1543,9 @@ export default function App() {
 
   useEffect(() => {
     if (weather) {
-      void loadOutfitInsights(weather.temp);
+      void loadOutfitInsights(weather);
     }
-  }, [weather?.temp, loadOutfitInsights]);
+  }, [weather, loadOutfitInsights]);
 
   useEffect(() => {
     if (screen !== "home") return;
@@ -1527,10 +1586,11 @@ export default function App() {
   useEffect(() => {
     if (!selectedRegion || regionWeatherLoading || !regionWeather) return;
 
-    const key = `${regionKey(selectedRegion)}@${Math.round(regionWeather.temp)}`;
+    const delta = getInsightTempDelta(regionWeather);
+    const key = `${regionKey(selectedRegion)}@${Math.round(regionWeather.temp)}@d${delta}`;
     if (regionInsightsFetchKeyRef.current === key) return;
 
-    void loadRegionInsights(regionWeather.temp, selectedRegion, {
+    void loadRegionInsights(regionWeather, selectedRegion, {
       showLoading: !regionInsightsRef.current,
     });
   }, [selectedRegion, regionWeatherLoading, regionWeather, loadRegionInsights]);
@@ -2280,6 +2340,7 @@ export default function App() {
                   userDistrict={userDistrict}
                   mapView={mapView}
                   onMapViewChange={setMapView}
+                  locateFocusTick={locateFocusTick}
                   selectedRegion={selectedRegion}
                   onSelectRegion={setSelectedRegion}
                   regionInsights={regionInsights}
