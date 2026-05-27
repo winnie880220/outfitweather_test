@@ -1437,7 +1437,11 @@ export default function App() {
             parsedFromName?.county === TAIPEI_COUNTY
               ? {
                   county: TAIPEI_COUNTY,
-                  district: parsedFromName.district ?? inferredDistrict ?? TAIPEI_WHOLE_AREA,
+                  district:
+                    (!parsedFromName.district ||
+                    parsedFromName.district === TAIPEI_WHOLE_AREA
+                      ? inferredDistrict
+                      : parsedFromName.district) ?? TAIPEI_WHOLE_AREA,
                 }
               : parsedFromName;
 

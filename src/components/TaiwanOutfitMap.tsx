@@ -310,6 +310,7 @@ export function TaiwanOutfitMap({
   const mapPaintRafRef = useRef<number | null>(null);
   /** 僅在選單切換行政區時自動聚焦，避免使用者縮小後被拉回 */
   const autoFocusedDistrictRef = useRef<string | null>(null);
+  const lastLocateFocusTickRef = useRef(0);
   const mapInteractionRef = useRef({
     mapView,
     districtsVisibleByZoom: false,
@@ -988,6 +989,8 @@ export function TaiwanOutfitMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || locateFocusTick <= 0) return;
+    if (lastLocateFocusTickRef.current === locateFocusTick) return;
+    lastLocateFocusTickRef.current = locateFocusTick;
 
     if (userDistrict && mapView === "taipei-districts") {
       void loadDistrictLayer(map).then(() => {
