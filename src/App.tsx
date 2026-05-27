@@ -1547,10 +1547,13 @@ export default function App() {
     [weather, regionWeather, selectedRegion, loadRegionInsights]
   );
 
-  const loadRegionColorFills = useCallback(async (temp: number) => {
-    const key = `${Math.round(temp)}@d3r3`;
+  const loadRegionColorFills = useCallback(async (weatherSnapshot: WeatherData) => {
+    const temp = weatherSnapshot.temp;
+    if (typeof temp !== "number" || Number.isNaN(temp)) return;
+    const delta = getInsightTempDelta(weatherSnapshot);
+    const key = `${Math.round(temp)}@d${delta}r3`;
     try {
-      const { fills } = await fetchRegionColorFills(temp, 3);
+      const { fills } = await fetchRegionColorFills(temp, delta);
       regionColorFillsKeyRef.current = key;
       setRegionColorFills(fills);
     } catch (error) {
@@ -1569,20 +1572,20 @@ export default function App() {
   useEffect(() => {
     if (screen !== "home") return;
 
-    const temp =
-      selectedRegion && regionWeather
-        ? regionWeather.temp
-        : weather?.temp;
-    if (temp == null) return;
-
-    const key = `${Math.round(temp)}@d3r3`;
+    const colorWeatherSnapshot =
+      selectedRegion && regionWeather ? regionWeather : weather;
+    if (!colorWeatherSnapshot) return;
+    const temp = colorWeatherSnapshot.temp;
+    if (typeof temp !== "number" || Number.isNaN(temp)) return;
+    const delta = getInsightTempDelta(colorWeatherSnapshot);
+    const key = `${Math.round(temp)}@d${delta}r3`;
     if (regionColorFillsKeyRef.current === key) return;
-    void loadRegionColorFills(temp);
+    void loadRegionColorFills(colorWeatherSnapshot);
   }, [
     screen,
     selectedRegion,
-    regionWeather?.temp,
-    weather?.temp,
+    regionWeather,
+    weather,
     loadRegionColorFills,
   ]);
 
@@ -2145,8 +2148,8 @@ export default function App() {
       if (loc && savedColors.length > 0) {
         addMapContribution(loc.lat, loc.lon, savedColors, { id: pageId });
       }
-      if (weather?.temp != null) {
-        void loadRegionColorFills(weather.temp);
+      if (weather) {
+        void loadRegionColorFills(weather);
       }
       setHasPendingFeedback(true);
       setOutfitImage(null);
