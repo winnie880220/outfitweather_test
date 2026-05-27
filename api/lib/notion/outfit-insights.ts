@@ -191,6 +191,15 @@ function toInspirationCard(
   const emoji =
     record.upperBodyTags[0] ? tagEmoji(record.upperBodyTags[0]) : tagEmoji(record.lowerBodyTags[0] ?? "");
 
+  const county = parseLocationToCounty(record.location);
+  const district = parseTaipeiDistrict(record.location);
+  const locationLabel =
+    county === TAIPEI_COUNTY
+      ? district
+        ? `${TAIPEI_COUNTY} ${district}`
+        : TAIPEI_COUNTY
+      : county ?? record.location?.split(" ")[0] ?? record.location ?? "—";
+
   return {
     id: record.id,
     ...(record.recordId ? { recordId: record.recordId } : {}),
@@ -204,7 +213,7 @@ function toInspirationCard(
     tags: tags.slice(0, 4),
     colors: record.colors.slice(0, 3),
     humidity: record.humidity != null ? `${record.humidity}%` : "—",
-    location: record.location?.split(" ")[0] || record.location || "—",
+    location: locationLabel,
     photoUrl: record.photoUrl,
     ...(record.gender ? { gender: record.gender } : {}),
   };

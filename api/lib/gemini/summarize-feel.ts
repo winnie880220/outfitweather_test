@@ -94,25 +94,28 @@ export async function summarizeFeelFeedback(
     return fallbackFeelSummary(input);
   }
 
-  const ai = new GoogleGenAI({ apiKey: env.geminiApiKey });
   const prompt = buildPrompt(input);
+  const keys = env.geminiApiKeys;
   let lastError: unknown;
 
-  for (const model of getModelCandidates()) {
-    try {
-      const response = await ai.models.generateContent({
-        model,
-        contents: [{ text: prompt }],
-        config: { responseMimeType: "application/json" },
-      });
+  for (const key of keys) {
+    const ai = new GoogleGenAI({ apiKey: key });
+    for (const model of getModelCandidates()) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: [{ text: prompt }],
+          config: { responseMimeType: "application/json" },
+        });
 
-      const text = response.text?.trim();
-      if (!text) continue;
+        const text = response.text?.trim();
+        if (!text) continue;
 
-      const parsed = parseResult(text);
-      if (parsed) return parsed;
-    } catch (error) {
-      lastError = error;
+        const parsed = parseResult(text);
+        if (parsed) return parsed;
+      } catch (error) {
+        lastError = error;
+      }
     }
   }
 

@@ -232,7 +232,7 @@ export async function analyzeOutfitImage(
   mimeType: string
 ): Promise<OutfitAnalysisResult> {
   if (!isGeminiConfigured()) {
-    throw new Error("GEMINI_API_KEY 尚未設定");
+    throw new Error("GEMINI_API_KEY 或 GEMINI_API_KEY_2 尚未設定");
   }
 
   const base64 = stripBase64(imageBase64);
@@ -240,21 +240,27 @@ export async function analyzeOutfitImage(
     throw new Error("缺少圖片資料");
   }
 
-  const ai = new GoogleGenAI({ apiKey: env.geminiApiKey });
+  const keys = env.geminiApiKeys;
   const models = getModelCandidates();
   const failures: string[] = [];
   let lastError: unknown;
 
-  for (const model of models) {
-    try {
-      return await generateWithModel(ai, model, base64, mimeType);
-    } catch (error) {
-      lastError = error;
-      failures.push(`${model}: ${errorMessage(error).slice(0, 120)}`);
-      if (shouldTryNextModel(error)) {
-        continue;
+  for (let i = 0; i < keys.length; i += 1) {
+    const key = keys[i];
+    const ai = new GoogleGenAI({ apiKey: key });
+    for (const model of models) {
+      try {
+        return await generateWithModel(ai, model, base64, mimeType);
+      } catch (error) {
+        lastError = error;
+        failures.push(`key#${i + 1} ${model}: ${errorMessage(error).slice(0, 120)}`);
+        if (shouldTryNextModel(error)) {
+          continue;
+        }
+        // 非可切模型錯誤：若還有下一把 key，改用下一把；否則拋出
+        if (i < keys.length - 1) break;
+        throw error;
       }
-      throw error;
     }
   }
 
