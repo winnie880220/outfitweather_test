@@ -31,6 +31,15 @@ function getModelCandidates(): string[] {
   return [...new Set(list)];
 }
 
+function isQuotaError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return (
+    msg.includes("429") ||
+    msg.includes("RESOURCE_EXHAUSTED") ||
+    msg.includes("quota")
+  );
+}
+
 function clampScore(n: number): number {
   return Math.min(100, Math.max(0, Math.round(n)));
 }
@@ -98,8 +107,8 @@ export async function summarizeFeelFeedback(
   const keys = env.geminiApiKeys;
   let lastError: unknown;
 
-  for (const key of keys) {
-    const ai = new GoogleGenAI({ apiKey: key });
+  for (let i = 0; i < keys.length; i += 1) {
+    const ai = new GoogleGenAI({ apiKey: keys[i] });
     for (const model of getModelCandidates()) {
       try {
         const response = await ai.models.generateContent({
@@ -115,6 +124,9 @@ export async function summarizeFeelFeedback(
         if (parsed) return parsed;
       } catch (error) {
         lastError = error;
+        if (isQuotaError(error) && i < keys.length - 1) {
+          break;
+        }
       }
     }
   }

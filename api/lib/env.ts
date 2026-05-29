@@ -16,8 +16,13 @@ export const env = {
   get geminiApiKey2() {
     return process.env.GEMINI_API_KEY_2?.trim() ?? "";
   },
+  get geminiApiKey3() {
+    return process.env.GEMINI_API_KEY_3?.trim() ?? "";
+  },
   get geminiApiKeys() {
-    return [env.geminiApiKey, env.geminiApiKey2].filter(Boolean);
+    return [env.geminiApiKey, env.geminiApiKey2, env.geminiApiKey3].filter(
+      Boolean
+    );
   },
   /** Google Maps Platform — Weather API（與 Gemini 金鑰可相同專案） */
   get googleWeatherApiKey() {

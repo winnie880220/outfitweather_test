@@ -239,7 +239,9 @@ export async function analyzeOutfitImage(
   mimeType: string
 ): Promise<OutfitAnalysisResult> {
   if (!isGeminiConfigured()) {
-    throw new Error("GEMINI_API_KEY 或 GEMINI_API_KEY_2 尚未設定");
+    throw new Error(
+      "GEMINI_API_KEY、GEMINI_API_KEY_2 或 GEMINI_API_KEY_3 尚未設定"
+    );
   }
 
   const base64 = stripBase64(imageBase64);
@@ -282,7 +284,7 @@ export async function analyzeOutfitImage(
 
   if (isApiKeyError(lastError)) {
     throw new Error(
-      "Gemini API 金鑰已過期或無效，請至 Google AI Studio 重新建立金鑰，並更新本機 .env.local 或 Vercel 的 GEMINI_API_KEY"
+      "Gemini API 金鑰已過期或無效，請至 Google AI Studio 重新建立金鑰，並更新本機 .env.local 或 Vercel 的 GEMINI_API_KEY（或 _2、_3）"
     );
   }
 
