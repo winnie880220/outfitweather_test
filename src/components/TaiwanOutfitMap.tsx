@@ -162,7 +162,21 @@ function districtStyle(selected: boolean, userLocated = false): L.PathOptions {
   };
 }
 
-type RegionFillPaint = Pick<RegionColorFill, "hex" | "hex2">;
+type RegionFillPaint = Pick<RegionColorFill, "hex" | "hex2" | "hex3">;
+
+function regionFillAllLight(fill: RegionFillPaint): boolean {
+  if (fill.hex3) {
+    return (
+      isLightMapFillHex(fill.hex) &&
+      isLightMapFillHex(fill.hex2!) &&
+      isLightMapFillHex(fill.hex3)
+    );
+  }
+  if (fill.hex2) {
+    return isLightMapFillHex(fill.hex) && isLightMapFillHex(fill.hex2);
+  }
+  return isLightMapFillHex(fill.hex);
+}
 
 function regionFillOpacity(
   fill: RegionFillPaint,
@@ -170,10 +184,7 @@ function regionFillOpacity(
   dimmed: boolean,
   userLocated: boolean
 ): number {
-  const light =
-    fill.hex2 != null
-      ? isLightMapFillHex(fill.hex) && isLightMapFillHex(fill.hex2)
-      : isLightMapFillHex(fill.hex);
+  const light = regionFillAllLight(fill);
   if (selected) return 0.92;
   if (dimmed) return 0.48;
   if (userLocated) return 0.88;
@@ -200,10 +211,7 @@ function pathStyleWithTopColor(
     return fallback();
   }
 
-  const light =
-    fill.hex2 != null
-      ? isLightMapFillHex(fill.hex) && isLightMapFillHex(fill.hex2)
-      : isLightMapFillHex(fill.hex);
+  const light = regionFillAllLight(fill);
   const border = selected
     ? "#57534e"
     : userLocated
@@ -239,10 +247,10 @@ function pathPaintSig(
 ): string {
   if (mode === "hidden") return "hidden";
   if (mode === "taipei-overview") {
-    return `tpe:${fill?.hex ?? ""}:${fill?.hex2 ?? ""}:${selected}:${userLocated}`;
+    return `tpe:${fill?.hex ?? ""}:${fill?.hex2 ?? ""}:${fill?.hex3 ?? ""}:${selected}:${userLocated}`;
   }
   if (!fill?.hex) return `none:${selected}:${dimmed}:${userLocated}`;
-  return `${fill.hex}:${fill.hex2 ?? ""}:${selected}:${dimmed}:${userLocated}`;
+  return `${fill.hex}:${fill.hex2 ?? ""}:${fill.hex3 ?? ""}:${selected}:${dimmed}:${userLocated}`;
 }
 
 function shouldSkipPathPaint(path: L.Path, sig: string): boolean {

@@ -73,6 +73,10 @@ export type RegionColorFill = {
   /** 與 colorName 並列第一時的第二色 */
   colorName2?: string;
   hex2?: string;
+  colorName3?: string;
+  hex3?: string;
+  /** 並列第一全部顏色（寫入 Notion CurrentRanking） */
+  rankingColorNames?: string[];
 };
 
 const TAG_EMOJI: Record<string, string> = {
@@ -339,10 +343,17 @@ function fillFromLocaleRecords(
     ...(locale.district ? { district: locale.district } : {}),
     colorName: top.colorName,
     hex: colorNameToHex(top.colorName),
+    rankingColorNames: top.colorNames,
     ...(top.colorName2
       ? {
           colorName2: top.colorName2,
           hex2: colorNameToHex(top.colorName2),
+        }
+      : {}),
+    ...(top.colorName3
+      ? {
+          colorName3: top.colorName3,
+          hex3: colorNameToHex(top.colorName3),
         }
       : {}),
   };
@@ -413,18 +424,18 @@ export async function getRegionColorFills(
 }
 
 /**
- * 依定位字串與體感溫度區間，取得該區顏色排行第一（與地圖填色邏輯一致）
+ * 依定位字串與體感溫度區間，取得該區顏色排行並列第一的全部色名（與地圖填色邏輯一致）
  */
-export async function getRegionTopColorForLocation(
+export async function getRegionTopColorsForLocation(
   temp: number,
   location: string,
   delta = 1
-): Promise<string | null> {
+): Promise<string[]> {
   const trimmed = location.trim();
-  if (!trimmed) return null;
+  if (!trimmed) return [];
 
   const region = parseLocationToRegion(trimmed);
-  if (!region) return null;
+  if (!region) return [];
 
   const locales: MapFillLocaleSpec[] = [
     {
@@ -438,6 +449,26 @@ export async function getRegionTopColorForLocation(
   ];
   const fills = await getRegionColorFillsForLocales(locales);
   const fill = fills[0];
-  if (!fill) return null;
-  return fill.colorName2 ? `${fill.colorName}・${fill.colorName2}` : fill.colorName;
+  if (!fill) return [];
+
+  const names =
+    fill.rankingColorNames?.filter((n) => n.trim()) ??
+    (fill.colorName2
+      ? [fill.colorName, fill.colorName2]
+      : fill.colorName
+        ? [fill.colorName]
+        : []);
+  return [...new Set(names.map((n) => n.trim()).filter(Boolean))];
+}
+
+/** @deprecated 改用 getRegionTopColorsForLocation */
+export async function getRegionTopColorForLocation(
+  temp: number,
+  location: string,
+  delta = 1
+): Promise<string | null> {
+  const names = await getRegionTopColorsForLocation(temp, location, delta);
+  if (names.length === 0) return null;
+  if (names.length === 1) return names[0]!;
+  return names.join("・");
 }

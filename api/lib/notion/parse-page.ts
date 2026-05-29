@@ -38,7 +38,8 @@ export type ParsedNotionRecord = {
   lowerBodyTags: string[];
   colors: string[];
   /** 記錄當下該區顏色排行第一 */
-  currentRanking?: string;
+  /** 並列第一顏色（Multi-select 全讀；單一 legacy 字串時為單色） */
+  currentRanking?: string | string[];
   breathability?: number;
   wrapping?: number;
   stuffiness?: number;
@@ -144,10 +145,18 @@ export function parseNotionPage(page: {
     upperBodyTags: p[RECORDS_DB.upperBodyTags]?.multi_select?.map((t) => t.name) ?? [],
     lowerBodyTags: lowerSelect ? [lowerSelect] : [],
     colors: p[RECORDS_DB.color]?.multi_select?.map((t) => t.name) ?? [],
-    currentRanking:
-      p[RECORDS_DB.currentRanking]?.multi_select?.[0]?.name ||
-      plainText(p[RECORDS_DB.currentRanking]) ||
-      undefined,
+    currentRanking: (() => {
+      const prop = p[RECORDS_DB.currentRanking];
+      if (prop?.type === "multi_select") {
+        const names =
+          prop.multi_select?.map((t) => t.name.trim()).filter(Boolean) ?? [];
+        if (names.length === 0) return undefined;
+        if (names.length === 1) return names[0];
+        return names;
+      }
+      const text = plainText(prop);
+      return text || undefined;
+    })(),
     breathability: p[RECORDS_DB.breathability]?.number ?? undefined,
     wrapping: p[RECORDS_DB.wrapping]?.number ?? undefined,
     stuffiness: p[RECORDS_DB.stuffiness]?.number ?? undefined,

@@ -9,6 +9,8 @@ export type RegionColorFill = {
   hex: string;
   colorName2?: string;
   hex2?: string;
+  colorName3?: string;
+  hex3?: string;
 };
 
 export type RegionColorFillsData = {

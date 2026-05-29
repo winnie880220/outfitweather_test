@@ -1,3 +1,4 @@
+import { taiwanDateString } from "../../lib/taiwan-date";
 import type { MapContributionEntry } from "./map-contributions";
 import type { UserGender, UserLocation } from "../types/api";
 import { clearAllInspirationFavoritesLocal } from "./inspiration-favorites";
@@ -43,11 +44,11 @@ export interface ReminderSettings {
   minute: number;
 }
 
-/** 當日＋體感溫度區間的 active Notion 列（收藏／記錄／回饋寫入此列） */
+/** 台灣當日收藏容器列（僅 Favorite；穿搭記錄為另列） */
 export interface ActiveUserRecord {
   pageId: string;
+  /** 台灣時區 YYYY-MM-DD */
   date: string;
-  tempBand: number;
 }
 
 export interface AppSession {
@@ -76,11 +77,9 @@ const EMPTY_SESSION: AppSession = {
   reminder: DEFAULT_REMINDER,
 };
 
+/** 台灣日曆日 YYYY-MM-DD（換日為 Asia/Taipei 00:00） */
 export function localDateString(d = new Date()): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return taiwanDateString(d);
 }
 
 export function loadSession(): AppSession {
@@ -100,9 +99,11 @@ export function loadSession(): AppSession {
       activeUserRecord:
         parsed.activeUserRecord &&
         typeof parsed.activeUserRecord.pageId === "string" &&
-        typeof parsed.activeUserRecord.date === "string" &&
-        typeof parsed.activeUserRecord.tempBand === "number"
-          ? parsed.activeUserRecord
+        typeof parsed.activeUserRecord.date === "string"
+          ? {
+              pageId: parsed.activeUserRecord.pageId,
+              date: parsed.activeUserRecord.date,
+            }
           : null,
       reminder: {
         ...DEFAULT_REMINDER,

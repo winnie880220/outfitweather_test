@@ -264,40 +264,22 @@ async function handleApi(
       if (req.method === "POST") {
         const body = (await readBody(req)) as {
           userName?: string;
-          temp?: number;
-          tempMin?: number;
-          tempMax?: number;
-          location?: string;
           gender?: string;
-          weather?: string;
-          humidity?: number;
-          rainProb?: number;
-          apparentTemp?: number;
-          uvIndex?: number;
           activeUserRecord?: ActiveUserRecordState | null;
+          create?: boolean;
         };
         const userName = (body.userName ?? "").trim();
         if (!userName) {
           return send(res, 400, { ok: false, error: "缺少 userName" });
         }
-        if (typeof body.temp !== "number" || Number.isNaN(body.temp)) {
-          return send(res, 400, { ok: false, error: "缺少 temp（number）" });
-        }
+        const gender =
+          body.gender === "男生" || body.gender === "女生" || body.gender === "不分"
+            ? body.gender
+            : undefined;
         const result = await ensureActiveUserRecord(
-          {
-            userName,
-            temp: body.temp,
-            tempMin: typeof body.tempMin === "number" ? body.tempMin : undefined,
-            tempMax: typeof body.tempMax === "number" ? body.tempMax : undefined,
-            location: body.location,
-            gender: body.gender as NotionRecordPayload["gender"],
-            weather: body.weather,
-            humidity: body.humidity,
-            rainProb: body.rainProb,
-            apparentTemp: body.apparentTemp,
-            uvIndex: body.uvIndex,
-          },
-          body.activeUserRecord ?? null
+          { userName, ...(gender ? { gender } : {}) },
+          body.activeUserRecord ?? null,
+          { createIfMissing: body.create === true }
         );
         return send(res, result.ok ? 200 : 502, result);
       }
@@ -310,27 +292,25 @@ async function handleApi(
       if (req.method === "GET") {
         const favoriterUserName = url.searchParams.get("userName") ?? "";
         const activePageId = url.searchParams.get("activePageId") ?? undefined;
-        const tempRaw = url.searchParams.get("temp");
-        const apparentTempRaw = url.searchParams.get("apparentTemp");
         const readDirect = url.searchParams.get("readDirect") === "1";
         const activeDate = url.searchParams.get("activeDate") ?? undefined;
-        const activeTempBandRaw = url.searchParams.get("activeTempBand");
         const activeRecord =
           readDirect && activePageId && activeDate
             ? {
                 pageId: activePageId,
                 date: activeDate,
-                tempBand: activeTempBandRaw ? Number(activeTempBandRaw) : 0,
               }
+            : undefined;
+        const genderParam = url.searchParams.get("gender");
+        const gender =
+          genderParam === "男生" || genderParam === "女生" || genderParam === "不分"
+            ? genderParam
             : undefined;
         const result = await queryFavoritedOutfits(favoriterUserName, {
           activePageId,
           activeRecord,
           readPageIdDirectly: readDirect,
-          profile: {
-            temp: tempRaw ? Number(tempRaw) : undefined,
-            apparentTemp: apparentTempRaw ? Number(apparentTempRaw) : undefined,
-          },
+          gender,
         });
         return send(res, result.ok ? 200 : 502, result);
       }
@@ -361,18 +341,16 @@ async function handleApi(
         if (typeof body.favorited !== "boolean") {
           return send(res, 400, { ok: false, error: "缺少 favorited（boolean）" });
         }
+        const gender =
+          body.gender === "男生" || body.gender === "女生" || body.gender === "不分"
+            ? body.gender
+            : undefined;
         const result = await toggleOutfitFavorite({
           favoriterUserName,
           outfitPageId,
           favorited: body.favorited,
           activeRecord: body.activeUserRecord ?? null,
-          profile: {
-            location: body.location,
-            gender: body.gender as NotionRecordPayload["gender"],
-            temp: body.temp,
-            apparentTemp: body.apparentTemp,
-            weather: body.weather,
-          },
+          gender,
         });
         return send(res, result.ok ? 200 : 502, result);
       }

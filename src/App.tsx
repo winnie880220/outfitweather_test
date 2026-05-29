@@ -63,6 +63,7 @@ import { buildRecordWeatherMetrics } from "../lib/weather-metrics";
 import {
   weatherInsightReferenceTemp,
 } from "../lib/weather-insight-temp";
+import { mapGradientFromColorTop3 } from "../lib/map-region-color-rank";
 import { limitOutfitColors } from "../lib/outfit-colors";
 import {
   isSameRegion,
@@ -126,6 +127,7 @@ import {
   expireStalePending,
   isPendingValidToday,
   loadSession,
+  localDateString,
   markPendingFeedbackComplete,
   resetAppSession,
   saveSession,
@@ -209,25 +211,21 @@ function regionFillFromInsights(
   region: MapRegion,
   insights: OutfitInsights
 ): RegionColorFill | null {
-  const colors = insights.colorTop3.filter((c) => c.name && c.hex);
-  if (!colors.length) return null;
-  const first = colors[0]!;
-  const base: RegionColorFill = {
+  const gradient = mapGradientFromColorTop3(
+    insights.colorTop3.map((c) => ({
+      name: c.name,
+      hex: c.hex,
+      percent: c.percent,
+      count: c.count,
+    }))
+  );
+  if (!gradient) return null;
+  return {
     regionKey: regionKey(region),
     county: region.county,
     ...(region.level === "district" ? { district: region.district } : {}),
-    colorName: first.name,
-    hex: first.hex!,
+    ...gradient,
   };
-  const second = colors[1];
-  if (second?.hex && second.count === first.count) {
-    return {
-      ...base,
-      colorName2: second.name,
-      hex2: second.hex,
-    };
-  }
-  return base;
 }
 
 function mergeRegionColorFill(
@@ -241,7 +239,13 @@ function mergeRegionColorFill(
   );
   if (idx >= 0) {
     const prev = fills[idx]!;
-    if (prev.hex === patch.hex && prev.hex2 === patch.hex2) return fills;
+    if (
+      prev.hex === patch.hex &&
+      prev.hex2 === patch.hex2 &&
+      prev.hex3 === patch.hex3
+    ) {
+      return fills;
+    }
     const next = [...fills];
     next[idx] = patch;
     return next;
@@ -1779,6 +1783,7 @@ export default function App() {
           existing &&
           existing.hex === patch.hex &&
           existing.hex2 === patch.hex2 &&
+          existing.hex3 === patch.hex3 &&
           existing.colorName === patch.colorName
         ) {
           return prev;
@@ -2538,16 +2543,19 @@ export default function App() {
 
     try {
       const session = loadSession();
+      const sessionGender = session.gender ?? userGender;
       const result = await fetchUserFavorites(trimmed, {
         activeUserRecord: session.activeUserRecord ?? activeUserRecord,
-        temp: weather?.temp,
-        apparentTemp: weather?.apparentTemp,
+        gender: sessionGender ?? undefined,
       });
       if (favoritesMutatingRef.current) return;
       setInspirationFavorites(favoritesStateFromCards(trimmed, result.cards));
       if (result.activeUserRecord) {
         setActiveUserRecord(result.activeUserRecord);
         saveSession({ activeUserRecord: result.activeUserRecord });
+      } else {
+        setActiveUserRecord(null);
+        saveSession({ activeUserRecord: null });
       }
     } catch (error) {
       console.warn("fetchUserFavorites:", error);
@@ -2556,7 +2564,7 @@ export default function App() {
         setInspirationFavorites({ userName: trimmed, items: {} });
       }
     }
-  }, [activeUserRecord, weather?.temp, weather?.apparentTemp]);
+  }, [activeUserRecord]);
 
   useEffect(() => {
     void syncUserFavorites(userName);
@@ -2587,8 +2595,12 @@ export default function App() {
       homeGeoRequested.current = true;
     }
     setReminder(session.reminder);
-    if (session.activeUserRecord) {
+    const today = localDateString();
+    if (session.activeUserRecord?.date === today) {
       setActiveUserRecord(session.activeUserRecord);
+    } else if (session.activeUserRecord) {
+      saveSession({ activeUserRecord: null });
+      setActiveUserRecord(null);
     }
 
     const recordId = getRecordIdFromUrl();
@@ -2925,13 +2937,10 @@ export default function App() {
     favoritesMutatingRef.current = true;
     try {
       const session = loadSession();
+      const sessionGender = session.gender ?? userGender;
       const result = await toggleOutfitFavorite(trimmedName, card.id, willFavorite, {
         activeUserRecord: session.activeUserRecord ?? activeUserRecord,
-        location: weather?.locationName ?? userLocation?.name,
-        gender: userGender,
-        temp: weather?.temp,
-        apparentTemp: weather?.apparentTemp,
-        weather: weather?.condition,
+        gender: sessionGender ?? undefined,
       });
       const active: ActiveUserRecord = result.activeUserRecord;
       setActiveUserRecord(active);
@@ -2939,8 +2948,7 @@ export default function App() {
 
       const refreshed = await fetchUserFavorites(trimmedName, {
         activeUserRecord: active,
-        temp: weather?.temp,
-        apparentTemp: weather?.apparentTemp,
+        gender: sessionGender ?? undefined,
         readPageIdDirectly: true,
       });
       if (refreshed.activeUserRecord) {
@@ -2961,7 +2969,9 @@ export default function App() {
       showToast(
         msg.includes("MAX_WRITE_OPERATIONS") || msg.includes("寫入次數")
           ? "Notion 寫入次數已達本小時上限，請稍後再試"
-          : msg || "收藏同步失敗"
+          : msg.includes("archived") || msg.includes("已不存在")
+            ? "此穿搭或收藏列已失效，請重新整理"
+            : msg || "收藏同步失敗"
       );
     } finally {
       favoritesMutatingRef.current = false;
@@ -3218,11 +3228,7 @@ export default function App() {
 
     const pending = loadSession().pendingRecord;
     const pageId =
-      (isPendingValidToday(pending) ? pending!.pageId : null) ??
-      notionPageId ??
-      loadSession().activeUserRecord?.pageId ??
-      activeUserRecord?.pageId ??
-      null;
+      (isPendingValidToday(pending) ? pending!.pageId : null) ?? notionPageId ?? null;
 
     if (!pageId) {
       showToast("找不到今日穿搭紀錄，請重新拍照或開啟晚間連結");

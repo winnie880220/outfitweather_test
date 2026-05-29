@@ -1,65 +1,32 @@
-import { recordInsightReferenceTemp } from "../../../lib/weather-insight-temp";
 import type { ApiResponse, NotionRecordPayload, UserGender } from "../types";
 import { isNotionConfigured } from "../env";
 import { createRecordInNotion } from "./records";
 import { notionRequest } from "./client";
-import { parseNotionPage, type NotionProp } from "./parse-page";
+import { parseNotionPage, type NotionProp, type ParsedNotionRecord } from "./parse-page";
+import { queryRecordsByUserName } from "./query-records";
 import { RECORDS_DB } from "./schema";
+import { taiwanDateString } from "../../../lib/taiwan-date";
 
 type PageResponse = {
   id: string;
+  archived?: boolean;
   properties: Record<string, NotionProp>;
 };
 
 export type ActiveUserRecordContext = {
   userName: string;
-  temp: number;
-  tempMin?: number;
-  tempMax?: number;
-  location?: string;
   gender?: UserGender;
-  weather?: string;
-  humidity?: number;
-  rainProb?: number;
-  apparentTemp?: number;
-  uvIndex?: number;
 };
 
 export type ActiveUserRecordState = {
   pageId: string;
+  /** 台灣時區 YYYY-MM-DD */
   date: string;
-  tempBand: number;
 };
 
 export type EnsureActiveUserRecordResult = ActiveUserRecordState & {
   created: boolean;
 };
-
-function localDateString(d = new Date()): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-export function tempBandCenter(temp: number): number {
-  return Math.round(temp);
-}
-
-export function isSameTempBand(a: number, b: number): boolean {
-  return Math.abs(tempBandCenter(a) - tempBandCenter(b)) <= 1;
-}
-
-/** active 列溫區比對用體感溫度（無則退回氣溫） */
-export function activeRecordBandTemp(ctx: ActiveUserRecordContext): number {
-  if (
-    typeof ctx.apparentTemp === "number" &&
-    Number.isFinite(ctx.apparentTemp)
-  ) {
-    return ctx.apparentTemp;
-  }
-  return ctx.temp;
-}
 
 function pageOwnerName(properties: Record<string, NotionProp>): string {
   const prop = properties[RECORDS_DB.userName];
@@ -67,33 +34,99 @@ function pageOwnerName(properties: Record<string, NotionProp>): string {
   return prop.title?.map((t) => t.plain_text ?? "").join("") ?? "";
 }
 
-/** 確認 page 仍為當日、同使用者、同體感溫區的 active 列 */
+/** 無照片、無穿搭標籤的列，視為收藏用的 active 容器（非「記錄」穿搭列） */
+function isLikelyActiveContainerRow(record: ParsedNotionRecord): boolean {
+  if (record.photoUrl || record.photoFileUploadId) return false;
+  return record.upperBodyTags.length === 0 && record.lowerBodyTags.length === 0;
+}
+
+function recordTaiwanDate(parsed: ParsedNotionRecord): string {
+  if (!parsed.startedAt) return "";
+  return taiwanDateString(new Date(parsed.startedAt));
+}
+
+/** 確認 page 仍為當日（台灣）、同使用者、且為收藏容器列 */
 export async function validateActiveUserPage(
   pageId: string,
   userName: string,
-  date: string,
-  bandTemp: number
+  date: string
 ): Promise<ActiveUserRecordState | null> {
   if (!pageId || pageId.startsWith("local-")) return null;
   try {
     const page = await notionRequest<PageResponse>(`/pages/${pageId}`, { method: "GET" });
+    if (page.archived) return null;
     if (pageOwnerName(page.properties).trim() !== userName.trim()) return null;
     const parsed = parseNotionPage({ id: page.id, properties: page.properties });
-    const recordDate = parsed?.startedAt
-      ? localDateString(new Date(parsed.startedAt))
-      : date;
-    const recordBandTemp =
-      (parsed ? recordInsightReferenceTemp(parsed) : undefined) ?? bandTemp;
+    if (!parsed || !isLikelyActiveContainerRow(parsed)) return null;
+    const recordDate = recordTaiwanDate(parsed) || date;
     if (recordDate !== date) return null;
-    if (!isSameTempBand(recordBandTemp, bandTemp)) return null;
     return {
       pageId: page.id,
       date,
-      tempBand: tempBandCenter(bandTemp),
     };
   } catch {
     return null;
   }
+}
+
+function readFavoriteIdsFromProperties(
+  properties: Record<string, NotionProp>
+): string[] {
+  const prop = properties[RECORDS_DB.favorite];
+  if (!prop || prop.type !== "multi_select") return [];
+  return prop.multi_select?.map((t) => t.name.trim()).filter(Boolean) ?? [];
+}
+
+/**
+ * 在 Notion 查詢「台灣當日」的收藏容器列（不建立新列；一日一列）
+ */
+export async function findActiveUserRecordInNotion(
+  userName: string
+): Promise<ActiveUserRecordState | null> {
+  const trimmed = userName.trim();
+  if (!trimmed || !isNotionConfigured()) return null;
+
+  const date = taiwanDateString();
+  const pages = await queryRecordsByUserName(trimmed);
+
+  type Candidate = ActiveUserRecordState & {
+    favoriteCount: number;
+    startedAtMs: number;
+  };
+  const candidates: Candidate[] = [];
+
+  for (const page of pages) {
+    const parsed = parseNotionPage(page);
+    if (!parsed || !isLikelyActiveContainerRow(parsed)) continue;
+    if (recordTaiwanDate(parsed) !== date) continue;
+
+    const favoriteCount = readFavoriteIdsFromProperties(page.properties).length;
+    const startedAtMs = parsed.startedAt
+      ? new Date(parsed.startedAt).getTime()
+      : 0;
+
+    candidates.push({
+      pageId: page.id,
+      date,
+      favoriteCount,
+      startedAtMs,
+    });
+  }
+
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => {
+    if (b.favoriteCount !== a.favoriteCount) {
+      return b.favoriteCount - a.favoriteCount;
+    }
+    return b.startedAtMs - a.startedAtMs;
+  });
+
+  const best = candidates[0];
+  return {
+    pageId: best.pageId,
+    date: best.date,
+  };
 }
 
 function buildActiveRecordPayload(ctx: ActiveUserRecordContext): NotionRecordPayload {
@@ -102,30 +135,21 @@ function buildActiveRecordPayload(ctx: ActiveUserRecordContext): NotionRecordPay
     startedAt: new Date().toISOString(),
     favoriteIds: [],
     ...(ctx.gender ? { gender: ctx.gender } : {}),
-    ...(ctx.location ? { location: ctx.location } : {}),
-    ...(ctx.weather ? { weather: ctx.weather } : {}),
-    temperature: tempBandCenter(ctx.temp),
-    ...(typeof ctx.tempMax === "number" && !Number.isNaN(ctx.tempMax)
-      ? { maxTemp: Math.round(ctx.tempMax) }
-      : {}),
-    ...(typeof ctx.tempMin === "number" && !Number.isNaN(ctx.tempMin)
-      ? { minTemp: Math.round(ctx.tempMin) }
-      : {}),
-    ...(ctx.humidity !== undefined ? { humidity: ctx.humidity } : {}),
-    ...(ctx.rainProb !== undefined ? { rainProb: ctx.rainProb } : {}),
-    ...(ctx.apparentTemp !== undefined
-      ? { apparentTemp: Math.round(ctx.apparentTemp) }
-      : {}),
-    ...(ctx.uvIndex !== undefined ? { uvIndex: ctx.uvIndex } : {}),
   };
 }
 
+export type EnsureActiveUserRecordOptions = {
+  /** 預設 true；false 時僅驗證／查詢，不 POST 新列 */
+  createIfMissing?: boolean;
+};
+
 /**
- * 取得或建立「當日 + 當前體感溫度區間」的使用者 active 列（收藏／記錄／回饋皆寫入此列）
+ * 取得或（可選）建立「台灣當日」的收藏容器列（僅 userName + 日期；穿搭記錄另列）
  */
 export async function ensureActiveUserRecord(
   ctx: ActiveUserRecordContext,
-  existing?: ActiveUserRecordState | null
+  existing?: ActiveUserRecordState | null,
+  options?: EnsureActiveUserRecordOptions
 ): Promise<ApiResponse<EnsureActiveUserRecordResult>> {
   if (!isNotionConfigured()) {
     return {
@@ -139,18 +163,12 @@ export async function ensureActiveUserRecord(
     return { ok: false, error: "缺少 userName" };
   }
 
-  const date = localDateString();
-  const bandTemp = activeRecordBandTemp(ctx);
-  const tempBand = tempBandCenter(bandTemp);
+  const date = taiwanDateString();
+  const createIfMissing = options?.createIfMissing !== false;
 
   try {
     if (existing?.pageId) {
-      const valid = await validateActiveUserPage(
-        existing.pageId,
-        userName,
-        date,
-        bandTemp
-      );
+      const valid = await validateActiveUserPage(existing.pageId, userName, date);
       if (valid) {
         return {
           ok: true,
@@ -158,6 +176,19 @@ export async function ensureActiveUserRecord(
           source: "notion",
         };
       }
+    }
+
+    const found = await findActiveUserRecordInNotion(userName);
+    if (found) {
+      return {
+        ok: true,
+        data: { ...found, created: false },
+        source: "notion",
+      };
+    }
+
+    if (!createIfMissing) {
+      return { ok: false, error: "尚未建立當日收藏列" };
     }
 
     const created = await createRecordInNotion(buildActiveRecordPayload(ctx));
@@ -170,7 +201,6 @@ export async function ensureActiveUserRecord(
       data: {
         pageId: created.data.id,
         date,
-        tempBand,
         created: true,
       },
       source: "notion",

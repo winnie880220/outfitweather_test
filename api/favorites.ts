@@ -2,8 +2,14 @@ import {
   queryFavoritedOutfits,
   toggleOutfitFavorite,
 } from "./lib/notion/favorites";
+import type { UserGender } from "./lib/types";
 import type { ActiveUserRecordState } from "./lib/notion/user-active-record";
 import { sendJson, type VercelRequest, type VercelResponse } from "./lib/vercel";
+
+function parseUserGender(value: unknown): UserGender | undefined {
+  if (value === "男生" || value === "女生" || value === "不分") return value;
+  return undefined;
+}
 
 async function readJsonBody(req: VercelRequest): Promise<unknown> {
   if (req.body !== undefined && req.body !== null) {
@@ -20,32 +26,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         typeof req.query.userName === "string" ? req.query.userName : "";
       const activePageId =
         typeof req.query.activePageId === "string" ? req.query.activePageId : undefined;
-      const tempRaw = req.query.temp;
-      const apparentTempRaw = req.query.apparentTemp;
       const readDirect = req.query.readDirect === "1";
       const activeDate =
         typeof req.query.activeDate === "string" ? req.query.activeDate : undefined;
-      const activeTempBandRaw = req.query.activeTempBand;
       const activeRecord =
         readDirect && activePageId && activeDate
           ? {
               pageId: activePageId,
               date: activeDate,
-              tempBand:
-                typeof activeTempBandRaw === "string"
-                  ? Number(activeTempBandRaw)
-                  : 0,
             }
           : undefined;
       const result = await queryFavoritedOutfits(favoriterUserName, {
         activePageId,
         activeRecord,
         readPageIdDirectly: readDirect,
-        profile: {
-          temp: typeof tempRaw === "string" ? Number(tempRaw) : undefined,
-          apparentTemp:
-            typeof apparentTempRaw === "string" ? Number(apparentTempRaw) : undefined,
-        },
+        gender: parseUserGender(req.query.gender),
       });
       return sendJson(res, result.ok ? 200 : 502, result);
     }
@@ -88,20 +83,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         outfitPageId,
         favorited: body.favorited,
         activeRecord: body.activeUserRecord ?? null,
-        profile: {
-          location:
-            typeof body.location === "string" ? body.location : undefined,
-          gender:
-            body.gender === "男生" ||
-            body.gender === "女生" ||
-            body.gender === "不分"
-              ? body.gender
-              : undefined,
-          temp: typeof body.temp === "number" ? body.temp : undefined,
-          apparentTemp:
-            typeof body.apparentTemp === "number" ? body.apparentTemp : undefined,
-          weather: typeof body.weather === "string" ? body.weather : undefined,
-        },
+        gender: parseUserGender(body.gender),
       });
       return sendJson(res, result.ok ? 200 : 502, result);
     }

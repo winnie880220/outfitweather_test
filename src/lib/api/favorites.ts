@@ -20,11 +20,7 @@ export async function toggleOutfitFavorite(
   favorited: boolean,
   options?: {
     activeUserRecord?: ActiveUserRecord | null;
-    location?: string;
     gender?: UserGender | null;
-    temp?: number;
-    apparentTemp?: number;
-    weather?: string;
   }
 ): Promise<ToggleFavoriteResult> {
   return apiPost<ToggleFavoriteResult>("/api/favorites", {
@@ -34,13 +30,7 @@ export async function toggleOutfitFavorite(
     ...(options?.activeUserRecord
       ? { activeUserRecord: options.activeUserRecord }
       : {}),
-    ...(options?.location ? { location: options.location } : {}),
     ...(options?.gender ? { gender: options.gender } : {}),
-    ...(typeof options?.temp === "number" ? { temp: options.temp } : {}),
-    ...(typeof options?.apparentTemp === "number"
-      ? { apparentTemp: options.apparentTemp }
-      : {}),
-    ...(options?.weather ? { weather: options.weather } : {}),
   });
 }
 
@@ -49,13 +39,15 @@ export async function fetchUserFavorites(
   favoriterUserName: string,
   options?: {
     activeUserRecord?: ActiveUserRecord | null;
-    temp?: number;
-    apparentTemp?: number;
+    gender?: UserGender | null;
     /** 剛 toggle 後讀同一列 Favorite */
     readPageIdDirectly?: boolean;
   }
 ): Promise<UserFavoritesQueryResult> {
   const params = new URLSearchParams({ userName: favoriterUserName.trim() });
+  if (options?.gender) {
+    params.set("gender", options.gender);
+  }
   if (options?.activeUserRecord?.pageId) {
     params.set("activePageId", options.activeUserRecord.pageId);
   }
@@ -64,15 +56,6 @@ export async function fetchUserFavorites(
     if (options.activeUserRecord?.date) {
       params.set("activeDate", options.activeUserRecord.date);
     }
-    if (typeof options.activeUserRecord?.tempBand === "number") {
-      params.set("activeTempBand", String(options.activeUserRecord.tempBand));
-    }
-  }
-  if (typeof options?.temp === "number" && !Number.isNaN(options.temp)) {
-    params.set("temp", String(Math.round(options.temp)));
-  }
-  if (typeof options?.apparentTemp === "number" && !Number.isNaN(options.apparentTemp)) {
-    params.set("apparentTemp", String(Math.round(options.apparentTemp)));
   }
   const data = await apiGet<UserFavoritesQueryResult | InspirationItem[]>(
     `/api/favorites?${params}`

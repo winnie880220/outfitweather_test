@@ -93,9 +93,16 @@ export function toNotionProperties(payload: NotionRecordPayload): NotionProps {
     props[RECORDS_DB.feedback] = richText(payload.feedback);
   }
   if (payload.currentRanking !== undefined) {
-    const name = payload.currentRanking.trim();
-    if (name) {
-      props[RECORDS_DB.currentRanking] = multiSelect([name]);
+    const names = (
+      Array.isArray(payload.currentRanking)
+        ? payload.currentRanking
+        : [payload.currentRanking]
+    )
+      .map((name) => name.trim())
+      .filter(Boolean);
+    const unique = [...new Set(names)];
+    if (unique.length > 0) {
+      props[RECORDS_DB.currentRanking] = multiSelect(unique);
     }
   }
   if (payload.favoriteIds !== undefined) {

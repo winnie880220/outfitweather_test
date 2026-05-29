@@ -1,4 +1,4 @@
-import type { ApiResponse } from "../types";
+import type { ApiResponse, UserGender } from "../types";
 import { getNotionDatabaseId, isNotionConfigured } from "../env";
 import { queryRecordsByRecordIds } from "./query-records";
 import { notionRequest } from "./client";
@@ -8,19 +8,24 @@ import {
   type InspirationItem,
 } from "./outfit-insights";
 import { RECORDS_DB } from "./schema";
+import { taiwanDateString } from "../../../lib/taiwan-date";
+import { isNotionArchivedError } from "./notion-errors";
 import {
-  activeRecordBandTemp,
   ensureActiveUserRecord,
-  tempBandCenter,
+  findActiveUserRecordInNotion,
   validateActiveUserPage,
   type ActiveUserRecordState,
-  type ActiveUserRecordContext,
 } from "./user-active-record";
 
 type PageResponse = {
   id: string;
+  archived?: boolean;
   properties: Record<string, NotionProp>;
 };
+
+type ReadActiveFavoriteResult =
+  | { ok: true; favoriteIds: string[] }
+  | { ok: false; reason: "archived" | "missing" };
 
 type DatabaseResponse = {
   properties: Record<string, { type: string }>;
@@ -124,6 +129,9 @@ async function fetchOutfitPageMeta(outfitPageId: string): Promise<OutfitPageMeta
   const page = await notionRequest<PageResponse>(`/pages/${outfitPageId}`, {
     method: "GET",
   });
+  if (page.archived) {
+    throw new Error("此穿搭已不存在");
+  }
   const recordId = readRecordIdFromProperties(page.properties);
   if (!recordId) {
     throw new Error("此穿搭缺少 ID 欄位，無法收藏");
@@ -134,85 +142,154 @@ async function fetchOutfitPageMeta(outfitPageId: string): Promise<OutfitPageMeta
   };
 }
 
-async function readActiveFavoriteIds(activePageId: string): Promise<string[]> {
-  const page = await notionRequest<PageResponse>(`/pages/${activePageId}`, {
-    method: "GET",
+async function readActiveFavoriteIds(
+  activePageId: string
+): Promise<ReadActiveFavoriteResult> {
+  try {
+    const page = await notionRequest<PageResponse>(`/pages/${activePageId}`, {
+      method: "GET",
+    });
+    if (page.archived) return { ok: false, reason: "archived" };
+    return { ok: true, favoriteIds: readFavoriteIds(page.properties) };
+  } catch (error) {
+    if (isNotionArchivedError(error)) {
+      return { ok: false, reason: "archived" };
+    }
+    return { ok: false, reason: "missing" };
+  }
+}
+
+function buildActiveContext(
+  favoriter: string,
+  options?: QueryFavoritedOutfitsOptions
+): { userName: string; gender?: UserGender } {
+  const gender = options?.gender;
+  return {
+    userName: favoriter.trim(),
+    ...(gender === "男生" || gender === "女生" || gender === "不分"
+      ? { gender }
+      : {}),
+  };
+}
+
+/** 容器列已封存／不可用時，改找或新建當日收藏列 */
+async function recoverActiveUserRecord(
+  ctx: { userName: string; gender?: UserGender },
+  createIfMissing: boolean
+): Promise<ActiveUserRecordState | null> {
+  const found = await findActiveUserRecordInNotion(ctx.userName);
+  if (found) return found;
+  if (!createIfMissing) return null;
+
+  const ensured = await ensureActiveUserRecord(ctx, null, {
+    createIfMissing: true,
   });
-  return readFavoriteIds(page.properties);
+  if (!ensured.ok || !ensured.data) return null;
+  return { pageId: ensured.data.pageId, date: ensured.data.date };
+}
+
+/** 從 Favorite 移除已封存或查不到的穿搭 ID，並回傳仍存在的 recordId */
+function favoriteIdsWithExistingOutfits(
+  favoriteIds: string[],
+  records: Awaited<ReturnType<typeof queryRecordsByRecordIds>>
+): string[] {
+  return favoriteIds.filter((fid) =>
+    records.some((r) => favoriteRecordIdsMatch(r.recordId, fid))
+  );
+}
+
+/** 將 Favorite 同步為仍存在的 ID；容器已封存時改寫入新找到的列 */
+async function pruneFavoritesOnActive(
+  ctx: { userName: string; gender?: UserGender },
+  active: ActiveUserRecordState,
+  favoriteIds: string[],
+  records: Awaited<ReturnType<typeof queryRecordsByRecordIds>>
+): Promise<ActiveUserRecordState | null> {
+  const pruned = favoriteIdsWithExistingOutfits(favoriteIds, records);
+  if (pruned.length === favoriteIds.length) return active;
+
+  try {
+    await setFavoriteIds(active.pageId, pruned);
+    return active;
+  } catch (error) {
+    if (!isNotionArchivedError(error)) throw error;
+  }
+
+  const recovered = await recoverActiveUserRecord(ctx, false);
+  if (!recovered) return null;
+
+  try {
+    await setFavoriteIds(recovered.pageId, pruned);
+  } catch (error) {
+    if (!isNotionArchivedError(error)) throw error;
+  }
+  return recovered;
 }
 
 /** 加入收藏：GET active → 合併 ID → PATCH */
 async function addFavoriteOnActiveRow(
-  activePageId: string,
+  active: ActiveUserRecordState,
   outfitRecordId: string
 ): Promise<string[]> {
-  const current = await readActiveFavoriteIds(activePageId);
-  const merged = [...current];
+  const read = await readActiveFavoriteIds(active.pageId);
+  if (!read.ok) {
+    throw new Error(read.reason === "archived" ? "ACTIVE_ARCHIVED" : "ACTIVE_MISSING");
+  }
+  const merged = [...read.favoriteIds];
   if (!merged.some((id) => favoriteRecordIdsMatch(id, outfitRecordId))) {
     merged.push(outfitRecordId);
   }
-  await setFavoriteIds(activePageId, merged);
+  await setFavoriteIds(active.pageId, merged);
   return merged;
 }
 
 /** 取消收藏：只更新今日 active 列 */
 async function removeFavoriteOnActiveRow(
-  activePageId: string,
+  active: ActiveUserRecordState,
   outfitRecordId: string
 ): Promise<string[]> {
-  const current = await readActiveFavoriteIds(activePageId);
-  const next = withoutFavoriteRecordId(current, outfitRecordId);
-  await setFavoriteIds(activePageId, next);
+  const read = await readActiveFavoriteIds(active.pageId);
+  if (!read.ok) {
+    throw new Error(read.reason === "archived" ? "ACTIVE_ARCHIVED" : "ACTIVE_MISSING");
+  }
+  const next = withoutFavoriteRecordId(read.favoriteIds, outfitRecordId);
+  await setFavoriteIds(active.pageId, next);
   return next;
-}
-
-function localDateString(d = new Date()): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }
 
 async function resolveActiveUserRecordForFavorites(
   favoriter: string,
-  options?: QueryFavoritedOutfitsOptions
+  options: QueryFavoritedOutfitsOptions | undefined,
+  mode: { createIfMissing: boolean }
 ): Promise<ActiveUserRecordState | null> {
   const userName = favoriter.trim();
-  const temp = options?.profile?.temp ?? 26;
-  const ctx: ActiveUserRecordContext = {
-    userName,
-    temp,
-    apparentTemp: options?.profile?.apparentTemp ?? temp,
-    location: options?.profile?.location,
-    gender: options?.profile?.gender,
-    weather: options?.profile?.weather,
-  };
-  const bandTemp = activeRecordBandTemp(ctx);
-  const date = localDateString();
+  if (!userName) return null;
 
-  const candidatePageId =
-    options?.activePageId?.trim() || options?.activeRecord?.pageId?.trim();
-  if (candidatePageId) {
-    const valid = await validateActiveUserPage(
-      candidatePageId,
-      userName,
-      date,
-      bandTemp
-    );
+  const date = taiwanDateString();
+  const ctx = buildActiveContext(favoriter, options);
+
+  const pageIdsToTry = [
+    options?.activePageId?.trim(),
+    options?.activeRecord?.pageId?.trim(),
+  ].filter((id, index, arr): id is string => Boolean(id) && arr.indexOf(id) === index);
+
+  for (const pageId of pageIdsToTry) {
+    const valid = await validateActiveUserPage(pageId, userName, date);
     if (valid) return valid;
   }
 
-  let existingForEnsure: ActiveUserRecordState | null = options?.activeRecord ?? null;
-  if (candidatePageId) {
-    existingForEnsure = null;
-  }
+  const found = await findActiveUserRecordInNotion(userName);
+  if (found) return found;
 
-  const ensured = await ensureActiveUserRecord(ctx, existingForEnsure);
+  if (!mode.createIfMissing) return null;
+
+  const ensured = await ensureActiveUserRecord(ctx, options?.activeRecord ?? null, {
+    createIfMissing: true,
+  });
   if (!ensured.ok || !ensured.data) return null;
   return {
     pageId: ensured.data.pageId,
     date: ensured.data.date,
-    tempBand: ensured.data.tempBand,
   };
 }
 
@@ -222,19 +299,14 @@ export type ToggleFavoriteParams = {
   outfitPageId: string;
   favorited: boolean;
   activeRecord?: ActiveUserRecordState | null;
-  profile?: Partial<
-    Pick<
-      ActiveUserRecordContext,
-      "location" | "gender" | "temp" | "apparentTemp" | "weather"
-    >
-  >;
+  gender?: UserGender;
 };
 
 export type QueryFavoritedOutfitsOptions = {
   activePageId?: string;
   activeRecord?: ActiveUserRecordState | null;
-  profile?: ToggleFavoriteParams["profile"];
-  /** 剛寫入 Favorite 後，直接讀此 pageId，不重新 resolve（避免溫區判斷指到另一列） */
+  gender?: UserGender;
+  /** 剛寫入 Favorite 後，直接讀此 pageId，不重新 resolve */
   readPageIdDirectly?: boolean;
 };
 
@@ -261,19 +333,58 @@ export async function toggleOutfitFavorite(
     return { ok: false, error: message };
   }
 
-  const active = await resolveActiveUserRecordForFavorites(favoriter, {
+  const resolveOptions: QueryFavoritedOutfitsOptions = {
     activeRecord: params.activeRecord ?? null,
-    profile: params.profile,
-  });
+    gender: params.gender,
+  };
+  let active = await resolveActiveUserRecordForFavorites(
+    favoriter,
+    resolveOptions,
+    { createIfMissing: params.favorited }
+  );
 
   if (!active) {
-    return { ok: false, error: "無法取得 active 列" };
+    return {
+      ok: false,
+      error: params.favorited
+        ? "無法建立收藏列，請稍後再試"
+        : "找不到今日收藏列",
+    };
   }
 
   try {
-    const favoriteIds = params.favorited
-      ? await addFavoriteOnActiveRow(active.pageId, outfitRecordId)
-      : await removeFavoriteOnActiveRow(active.pageId, outfitRecordId);
+    let favoriteIds: string[];
+    try {
+      favoriteIds = params.favorited
+        ? await addFavoriteOnActiveRow(active, outfitRecordId)
+        : await removeFavoriteOnActiveRow(active, outfitRecordId);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "";
+      const containerLost =
+        msg === "ACTIVE_ARCHIVED" ||
+        msg === "ACTIVE_MISSING" ||
+        isNotionArchivedError(error);
+
+      if (!containerLost) throw error;
+
+      const recovered = await recoverActiveUserRecord(
+        buildActiveContext(favoriter, resolveOptions),
+        params.favorited
+      );
+      if (!recovered) {
+        return {
+          ok: false,
+          error: params.favorited
+            ? "無法建立收藏列，請稍後再試"
+            : "找不到今日收藏列",
+        };
+      }
+      active = recovered;
+
+      favoriteIds = params.favorited
+        ? await addFavoriteOnActiveRow(active, outfitRecordId)
+        : [];
+    }
 
     return {
       ok: true,
@@ -282,7 +393,6 @@ export async function toggleOutfitFavorite(
         activeUserRecord: {
           pageId: active.pageId,
           date: active.date,
-          tempBand: active.tempBand,
         },
       },
       source: "notion",
@@ -326,22 +436,12 @@ export async function queryFavoritedOutfits(
     let active: ActiveUserRecordState | null = null;
 
     if (directPageId) {
-      const temp = options?.profile?.temp ?? 26;
-      const bandTemp = activeRecordBandTemp({
-        userName: favoriter,
-        temp,
-        apparentTemp: options?.profile?.apparentTemp ?? temp,
-      });
-      active =
-        options?.activeRecord?.pageId === directPageId
-          ? options.activeRecord
-          : {
-              pageId: directPageId,
-              date: localDateString(),
-              tempBand: tempBandCenter(bandTemp),
-            };
+      const date = taiwanDateString();
+      active = await validateActiveUserPage(directPageId, favoriter, date);
     } else {
-      active = await resolveActiveUserRecordForFavorites(favoriter, options);
+      active = await resolveActiveUserRecordForFavorites(favoriter, options, {
+        createIfMissing: false,
+      });
     }
 
     if (!active) {
@@ -352,8 +452,23 @@ export async function queryFavoritedOutfits(
       };
     }
 
-    const recordIds = await readActiveFavoriteIds(active.pageId);
-    if (recordIds.length === 0) {
+    let read = await readActiveFavoriteIds(active.pageId);
+    if (!read.ok) {
+      active = await recoverActiveUserRecord(
+        buildActiveContext(favoriter, options),
+        false
+      );
+      if (!active) {
+        return {
+          ok: true,
+          data: { cards: [], activeUserRecord: null },
+          source: "notion",
+        };
+      }
+      read = await readActiveFavoriteIds(active.pageId);
+    }
+
+    if (!read.ok || read.favoriteIds.length === 0) {
       return {
         ok: true,
         data: { cards: [], activeUserRecord: active },
@@ -362,7 +477,22 @@ export async function queryFavoritedOutfits(
     }
 
     const idFieldType = await getRecordIdFieldType();
-    const records = await queryRecordsByRecordIds(recordIds, idFieldType);
+    const records = await queryRecordsByRecordIds(read.favoriteIds, idFieldType);
+    const activeAfterPrune = await pruneFavoritesOnActive(
+      buildActiveContext(favoriter, options),
+      active,
+      read.favoriteIds,
+      records
+    );
+    if (!activeAfterPrune) {
+      return {
+        ok: true,
+        data: { cards: [], activeUserRecord: null },
+        source: "notion",
+      };
+    }
+    active = activeAfterPrune;
+
     const cards = recordsToInspirationCards(records);
     return {
       ok: true,

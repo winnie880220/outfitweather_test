@@ -53,8 +53,8 @@ export interface NotionRecordPayload {
   stuffiness?: number;
   /** 使用者文字回饋（穿搭感受）→ Notion feedback */
   feedback?: string;
-  /** 記錄當下該區顏色排行第一 → Notion CurrentRanking */
-  currentRanking?: string;
+  /** 記錄當下該區顏色排行並列第一 → Notion CurrentRanking（Multi-select，可多色） */
+  currentRanking?: string | string[];
   photoUrl?: string;
   /** 前端傳入，伺服器上傳至 Notion Photo 後不寫入 properties */
   photoBase64?: string;

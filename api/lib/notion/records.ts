@@ -1,7 +1,7 @@
 import type { ApiResponse, NotionRecordPayload } from "../types";
 import { getNotionDatabaseId, isNotionConfigured } from "../env";
 import { notionRequest } from "./client";
-import { getRegionTopColorForLocation } from "./outfit-insights";
+import { getRegionTopColorsForLocation } from "./outfit-insights";
 import { toNotionProperties } from "./properties";
 import { uploadImageToNotion } from "./upload-photo";
 
@@ -19,23 +19,30 @@ function rankingDeltaFromPayload(payload: NotionRecordPayload): 1 | 2 {
   return Math.abs(max - min) >= 8 ? 2 : 1;
 }
 
-/** 寫入 CurrentRanking：該區在此體感溫度區間下顏色排行第一 */
+function payloadHasCurrentRanking(payload: NotionRecordPayload): boolean {
+  const value = payload.currentRanking;
+  if (!value) return false;
+  if (Array.isArray(value)) return value.some((name) => name.trim());
+  return Boolean(value.trim());
+}
+
+/** 寫入 CurrentRanking：該區在此體感溫度區間下顏色排行並列第一（同色票數全寫入） */
 async function withCurrentRanking(
   payload: NotionRecordPayload
 ): Promise<NotionRecordPayload> {
-  if (payload.currentRanking?.trim()) return payload;
+  if (payloadHasCurrentRanking(payload)) return payload;
   if (!payload.location?.trim()) return payload;
   const refTemp = payload.apparentTemp ?? payload.temperature;
   if (refTemp === undefined) return payload;
 
   try {
     const delta = rankingDeltaFromPayload(payload);
-    const top = await getRegionTopColorForLocation(
+    const tops = await getRegionTopColorsForLocation(
       refTemp,
       payload.location,
       delta
     );
-    if (top) return { ...payload, currentRanking: top };
+    if (tops.length > 0) return { ...payload, currentRanking: tops };
   } catch (error) {
     console.warn("[notion] CurrentRanking:", error);
   }
