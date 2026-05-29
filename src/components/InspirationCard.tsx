@@ -74,8 +74,8 @@ export function InspirationCard({
         ) : null}
       </div>
       <div className={`inspiration-card-content shrink-0 ${isReel ? "p-4" : "p-3.5"}`}>
-        <div className="text-xl font-bold text-stone-900">{card.temp}</div>
-        <div className="mt-0.5 text-xs text-stone-500">
+        <div className="inspiration-card-temp">{card.temp}</div>
+        <div className="inspiration-card-meta mt-0.5 text-stone-500">
           {[card.location, card.date].filter(Boolean).join("・")}
         </div>
         {card.tags.length > 0 && (

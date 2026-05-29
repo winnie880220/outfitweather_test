@@ -30,7 +30,7 @@ export function FeelMetricsChips({
             >
               {chip.label} {chip.value}%
             </span>
-            <span className="text-sm font-semibold leading-snug text-stone-700">
+            <span className="feel-metric-hint font-semibold leading-snug text-stone-700">
               {chip.hint}
             </span>
           </span>

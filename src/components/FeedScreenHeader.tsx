@@ -32,10 +32,11 @@ export function FeedScreenHeader({
   const tempLabel = insights
     ? `${insights.tempMin}–${insights.tempMax}°C`
     : `${Math.round(weather ? weatherInsightReferenceTemp(weather) : 26)}°`;
+  const apparentTempLabel = `體感 ${tempLabel}`;
 
   const badge = regionLabel
-    ? `${regionLabel} · ${tempLabel}`
-    : `${tempLabel} 相似天氣`;
+    ? `${regionLabel} · ${apparentTempLabel}`
+    : `${apparentTempLabel} 相似天氣`;
 
   const isDrilldown = Boolean(onBackFromDrilldown && drilldownBackLabel);
 
