@@ -2566,9 +2566,11 @@ export default function App() {
     }
   }, [activeUserRecord]);
 
+  // 歡迎頁輸入暱稱時不打 Notion；進入主畫面後才同步今日收藏（避免每鍵一次 /api/favorites）
   useEffect(() => {
+    if (screen === "welcome") return;
     void syncUserFavorites(userName);
-  }, [userName, syncUserFavorites]);
+  }, [screen, userName, syncUserFavorites]);
 
   useEffect(() => {
     if (screen === "favorites" && userName.trim()) {
