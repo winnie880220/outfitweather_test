@@ -151,13 +151,49 @@ body {
   }
 
   /* 各頁根節點填滿剩餘高度，捲動區才能算出 overflow */
-  .app-screen-flow > * {
+  .app-screen-flow > .app-screen-page,
+  .app-screen-flow > .app-main-screens {
     display: flex;
     width: 100%;
     min-width: 0;
     min-height: 0;
     flex: 1 1 auto;
     flex-direction: column;
+  }
+
+  /* 主分頁常駐疊層：切換 tab 不卸載、不整頁 fade */
+  .app-main-screens {
+    position: relative;
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 0;
+  }
+
+  .app-screen-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    display: flex;
+    width: 100%;
+    min-height: 0;
+    flex-direction: column;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .app-screen-layer--active {
+    z-index: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  /* 疊層分頁需蓋過 .app-screen-page 的 position:relative / flex:1 */
+  .app-main-screens > .app-screen-layer {
+    position: absolute;
+    inset: 0;
+    flex: none;
+    height: auto;
+    overflow: hidden;
   }
 
   .app-screen-page {
@@ -2476,6 +2512,10 @@ body {
 }
 
 
+.map-weather-overlay--refreshing {
+  opacity: 0.94;
+}
+
 .map-weather-overlay {
   position: absolute;
   right: 0.65rem;
@@ -2816,6 +2856,15 @@ body {
   width: auto;
 }
 
+.home-region-sheet-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 600;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+}
+
 .home-region-sheet-backdrop {
   -webkit-tap-highlight-color: transparent;
 }
@@ -2823,6 +2872,8 @@ body {
 .home-county-sheet {
   flex-shrink: 0;
   max-height: 42vh;
+  transform: translateY(100%);
+  transition: transform 0.2s ease-out;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -2835,6 +2886,14 @@ body {
   -webkit-backdrop-filter: blur(12px);
   scrollbar-width: thin;
   scrollbar-color: rgba(168, 162, 158, 0.35) transparent;
+}
+
+.home-region-sheet-overlay .home-county-sheet {
+  transform: translateY(0);
+}
+
+.home-county-sheet.is-instant {
+  transition: none;
 }
 
 .home-county-sheet::-webkit-scrollbar {

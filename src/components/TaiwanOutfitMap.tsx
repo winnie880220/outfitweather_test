@@ -48,10 +48,12 @@ const TAIWAN_MAP_BOUNDS: L.LatLngBoundsExpression = [
   [26.4, 122.3],
 ];
 
-/** 放大至此層級且視野涵蓋台北市時，顯示行政區分區 */
+/** 放大至此層級且視野涵蓋台北市時，顯示行政區分區線（zoom ≥ 12） */
 const TAIPEI_DISTRICTS_MIN_ZOOM = 12;
-/** 低於此層級才切回台北市大區（遲滯，避免縮放時色塊閃爍） */
+/** 低於此層級切回台北市整市一塊、無分區線（zoom ≤ 11，遲滯避免閃爍） */
 const TAIPEI_DISTRICTS_HIDE_ZOOM = 11;
+/** 點選台北市／定位時 fitBounds 上限，確保進場即可看到行政區 */
+const TAIPEI_DISTRICTS_FIT_MAX_ZOOM = 12;
 const TAIPEI_COUNTY_HIDDEN_CLASS = "leaflet-taipei-county-hidden";
 
 function scheduleMapInvalidate(map: L.Map) {
@@ -226,6 +228,30 @@ function paintPathWithRegionFill(path: L.Path, fill: RegionFillPaint, style: L.P
   applyMapPathGradientFill(path, fill, opacity);
 }
 
+type PathWithPaintSig = L.Path & { _owPaintSig?: string };
+
+function pathPaintSig(
+  fill: RegionFillPaint | undefined,
+  selected: boolean,
+  dimmed: boolean,
+  userLocated: boolean,
+  mode: "normal" | "hidden" | "taipei-overview" = "normal"
+): string {
+  if (mode === "hidden") return "hidden";
+  if (mode === "taipei-overview") {
+    return `tpe:${fill?.hex ?? ""}:${fill?.hex2 ?? ""}:${selected}:${userLocated}`;
+  }
+  if (!fill?.hex) return `none:${selected}:${dimmed}:${userLocated}`;
+  return `${fill.hex}:${fill.hex2 ?? ""}:${selected}:${dimmed}:${userLocated}`;
+}
+
+function shouldSkipPathPaint(path: L.Path, sig: string): boolean {
+  const tagged = path as PathWithPaintSig;
+  if (tagged._owPaintSig === sig) return true;
+  tagged._owPaintSig = sig;
+  return false;
+}
+
 function userDistrictLabelIcon(district: TaipeiDistrict): L.DivIcon {
   const safe = district.replace(/"/g, "");
   return L.divIcon({
@@ -257,9 +283,9 @@ function MapWeatherOverlay({
   loading: boolean;
   regionName?: string | null;
 }) {
-  if (loading) {
+  if (loading && !weather) {
     return (
-      <div className="map-weather-overlay glass-card-strong map-weather-overlay--loading animate-pulse">
+      <div className="map-weather-overlay glass-card-strong map-weather-overlay--loading">
         <div className="h-3 w-20 rounded bg-stone-200/80" />
         <div className="mt-1 h-4 w-14 rounded bg-stone-200/80" />
       </div>
@@ -275,7 +301,9 @@ function MapWeatherOverlay({
   }
 
   return (
-    <div className="map-weather-overlay glass-card-strong">
+    <div
+      className={`map-weather-overlay glass-card-strong${loading ? " map-weather-overlay--refreshing" : ""}`}
+    >
       <div className="map-weather-overlay__head">
         <p className="map-weather-overlay__loc">
           <MapPin size={11} className="shrink-0" aria-hidden />
@@ -411,10 +439,10 @@ export function TaiwanOutfitMap({
   }, [regionColorFills]);
 
   const focusBounds = useCallback(
-    (bounds: L.LatLngBounds, maxZoom = 11, minZoom?: number) => {
+    (bounds: L.LatLngBounds, maxZoom = 11, minZoom?: number, animate = true) => {
       const map = mapRef.current;
       if (!map || !bounds.isValid()) return;
-      map.fitBounds(bounds, { padding: [40, 40], maxZoom, animate: true });
+      map.fitBounds(bounds, { padding: [40, 40], maxZoom, animate });
       if (minZoom == null) return;
       const ensureMinZoom = () => {
         if (map.getZoom() < minZoom) {
@@ -451,7 +479,10 @@ export function TaiwanOutfitMap({
       const fitZoom = map.getBoundsZoom(bounds, false, [36, 36]);
       const zoom = Math.max(
         TAIPEI_DISTRICTS_MIN_ZOOM,
-        Math.min(13, Number.isFinite(fitZoom) ? fitZoom : TAIPEI_DISTRICTS_MIN_ZOOM)
+        Math.min(
+          12,
+          Number.isFinite(fitZoom) ? fitZoom : TAIPEI_DISTRICTS_MIN_ZOOM
+        )
       );
       map.setView(bounds.getCenter(), zoom, { animate: true });
     },
@@ -478,7 +509,7 @@ export function TaiwanOutfitMap({
         const path = layer as L.Path;
         /** 放大分區：大台北市色塊完全隱藏，僅顯示各行政區填色 */
         if (name === TAIPEI_COUNTY && showDistricts) {
-          hideTaipeiCountyPath(path);
+          if (!shouldSkipPathPaint(path, "hidden")) hideTaipeiCountyPath(path);
           return;
         }
 
@@ -487,6 +518,17 @@ export function TaiwanOutfitMap({
         }
         /** 縮小台北市視野：整市一塊顯示全市排行第一色（有資料時優先色塊，僅邊框標示目前位置） */
         if (name === TAIPEI_COUNTY && taipeiOverview) {
+          const overviewSig = pathPaintSig(
+            regionFill,
+            !!selected,
+            false,
+            userLocated,
+            "taipei-overview"
+          );
+          if (shouldSkipPathPaint(path, overviewSig)) {
+            path.options.interactive = true;
+            return;
+          }
           const style = pathStyleWithTopColor(
             regionFill,
             !!selected,
@@ -514,6 +556,11 @@ export function TaiwanOutfitMap({
             path.setStyle(merged);
           }
           path.options.interactive = true;
+          return;
+        }
+        const paintSig = pathPaintSig(regionFill, !!selected, dimmed, userLocated);
+        if (shouldSkipPathPaint(path, paintSig)) {
+          path.options.interactive = !(name === TAIPEI_COUNTY && dimmed);
           return;
         }
         const style = pathStyleWithTopColor(
@@ -604,6 +651,11 @@ export function TaiwanOutfitMap({
       const userLocated =
         !!userDistrict && userDistrict === name && !selected;
       const regionFill = name ? districtFillByName.get(name) : undefined;
+      const paintSig = pathPaintSig(regionFill, !!selected, false, userLocated);
+      if (shouldSkipPathPaint(path, paintSig)) {
+        path.options.interactive = true;
+        return;
+      }
       const style = pathStyleWithTopColor(
         regionFill,
         !!selected,
@@ -706,19 +758,6 @@ export function TaiwanOutfitMap({
                 county: TAIPEI_COUNTY,
                 district: name,
               });
-              const mapInstance = mapRef.current;
-              const bounds = districtBoundsRef.current.get(name);
-              if (mapInstance && bounds?.isValid()) {
-                const fitZoom = mapInstance.getBoundsZoom(bounds, false, [36, 36]);
-                const zoom = Math.max(
-                  TAIPEI_DISTRICTS_MIN_ZOOM,
-                  Math.min(
-                    13,
-                    Number.isFinite(fitZoom) ? fitZoom : TAIPEI_DISTRICTS_MIN_ZOOM
-                  )
-                );
-                mapInstance.setView(bounds.getCenter(), zoom, { animate: true });
-              }
             },
           });
         },
@@ -897,7 +936,7 @@ export function TaiwanOutfitMap({
                   if (mapInstance && bounds?.isValid()) {
                     mapInstance.fitBounds(bounds, {
                       padding: [40, 40],
-                      maxZoom: 12,
+                      maxZoom: TAIPEI_DISTRICTS_FIT_MAX_ZOOM,
                       animate: true,
                     });
                   }
@@ -988,9 +1027,13 @@ export function TaiwanOutfitMap({
     };
 
     syncZoom();
+    map.on("zoom", syncZoom);
     map.on("zoomend", syncZoom);
+    map.on("moveend", syncZoom);
     return () => {
+      map.off("zoom", syncZoom);
       map.off("zoomend", syncZoom);
+      map.off("moveend", syncZoom);
     };
   }, [mapReady, mapViewportCoversTaipei, scheduleMapPaint]);
 
@@ -1201,7 +1244,7 @@ export function TaiwanOutfitMap({
         return;
       }
       if (taipeiBoundsRef.current) {
-        focusBounds(taipeiBoundsRef.current, 13, TAIPEI_DISTRICTS_MIN_ZOOM);
+        focusBounds(taipeiBoundsRef.current, TAIPEI_DISTRICTS_FIT_MAX_ZOOM);
         initialFocusDone.current = true;
         return;
       }
@@ -1210,7 +1253,8 @@ export function TaiwanOutfitMap({
     if (userCounty) {
       const b = countyBoundsRef.current.get(userCounty);
       if (b) {
-        const maxZoom = userCounty === TAIPEI_COUNTY ? 13 : 10;
+        const maxZoom =
+          userCounty === TAIPEI_COUNTY ? TAIPEI_DISTRICTS_FIT_MAX_ZOOM : 10;
         focusBounds(b, maxZoom);
       }
       initialFocusDone.current = true;
@@ -1232,11 +1276,23 @@ export function TaiwanOutfitMap({
     if (autoFocusedDistrictRef.current === userDistrict) return;
     autoFocusedDistrictRef.current = userDistrict;
 
-    districtsVisibleRef.current = true;
-    setDistrictsVisibleByZoom(true);
+    const map = mapRef.current;
+    const zoom = map?.getZoom() ?? 0;
+    const show =
+      Boolean(map && mapViewportCoversTaipei(map) && zoom >= TAIPEI_DISTRICTS_MIN_ZOOM);
+    districtsVisibleRef.current = show;
+    setDistrictsVisibleByZoom(show);
     focusDistrict(userDistrict);
     scheduleMapPaint();
-  }, [mapReady, mapView, districtsReady, userDistrict, focusDistrict, scheduleMapPaint]);
+  }, [
+    mapReady,
+    mapView,
+    districtsReady,
+    userDistrict,
+    focusDistrict,
+    scheduleMapPaint,
+    mapViewportCoversTaipei,
+  ]);
 
   useEffect(() => {
     if (!mapReady) {
@@ -1252,15 +1308,15 @@ export function TaiwanOutfitMap({
     if (lastFocusedRegionKeyRef.current === key) return;
     lastFocusedRegionKeyRef.current = key;
 
+    /** 點選行政區時不移動視野（使用者已在該區）；僅縣市層級才平移 */
     if (selectedRegion.level === "district") {
-      focusDistrict(selectedRegion.district);
       return;
     }
 
     if (selectedRegion.level === "county") {
       if (selectedRegion.county === TAIPEI_COUNTY && mapView === "taipei-districts") {
         if (taipeiBoundsRef.current) {
-          focusBounds(taipeiBoundsRef.current, TAIPEI_DISTRICTS_MIN_ZOOM - 1);
+          focusBounds(taipeiBoundsRef.current, TAIPEI_DISTRICTS_HIDE_ZOOM);
         }
         return;
       }
@@ -1278,8 +1334,11 @@ export function TaiwanOutfitMap({
 
     if (userDistrict && mapView === "taipei-districts") {
       void loadDistrictLayer(map).then(() => {
-        districtsVisibleRef.current = true;
-        setDistrictsVisibleByZoom(true);
+        const zoom = map.getZoom();
+        const show =
+          mapViewportCoversTaipei(map) && zoom >= TAIPEI_DISTRICTS_MIN_ZOOM;
+        districtsVisibleRef.current = show;
+        setDistrictsVisibleByZoom(show);
         focusDistrict(userDistrict);
         scheduleMapPaint();
       });
@@ -1292,7 +1351,10 @@ export function TaiwanOutfitMap({
           ? getTaipeiBounds() ?? countyBoundsRef.current.get(TAIPEI_COUNTY)
           : countyBoundsRef.current.get(userCounty);
       if (bounds?.isValid()) {
-        focusBounds(bounds, userCounty === TAIPEI_COUNTY ? 12 : 10);
+        focusBounds(
+          bounds,
+          userCounty === TAIPEI_COUNTY ? TAIPEI_DISTRICTS_FIT_MAX_ZOOM : 10
+        );
       }
     }
   }, [

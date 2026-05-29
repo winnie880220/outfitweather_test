@@ -88,8 +88,15 @@ import {
   getInsightTempDeltaFromWeather,
   type MapFillLocaleSpec,
 } from "../lib/map-fill-locales";
+import {
+  buildMapFillSpecForRegion,
+  mapDataRegionToMapRegion,
+  regionInsightFetchKey,
+  resolveWeatherForRegion,
+} from "../lib/region-weather";
 import { fetchLocaleWeatherMapProgressive } from "./lib/fetch-locale-weathers";
 import {
+  ensureMapCacheSchema,
   readMapBootstrapCache,
   writeMapBootstrapCache,
 } from "./lib/map-data-regions-cache";
@@ -111,6 +118,7 @@ import {
   saveInspirationFavorites,
   type InspirationFavoritesState,
 } from "./lib/inspiration-favorites";
+import { filterInspirationCardsWithPhoto } from "./lib/inspiration-photo";
 import { InspirationFeedScreen } from "./screens/InspirationFeedScreen";
 import { FavoritesScreen } from "./screens/FavoritesScreen";
 import {
@@ -251,6 +259,51 @@ function mergeRegionColorFills(
     next = mergeRegionColorFill(next, fill);
   }
   return next;
+}
+
+function regionFillMatchesRegion(
+  fill: RegionColorFill,
+  region: MapRegion
+): boolean {
+  const rk = regionKey(region);
+  if (fill.regionKey === rk) return true;
+  if (
+    region.level === "county" &&
+    fill.county === region.county &&
+    !fill.district
+  ) {
+    return true;
+  }
+  if (
+    region.level === "district" &&
+    fill.county === region.county &&
+    fill.district === region.district
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function removeRegionColorFillForRegion(
+  fills: RegionColorFill[],
+  region: MapRegion
+): RegionColorFill[] {
+  return fills.filter((f) => !regionFillMatchesRegion(f, region));
+}
+
+/** bootstrap 後移除「有資料區域列表內但本次查無排行色」的舊色塊 */
+function replaceBootstrapRegionFills(
+  prev: RegionColorFill[],
+  dataRegions: MapDataRegion[],
+  incoming: RegionColorFill[]
+): RegionColorFill[] {
+  const dataKeys = new Set(dataRegions.map((r) => r.regionKey));
+  const incomingKeys = new Set(incoming.map((f) => f.regionKey));
+  const kept = prev.filter((f) => {
+    if (!dataKeys.has(f.regionKey)) return true;
+    return incomingKeys.has(f.regionKey);
+  });
+  return mergeRegionColorFills(kept, incoming);
 }
 
 function mapFillSpecSig(spec: MapFillLocaleSpec): string {
@@ -676,6 +729,7 @@ const HomeScreen = ({
   onSelectRegion,
   regionInsights,
   regionInsightsLoading,
+  regionSheetSkipEnter,
   onOpenRegionInspiration,
   showPendingBanner,
   mapColorJoinAnimation,
@@ -700,6 +754,8 @@ const HomeScreen = ({
   onSelectRegion: (region: MapRegion | null) => void;
   regionInsights: OutfitInsights | null;
   regionInsightsLoading: boolean;
+  /** 已有快取排行時略過底部 sheet 滑入，避免重開同區閃動 */
+  regionSheetSkipEnter: boolean;
   onOpenRegionInspiration: () => void;
   showPendingBanner: boolean;
   mapColorJoinAnimation: MapColorJoinAnimation | null;
@@ -743,29 +799,20 @@ const HomeScreen = ({
           onSelectRegion={onSelectRegion}
         />
 
-        <AnimatePresence>
-          {selectedRegion ? (
-            <motion.div
-              key="region-sheet"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="home-region-sheet-overlay absolute inset-0 z-[600] flex flex-col"
-            >
-              <button
-                type="button"
-                className="home-region-sheet-backdrop min-h-0 flex-1 w-full cursor-default border-0 bg-stone-900/10 p-0"
-                aria-label="關閉區域排行榜"
-                onClick={() => onSelectRegion(null)}
-              />
-              <motion.div
-                initial={{ opacity: 0, y: 24 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 16 }}
-                transition={{ duration: 0.22 }}
-                className="home-county-sheet shrink-0"
-              >
+        {selectedRegion ? (
+          <div
+            className={`home-region-sheet-overlay absolute inset-0 z-[600] is-visible`}
+          >
+          <button
+            type="button"
+            className="home-region-sheet-backdrop min-h-0 flex-1 w-full cursor-default border-0 bg-stone-900/10 p-0"
+            aria-label="關閉區域排行榜"
+            onClick={() => onSelectRegion(null)}
+          />
+          <div
+            className={`home-county-sheet shrink-0 ${regionSheetSkipEnter ? "is-instant" : ""}`}
+          >
+              <>
                 <div className="home-county-sheet__head">
                   <div className="min-w-0 flex-1">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">
@@ -796,10 +843,10 @@ const HomeScreen = ({
                     />
                   </div>
                 </div>
-              </motion.div>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
+              </>
+          </div>
+        </div>
+        ) : null}
       </div>
     </div>
   </div>
@@ -1429,11 +1476,17 @@ export default function App() {
   const [regionWeather, setRegionWeather] = useState<WeatherData | null>(null);
   const [regionWeatherLoading, setRegionWeatherLoading] = useState(false);
   const [regionInsights, setRegionInsights] = useState<OutfitInsights | null>(null);
+  /** 與 regionInsights 對應的區域 key，用於避免切換區域時短暫顯示上一區資料 */
+  const [regionInsightsRegionKey, setRegionInsightsRegionKey] = useState<string | null>(
+    null
+  );
   const [optimisticInspirationCards, setOptimisticInspirationCards] = useState<
     InspirationItem[]
   >([]);
   const regionInsightsRef = useRef<OutfitInsights | null>(null);
   regionInsightsRef.current = regionInsights;
+  const regionInsightsRegionKeyRef = useRef<string | null>(null);
+  regionInsightsRegionKeyRef.current = regionInsightsRegionKey;
   const selectedRegionRef = useRef<MapRegion | null>(null);
   selectedRegionRef.current = selectedRegion;
   const [regionInsightsLoading, setRegionInsightsLoading] = useState(false);
@@ -1454,10 +1507,20 @@ export default function App() {
   const mapBootstrapInFlightRef = useRef(false);
   const mapFillPendingSpecsRef = useRef<MapFillLocaleSpec[]>([]);
   const mapFillFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mapFillScheduleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mapBootstrapFillKeyRef = useRef<string | null>(null);
+  const regionInsightsCacheRef = useRef<Map<string, OutfitInsights>>(new Map());
+  const regionInsightsFetchPromisesRef = useRef<
+    Map<string, Promise<OutfitInsights>>
+  >(new Map());
   const mapDataRegionsRef = useRef<MapDataRegion[]>([]);
   const mapViewRef = useRef<MapViewMode>(mapView);
   const mapDataRegionKeysRef = useRef<Set<string>>(new Set());
   const localeWeatherByKeyRef = useRef<Record<string, WeatherData>>({});
+
+  useEffect(() => {
+    ensureMapCacheSchema();
+  }, []);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -1482,6 +1545,15 @@ export default function App() {
     userLocation?.name,
     weather?.locationName,
   ]);
+
+  const priorityUserRegionKeys = useMemo(() => {
+    const keys: string[] = [];
+    if (userCounty) keys.push(userCounty);
+    if (userCounty === TAIPEI_COUNTY && userDistrict) {
+      keys.push(`${TAIPEI_COUNTY}:${userDistrict}`);
+    }
+    return keys;
+  }, [userCounty, userDistrict]);
 
   const toStartedAtIso = (timeHm: string) => {
     const d = new Date();
@@ -1535,6 +1607,7 @@ export default function App() {
       setRegionWeather(null);
       regionWeatherFetchKeyRef.current = null;
       regionInsightsFetchKeyRef.current = null;
+      setRegionInsightsRegionKey(null);
       if (value.county === TAIPEI_COUNTY) {
         setMapView("taipei-districts");
       } else {
@@ -1641,70 +1714,232 @@ export default function App() {
     }
   }, []);
 
+  const isRegionInsightsApplied = useCallback((region: MapRegion, fetchKey: string) => {
+    return (
+      regionInsightsFetchKeyRef.current === fetchKey &&
+      regionInsightsRegionKeyRef.current === regionKey(region)
+    );
+  }, []);
+
+  const clearRegionInsightsCache = useCallback(() => {
+    regionInsightsCacheRef.current.clear();
+    regionInsightsFetchPromisesRef.current.clear();
+    regionInsightsLastRequestAtRef.current.clear();
+    regionInsightsFetchKeyRef.current = null;
+  }, []);
+
+  const applyRegionInsightsResult = useCallback(
+    (
+      region: MapRegion,
+      data: OutfitInsights,
+      weatherSnapshot: WeatherData,
+      fetchKey: string
+    ) => {
+      regionInsightsCacheRef.current.set(fetchKey, data);
+      if (isRegionInsightsApplied(region, fetchKey)) {
+        setRegionInsightsLoading(false);
+        return;
+      }
+      regionInsightsFetchKeyRef.current = fetchKey;
+      setRegionInsights(data);
+      setRegionInsightsRegionKey(regionKey(region));
+      setRegionInsightsLoading(false);
+
+      if (
+        !selectedRegionRef.current ||
+        !isSameRegion(selectedRegionRef.current, region)
+      ) {
+        return;
+      }
+      if (data.sampleCount === 0) {
+        setRegionColorFills((prev) =>
+          removeRegionColorFillForRegion(prev, region)
+        );
+        mapFillSyncSigRef.current.delete(regionKey(region));
+        return;
+      }
+      const patch = regionFillFromInsights(region, data);
+      if (!patch) return;
+      const spec = buildMapFillSpecForRegion(region, weatherSnapshot);
+      mapFillSyncSigRef.current.set(spec.regionKey, mapFillSpecSig(spec));
+      setRegionColorFills((prev) => {
+        const existing = prev.find((f) => regionFillMatchesRegion(f, region));
+        if (
+          existing &&
+          existing.hex === patch.hex &&
+          existing.hex2 === patch.hex2 &&
+          existing.colorName === patch.colorName
+        ) {
+          return prev;
+        }
+        return mergeRegionColorFill(prev, patch);
+      });
+    },
+    [isRegionInsightsApplied]
+  );
+
+  const fetchRegionInsightsShared = useCallback(
+    async (
+      region: MapRegion,
+      weatherSnapshot: WeatherData,
+      force = false
+    ): Promise<OutfitInsights> => {
+      const refTemp = weatherInsightReferenceTemp(weatherSnapshot);
+      if (typeof refTemp !== "number" || Number.isNaN(refTemp)) {
+        throw new Error("invalid ref temp");
+      }
+
+      const fetchKey = regionInsightFetchKey(region, weatherSnapshot);
+      if (!force) {
+        const cached = regionInsightsCacheRef.current.get(fetchKey);
+        if (cached) return cached;
+        const pending = regionInsightsFetchPromisesRef.current.get(fetchKey);
+        if (pending) return pending;
+      }
+
+      const now = Date.now();
+      const lastAt = regionInsightsLastRequestAtRef.current.get(fetchKey) ?? 0;
+      if (!force && now - lastAt < 800) {
+        const cached = regionInsightsCacheRef.current.get(fetchKey);
+        if (cached) return cached;
+      }
+
+      const delta = getInsightTempDelta(weatherSnapshot);
+      const district = region.level === "district" ? region.district : undefined;
+
+      const promise = (async () => {
+        regionInsightsInFlightRef.current.add(fetchKey);
+        regionInsightsLastRequestAtRef.current.set(fetchKey, Date.now());
+        try {
+          return await fetchOutfitInsights(
+            refTemp,
+            delta,
+            region.county,
+            district,
+            { airTemp: weatherSnapshot.temp }
+          );
+        } finally {
+          regionInsightsInFlightRef.current.delete(fetchKey);
+        }
+      })();
+
+      regionInsightsFetchPromisesRef.current.set(fetchKey, promise);
+      try {
+        const data = await promise;
+        regionInsightsCacheRef.current.set(fetchKey, data);
+        return data;
+      } finally {
+        regionInsightsFetchPromisesRef.current.delete(fetchKey);
+      }
+    },
+    []
+  );
+
+  const prefetchRegionInsights = useCallback(
+    async (
+      dataRegions: MapDataRegion[],
+      weatherByKey: Record<string, WeatherData>,
+      fallback: WeatherData,
+      priorityKeys: string[] = []
+    ) => {
+      const prioritySet = new Set(priorityKeys);
+      const ordered = [...dataRegions].sort((a, b) => {
+        const ap = prioritySet.has(a.regionKey) ? 0 : 1;
+        const bp = prioritySet.has(b.regionKey) ? 0 : 1;
+        return ap - bp;
+      });
+
+      for (const dr of ordered) {
+        const region = mapDataRegionToMapRegion(dr);
+        const snap = resolveWeatherForRegion(region, weatherByKey, fallback);
+        if (!snap) continue;
+        try {
+          await fetchRegionInsightsShared(region, snap, false);
+        } catch {
+          /* 背景預載失敗略過 */
+        }
+      }
+    },
+    [fetchRegionInsightsShared]
+  );
+
   const loadRegionInsights = useCallback(
     async (
       weatherSnapshot: WeatherData,
       region: MapRegion,
       opts?: { showLoading?: boolean; force?: boolean }
     ) => {
-      const refTemp = weatherInsightReferenceTemp(weatherSnapshot);
-      if (typeof refTemp !== "number" || Number.isNaN(refTemp)) return;
-
-      const delta = getInsightTempDelta(weatherSnapshot);
-      const fetchKey = `${regionKey(region)}@${Math.round(refTemp)}@d${delta}`;
       const showLoading = opts?.showLoading !== false;
       const force = opts?.force === true;
-      const now = Date.now();
-      const lastAt = regionInsightsLastRequestAtRef.current.get(fetchKey) ?? 0;
-      if (!force && now - lastAt < 2500) return;
-      if (regionInsightsInFlightRef.current.has(fetchKey)) return;
-      regionInsightsInFlightRef.current.add(fetchKey);
-      regionInsightsLastRequestAtRef.current.set(fetchKey, now);
+      const fetchKey = regionInsightFetchKey(region, weatherSnapshot);
+
+      if (!force) {
+        const cached = regionInsightsCacheRef.current.get(fetchKey);
+        if (cached) {
+          applyRegionInsightsResult(region, cached, weatherSnapshot, fetchKey);
+          return;
+        }
+        if (isRegionInsightsApplied(region, fetchKey)) {
+          setRegionInsightsLoading(false);
+          return;
+        }
+      }
+
       try {
         if (showLoading) setRegionInsightsLoading(true);
-        const district = region.level === "district" ? region.district : undefined;
-        const data = await fetchOutfitInsights(
-          refTemp,
-          delta,
-          region.county,
-          district,
-          { airTemp: weatherSnapshot.temp }
-        );
-        regionInsightsFetchKeyRef.current = fetchKey;
-        setRegionInsights(data);
+        const data = await fetchRegionInsightsShared(region, weatherSnapshot, force);
+        applyRegionInsightsResult(region, data, weatherSnapshot, fetchKey);
       } catch (error) {
         console.warn("Region outfit insights:", error);
+        const fetchKey = regionInsightFetchKey(region, weatherSnapshot);
         if (isRateLimitedError(error)) {
-          // 限流時保留目前畫面資料，避免閃空並減少重打。
           regionInsightsFetchKeyRef.current = fetchKey;
           regionInsightsLastRequestAtRef.current.set(fetchKey, Date.now() + 6000);
         } else {
           regionInsightsFetchKeyRef.current = fetchKey;
           setRegionInsights(null);
+          setRegionInsightsRegionKey(regionKey(region));
         }
-      } finally {
-        regionInsightsInFlightRef.current.delete(fetchKey);
-        if (showLoading) setRegionInsightsLoading(false);
+        setRegionInsightsLoading(false);
       }
     },
-    []
+    [applyRegionInsightsResult, fetchRegionInsightsShared, isRegionInsightsApplied]
   );
+
+  /** 重複點同一區不更新 state，避免 effect 重跑與載入閃爍 */
+  const handleSelectRegion = useCallback((region: MapRegion | null) => {
+    if (region === null) {
+      setSelectedRegion(null);
+      return;
+    }
+    setSelectedRegion((prev) => {
+      if (prev && isSameRegion(prev, region)) return prev;
+      return region;
+    });
+  }, []);
 
   /** 上傳／回饋後強制重抓靈感（略過快取） */
   const refreshInspirationInsights = useCallback(
     (region: MapRegion, weatherSnapshot?: WeatherData | null) => {
       const snap =
         weatherSnapshot ??
-        (selectedRegion && regionWeather && isSameRegion(selectedRegion, region)
-          ? regionWeather
-          : weather);
+        resolveWeatherForRegion(
+          region,
+          localeWeatherByKeyRef.current,
+          weather
+        );
       if (!snap) return;
       const refTemp = weatherInsightReferenceTemp(snap);
       if (typeof refTemp !== "number" || Number.isNaN(refTemp)) return;
-      regionInsightsFetchKeyRef.current = null;
+      const fetchKey = regionInsightFetchKey(region, snap);
+      regionInsightsCacheRef.current.delete(fetchKey);
+      regionInsightsFetchPromisesRef.current.delete(fetchKey);
+      if (regionInsightsFetchKeyRef.current === fetchKey) {
+        regionInsightsFetchKeyRef.current = null;
+      }
       void loadRegionInsights(snap, region, { showLoading: false, force: true });
     },
-    [weather, regionWeather, selectedRegion, loadRegionInsights]
+    [weather, loadRegionInsights]
   );
 
   const loadRegionColorFillsForSpecs = useCallback(
@@ -1735,18 +1970,22 @@ export default function App() {
       try {
         const { fills } = await fetchRegionColorFillsByLocale(specs);
         if (isStale()) return;
+        const returnedKeys = new Set(fills.map((f) => f.regionKey));
         for (const spec of specs) {
-          mapFillSyncSigRef.current.set(spec.regionKey, mapFillSpecSig(spec));
+          if (returnedKeys.has(spec.regionKey)) {
+            mapFillSyncSigRef.current.set(spec.regionKey, mapFillSpecSig(spec));
+          } else {
+            mapFillSyncSigRef.current.delete(spec.regionKey);
+          }
         }
         setRegionColorFills((prev) => {
-          let next = mergeRegionColorFills(prev, fills);
-          const region = selectedRegionRef.current;
-          const insights = regionInsightsRef.current;
-          if (region && insights) {
-            const patch = regionFillFromInsights(region, insights);
-            if (patch) next = mergeRegionColorFill(next, patch);
-          }
-          return next;
+          const next = prev.filter(
+            (f) =>
+              !specs.some(
+                (s) => s.regionKey === f.regionKey && !returnedKeys.has(s.regionKey)
+              )
+          );
+          return mergeRegionColorFills(next, fills);
         });
         if (options?.bootstrap) {
           const regions = mapDataRegionsRef.current;
@@ -1820,6 +2059,24 @@ export default function App() {
     [enqueueMapFillSpecs]
   );
 
+  /** 合併多次天氣更新，避免逐區回來時色塊一直跳 */
+  const scheduleMapFillsFromWeatherDebounced = useCallback(
+    (
+      weatherByKey: Record<string, WeatherData>,
+      urgentRegionKeys?: string[],
+      delayMs = 400
+    ) => {
+      if (mapFillScheduleTimerRef.current != null) {
+        clearTimeout(mapFillScheduleTimerRef.current);
+      }
+      mapFillScheduleTimerRef.current = setTimeout(() => {
+        mapFillScheduleTimerRef.current = null;
+        scheduleMapFillsFromWeather(weatherByKey, urgentRegionKeys);
+      }, delayMs);
+    },
+    [scheduleMapFillsFromWeather]
+  );
+
   const refreshLocaleWeathers = useCallback(
     async (
       includeTaipeiDistricts: boolean,
@@ -1848,16 +2105,30 @@ export default function App() {
             localeWeatherByKeyRef.current = next;
             return next;
           });
-          const urgent = userKeys.includes(regionKey);
-          scheduleMapFillsFromWeather(weatherAcc, urgent ? [regionKey] : undefined);
         },
         {
           priorityKeys: userKeys,
           shouldContinue: () => fetchId === localeWeatherFetchIdRef.current,
         }
       );
+
+      if (fetchId !== localeWeatherFetchIdRef.current) return;
+      scheduleMapFillsFromWeatherDebounced(weatherAcc, undefined, 300);
+      if (weather) {
+        void prefetchRegionInsights(
+          dataRegions,
+          weatherAcc,
+          weather,
+          priorityUserRegionKeys
+        );
+      }
     },
-    [scheduleMapFillsFromWeather]
+    [
+      scheduleMapFillsFromWeatherDebounced,
+      prefetchRegionInsights,
+      weather,
+      priorityUserRegionKeys,
+    ]
   );
 
   const bootstrapMapFillsFromWeather = useCallback(
@@ -1881,6 +2152,17 @@ export default function App() {
     const refTemp = weatherInsightReferenceTemp(w);
     const delta = getInsightTempDeltaFromWeather(w);
     const fillTempKey = `${Math.round(refTemp)}@d${delta}`;
+    if (
+      mapBootstrapFillKeyRef.current &&
+      mapBootstrapFillKeyRef.current !== fillTempKey
+    ) {
+      clearRegionInsightsCache();
+      setRegionInsights(null);
+      setRegionInsightsRegionKey(null);
+    }
+    if (mapBootstrapFillKeyRef.current === fillTempKey && mapDataRegionsRef.current.length > 0) {
+      return mapDataRegionsRef.current;
+    }
 
     const cached = readMapBootstrapCache();
     if (
@@ -1890,10 +2172,18 @@ export default function App() {
     ) {
       setMapDataRegions(cached.regions);
       mapDataRegionsRef.current = cached.regions;
-      setRegionColorFills((prev) => mergeRegionColorFills(prev, cached.fills));
+      setRegionColorFills((prev) =>
+        replaceBootstrapRegionFills(prev, cached.regions, cached.fills)
+      );
       for (const fill of cached.fills) {
         mapFillSyncSigRef.current.set(fill.regionKey, fillTempKey);
       }
+      for (const r of cached.regions) {
+        if (!cached.fills.some((f) => f.regionKey === r.regionKey)) {
+          mapFillSyncSigRef.current.delete(r.regionKey);
+        }
+      }
+      mapBootstrapFillKeyRef.current = fillTempKey;
       return cached.regions;
     }
 
@@ -1908,19 +2198,22 @@ export default function App() {
       for (const fill of fills) {
         mapFillSyncSigRef.current.set(fill.regionKey, fillTempKey);
       }
-      setRegionColorFills((prev) => {
-        let next = mergeRegionColorFills(prev, fills);
-        const region = selectedRegionRef.current;
-        const insights = regionInsightsRef.current;
-        if (region && insights) {
-          const patch = regionFillFromInsights(region, insights);
-          if (patch) next = mergeRegionColorFill(next, patch);
+      setRegionColorFills((prev) => replaceBootstrapRegionFills(prev, regions, fills));
+      for (const r of regions) {
+        if (!fills.some((f) => f.regionKey === r.regionKey)) {
+          mapFillSyncSigRef.current.delete(r.regionKey);
         }
-        return next;
-      });
-      if (regions.length > 0 && fills.length > 0) {
+      }
+      if (regions.length > 0) {
         writeMapBootstrapCache(regions, fills, fillTempKey);
       }
+      mapBootstrapFillKeyRef.current = fillTempKey;
+      void prefetchRegionInsights(
+        regions,
+        localeWeatherByKeyRef.current,
+        w,
+        priorityUserRegionKeys
+      );
       return regions;
     } catch (error) {
       console.warn("Map bootstrap:", error);
@@ -1929,7 +2222,12 @@ export default function App() {
     } finally {
       mapBootstrapInFlightRef.current = false;
     }
-  }, [bootstrapMapFillsFromWeather]);
+  }, [
+    bootstrapMapFillsFromWeather,
+    prefetchRegionInsights,
+    priorityUserRegionKeys,
+    clearRegionInsightsCache,
+  ]);
 
   const mapDataRegionKeys = useMemo(
     () => new Set(mapDataRegions.map((r) => r.regionKey)),
@@ -1941,14 +2239,107 @@ export default function App() {
   mapDataRegionsRef.current = mapDataRegions;
   localeWeatherByKeyRef.current = localeWeatherByKey;
 
-  const priorityUserRegionKeys = useMemo(() => {
-    const keys: string[] = [];
-    if (userCounty) keys.push(userCounty);
-    if (userCounty === TAIPEI_COUNTY && userDistrict) {
-      keys.push(`${TAIPEI_COUNTY}:${userDistrict}`);
+  /** 點選區域時天氣卡：與排行／填色同一套「目前已載入天氣」 */
+  const mapDisplayWeather = useMemo(() => {
+    if (!selectedRegion || !weather) return weather;
+    return resolveWeatherForRegion(selectedRegion, localeWeatherByKey, weather);
+  }, [selectedRegion, localeWeatherByKey, weather]);
+
+  const mapDisplayWeatherLoading = useMemo(() => {
+    if (!selectedRegion) return weatherLoading;
+    if (resolveWeatherForRegion(selectedRegion, localeWeatherByKey, weather)) {
+      return false;
     }
-    return keys;
-  }, [userCounty, userDistrict]);
+    return regionWeatherLoading;
+  }, [
+    selectedRegion,
+    localeWeatherByKey,
+    weather,
+    regionWeatherLoading,
+    weatherLoading,
+  ]);
+
+  const selectedRegionWeatherSig = useMemo(() => {
+    if (!selectedRegion || !weather) return null;
+    const snap = resolveWeatherForRegion(
+      selectedRegion,
+      localeWeatherByKey,
+      weather
+    );
+    if (!snap) return null;
+    return regionInsightFetchKey(selectedRegion, snap);
+  }, [selectedRegion, localeWeatherByKey, weather]);
+
+  const selectedRegionInsightsFetchKey = useMemo(() => {
+    if (!selectedRegion || !weather) return null;
+    const snap = resolveWeatherForRegion(
+      selectedRegion,
+      localeWeatherByKey,
+      weather
+    );
+    if (!snap) return null;
+    return regionInsightFetchKey(selectedRegion, snap);
+  }, [selectedRegion, localeWeatherByKey, weather]);
+
+  const regionPanelLoading = useMemo(() => {
+    if (!selectedRegion) return false;
+    if (
+      selectedRegionInsightsFetchKey &&
+      regionInsightsCacheRef.current.has(selectedRegionInsightsFetchKey) &&
+      regionInsightsRegionKey === regionKey(selectedRegion)
+    ) {
+      return false;
+    }
+    if (regionInsightsLoading) return true;
+    if (regionInsightsRegionKey !== regionKey(selectedRegion)) return true;
+    if (
+      selectedRegionInsightsFetchKey &&
+      regionInsightsFetchKeyRef.current !== selectedRegionInsightsFetchKey
+    ) {
+      return true;
+    }
+    return false;
+  }, [
+    selectedRegion,
+    regionInsightsLoading,
+    regionInsightsRegionKey,
+    selectedRegionInsightsFetchKey,
+  ]);
+
+  const regionPanelInsights = useMemo(() => {
+    if (!selectedRegion) return null;
+    const rk = regionKey(selectedRegion);
+    if (
+      regionInsights &&
+      regionInsightsRegionKey === rk &&
+      (!selectedRegionInsightsFetchKey ||
+        regionInsightsFetchKeyRef.current === selectedRegionInsightsFetchKey)
+    ) {
+      return regionInsights;
+    }
+    if (selectedRegionInsightsFetchKey) {
+      return regionInsightsCacheRef.current.get(selectedRegionInsightsFetchKey) ?? null;
+    }
+    return null;
+  }, [
+    selectedRegion,
+    regionInsights,
+    regionInsightsRegionKey,
+    selectedRegionInsightsFetchKey,
+  ]);
+
+  const regionSheetSkipEnter = useMemo(() => {
+    if (!selectedRegionInsightsFetchKey || !selectedRegion) return false;
+    return (
+      regionInsightsCacheRef.current.has(selectedRegionInsightsFetchKey) &&
+      isRegionInsightsApplied(selectedRegion, selectedRegionInsightsFetchKey)
+    );
+  }, [
+    selectedRegion,
+    selectedRegionInsightsFetchKey,
+    regionInsightsRegionKey,
+    isRegionInsightsApplied,
+  ]);
 
   useEffect(() => {
     if (weather) {
@@ -1962,19 +2353,34 @@ export default function App() {
       setMapDataRegions(cached.regions);
       mapDataRegionsRef.current = cached.regions;
       if (cached.fills.length) {
-        setRegionColorFills(cached.fills);
+        setRegionColorFills((prev) =>
+          replaceBootstrapRegionFills(prev, cached.regions, cached.fills)
+        );
         for (const fill of cached.fills) {
           mapFillSyncSigRef.current.set(fill.regionKey, cached.fillTempKey);
         }
+        mapBootstrapFillKeyRef.current = cached.fillTempKey;
       }
     }
   }, []);
 
-  /** 定位天氣一到就預載各區填色（含歡迎頁），進首頁即可直接顯示 */
+  const weatherFillAnchor = useMemo(() => {
+    if (!weather) return null;
+    const ref = Math.round(weatherInsightReferenceTemp(weather));
+    const delta = getInsightTempDeltaFromWeather(weather);
+    return `${ref}@d${delta}`;
+  }, [
+    weather?.temp,
+    weather?.apparentTemp,
+    weather?.tempMin,
+    weather?.tempMax,
+  ]);
+
+  /** 定位天氣一到就預載各區填色（體感溫區變了才重跑，避免重複上色） */
   useEffect(() => {
-    if (!weather) return;
+    if (!weather || !weatherFillAnchor) return;
     void loadMapBootstrap(weather);
-  }, [weather, loadMapBootstrap]);
+  }, [weather, weatherFillAnchor, loadMapBootstrap]);
 
   useEffect(() => {
     if (screen !== "home") return;
@@ -2022,7 +2428,7 @@ export default function App() {
       }
       if (changed) {
         localeWeatherByKeyRef.current = next;
-        scheduleMapFillsFromWeather(next, priorityUserRegionKeys);
+        scheduleMapFillsFromWeatherDebounced(next, priorityUserRegionKeys, 350);
       }
       return changed ? next : prev;
     });
@@ -2033,66 +2439,67 @@ export default function App() {
     userCounty,
     userDistrict,
     priorityUserRegionKeys,
-    scheduleMapFillsFromWeather,
+    scheduleMapFillsFromWeatherDebounced,
   ]);
-
-  useEffect(() => {
-    if (!selectedRegion || !regionWeather) return;
-    const key = regionKey(selectedRegion);
-    setLocaleWeatherByKey((prev) => {
-      if (prev[key] === regionWeather) return prev;
-      const next = { ...prev, [key]: regionWeather };
-      localeWeatherByKeyRef.current = next;
-      scheduleMapFillsFromWeather(next, [key]);
-      return next;
-    });
-  }, [selectedRegion, regionWeather, scheduleMapFillsFromWeather]);
 
   useEffect(() => {
     return () => {
       if (mapFillFlushTimerRef.current != null) {
         clearTimeout(mapFillFlushTimerRef.current);
       }
+      if (mapFillScheduleTimerRef.current != null) {
+        clearTimeout(mapFillScheduleTimerRef.current);
+      }
     };
   }, []);
 
-  /** 選中區域的排行色與面板一致，避免 bulk 填色遺漏時地圖仍為預設米色 */
+  /** 點選區域：已載入天氣 + 快取排行，避免長時間載入與舊資料閃爍 */
   useEffect(() => {
-    if (screen !== "home" || !selectedRegion || !regionInsights) return;
-    const patch = regionFillFromInsights(selectedRegion, regionInsights);
-    if (!patch) return;
-    setRegionColorFills((prev) => mergeRegionColorFill(prev, patch));
-  }, [screen, selectedRegion, regionInsights]);
-
-  useEffect(() => {
-    if (!selectedRegion) {
+    if (!selectedRegion || !weather) {
       regionWeatherFetchKeyRef.current = null;
       setRegionWeather(null);
+      setRegionInsightsLoading(false);
       return;
     }
 
     const key = regionKey(selectedRegion);
+    const snap = resolveWeatherForRegion(
+      selectedRegion,
+      localeWeatherByKeyRef.current,
+      weather
+    );
+    if (!snap) return;
+
+    const insightsKey = regionInsightFetchKey(selectedRegion, snap);
+    const cached = regionInsightsCacheRef.current.get(insightsKey);
+
     if (regionWeatherFetchKeyRef.current !== key) {
       regionWeatherFetchKeyRef.current = key;
-      regionInsightsFetchKeyRef.current = null;
-      setRegionInsights(null);
-      void loadRegionWeather(selectedRegion);
+      setRegionWeather(snap);
+      setRegionWeatherLoading(false);
     }
-  }, [selectedRegion, loadRegionWeather]);
 
-  useEffect(() => {
-    if (!selectedRegion || regionWeatherLoading) return;
-    const snapshot = regionWeather ?? weather;
-    if (!snapshot) return;
+    if (cached) {
+      if (!isRegionInsightsApplied(selectedRegion, insightsKey)) {
+        applyRegionInsightsResult(selectedRegion, cached, snap, insightsKey);
+      }
+      return;
+    }
 
-    const delta = getInsightTempDelta(snapshot);
-    const key = `${regionKey(selectedRegion)}@${Math.round(weatherInsightReferenceTemp(snapshot))}@d${delta}`;
-    if (regionInsightsFetchKeyRef.current === key) return;
+    if (isRegionInsightsApplied(selectedRegion, insightsKey)) {
+      setRegionInsightsLoading(false);
+      return;
+    }
 
-    void loadRegionInsights(snapshot, selectedRegion, {
-      showLoading: !regionInsightsRef.current,
-    });
-  }, [selectedRegion, regionWeatherLoading, regionWeather, weather, loadRegionInsights]);
+    void loadRegionInsights(snap, selectedRegion, { showLoading: true });
+  }, [
+    selectedRegion,
+    selectedRegionWeatherSig,
+    weather,
+    loadRegionInsights,
+    applyRegionInsightsResult,
+    isRegionInsightsApplied,
+  ]);
 
   const syncUserFavorites = useCallback(async (name: string) => {
     const trimmed = name.trim();
@@ -2427,7 +2834,7 @@ export default function App() {
     const fromApi = regionInsights?.inspiration ?? [];
     const seen = new Set(fromApi.map((c) => c.id));
     const optimistic = optimisticInspirationCards.filter((c) => !seen.has(c.id));
-    return [...optimistic, ...fromApi];
+    return filterInspirationCardsWithPhoto([...optimistic, ...fromApi]);
   }, [regionInsights, optimisticInspirationCards]);
 
   const allFavoriteCards = useMemo(
@@ -2443,10 +2850,11 @@ export default function App() {
   }, [weather]);
 
   const favoriteCards = useMemo(() => {
-    if (!favoriteTempBand) return allFavoriteCards;
+    const withPhoto = filterInspirationCardsWithPhoto(allFavoriteCards);
+    if (!favoriteTempBand) return withPhoto;
     const ref = (favoriteTempBand.min + favoriteTempBand.max) / 2;
     const delta = favoriteTempBand.max - ref;
-    return allFavoriteCards.filter((card) =>
+    return withPhoto.filter((card) =>
       cardMatchesInsightTempBand(card, ref, delta)
     );
   }, [allFavoriteCards, favoriteTempBand]);
@@ -2855,33 +3263,35 @@ export default function App() {
       <div className="app-frame">
         <div className="app-screen-host">
         <div className="app-screen-flow">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={screen}
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
-              transition={{ duration: 0.2 }}
-              className={`app-screen-page ${screen === "welcome" ? "welcome-screen-page" : "app-screen-gradient"}`}
-            >
-              {screen === "welcome" && (
-              <WelcomeScreen
-                userName={userName}
-                setUserName={setUserName}
-                userGender={userGender}
-                setUserGender={setUserGender}
-                startApp={startApp}
-              />
-              )}
-              {screen === "home" && (
+          {screen === "welcome" ? (
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key="welcome"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                transition={{ duration: 0.22 }}
+                className="app-screen-page welcome-screen-page"
+              >
+                <WelcomeScreen
+                  userName={userName}
+                  setUserName={setUserName}
+                  userGender={userGender}
+                  setUserGender={setUserGender}
+                  startApp={startApp}
+                />
+              </motion.div>
+            </AnimatePresence>
+          ) : (
+            <div className="app-main-screens">
+              <div
+                className={`app-screen-page app-screen-gradient app-screen-layer ${screen === "home" ? "app-screen-layer--active" : ""}`}
+                aria-hidden={screen !== "home"}
+              >
                 <HomeScreen
                   userName={userName}
-                  mapWeather={
-                    selectedRegion ? regionWeather : weather
-                  }
-                  mapWeatherLoading={
-                    selectedRegion ? regionWeatherLoading : weatherLoading
-                  }
+                  mapWeather={mapDisplayWeather}
+                  mapWeatherLoading={mapDisplayWeatherLoading}
                   locationPicker={locationPicker}
                   onLocationPickerChange={applyLocationPicker}
                   locating={locating}
@@ -2893,9 +3303,10 @@ export default function App() {
                   onMapViewChange={setMapView}
                   locateFocusTick={locateFocusTick}
                   selectedRegion={selectedRegion}
-                  onSelectRegion={setSelectedRegion}
-                  regionInsights={regionInsights}
-                  regionInsightsLoading={regionInsightsLoading}
+                  onSelectRegion={handleSelectRegion}
+                  regionInsights={regionPanelInsights}
+                  regionInsightsLoading={regionPanelLoading}
+                  regionSheetSkipEnter={regionSheetSkipEnter}
                   mapColorJoinAnimation={mapColorJoinAnimation}
                   onMapColorJoinAnimationDone={clearMapColorJoinAnimation}
                   onOpenRegionInspiration={() => {
@@ -2907,8 +3318,11 @@ export default function App() {
                   onContinuePending={continuePendingFeedback}
                   onRequestExit={requestExit}
                 />
-              )}
-              {screen === "inspiration" && (
+              </div>
+              <div
+                className={`app-screen-page app-screen-gradient app-screen-layer ${screen === "inspiration" ? "app-screen-layer--active" : ""}`}
+                aria-hidden={screen !== "inspiration"}
+              >
                 <InspirationFeedScreen
                   cards={inspirationCards}
                   currentUserName={userName}
@@ -2930,8 +3344,11 @@ export default function App() {
                   }
                   onRequestExit={requestExit}
                 />
-              )}
-              {screen === "favorites" && (
+              </div>
+              <div
+                className={`app-screen-page app-screen-gradient app-screen-layer ${screen === "favorites" ? "app-screen-layer--active" : ""}`}
+                aria-hidden={screen !== "favorites"}
+              >
                 <FavoritesScreen
                   cards={favoriteCards}
                   totalFavoriteCount={allFavoriteCards.length}
@@ -2944,46 +3361,52 @@ export default function App() {
                   insights={outfitInsights}
                   onRequestExit={requestExit}
                 />
-              )}
-              {screen === "record" && (
-              <RecordScreen
-                hasUploadedToday={hasPendingFeedback}
-                uploadedPhotoUrl={feedbackOutfit.photoUrl}
-                uploadedOutfitTags={uploadedOutfitTags}
-                onGoToFeedback={continuePendingFeedback}
-                outfitImage={outfitImage}
-                outfitAnalysisPreview={outfitAnalysisPreview}
-                outfitAnalysisLoading={outfitAnalysisLoading}
-                onImageReady={onOutfitImageReady}
-                onClearImage={clearOutfitImage}
-                currentTime={currentTime}
-                saveToWardrobe={saveToWardrobe}
-                recordSaving={recordSaving}
-                weather={weather}
-                isCameraOpen={isCameraOpen}
-                setIsCameraOpen={setIsCameraOpen}
-                showActionSheet={showActionSheet}
-                setShowActionSheet={setShowActionSheet}
-                showToast={showToast}
-                reminder={reminder}
-                onReminderChange={handleReminderChange}
-                onRequestExit={requestExit}
-              />
-            )}
-            {screen === "feedback" && (
-              <FeedbackScreen
-                needsFeedback={hasPendingFeedback}
-                feedbackOutfit={feedbackOutfit}
-                feedbackDesc={feedbackDesc}
-                setFeedbackDesc={setFeedbackDesc}
-                feelSet={feelSet}
-                setFeelSet={setFeelSet}
-                submitFeedback={submitFeedback}
-                onRequestExit={requestExit}
-              />
-              )}
-            </motion.div>
-          </AnimatePresence>
+              </div>
+              <div
+                className={`app-screen-page app-screen-gradient app-screen-layer ${screen === "record" ? "app-screen-layer--active" : ""}`}
+                aria-hidden={screen !== "record"}
+              >
+                <RecordScreen
+                  hasUploadedToday={hasPendingFeedback}
+                  uploadedPhotoUrl={feedbackOutfit.photoUrl}
+                  uploadedOutfitTags={uploadedOutfitTags}
+                  onGoToFeedback={continuePendingFeedback}
+                  outfitImage={outfitImage}
+                  outfitAnalysisPreview={outfitAnalysisPreview}
+                  outfitAnalysisLoading={outfitAnalysisLoading}
+                  onImageReady={onOutfitImageReady}
+                  onClearImage={clearOutfitImage}
+                  currentTime={currentTime}
+                  saveToWardrobe={saveToWardrobe}
+                  recordSaving={recordSaving}
+                  weather={weather}
+                  isCameraOpen={isCameraOpen}
+                  setIsCameraOpen={setIsCameraOpen}
+                  showActionSheet={showActionSheet}
+                  setShowActionSheet={setShowActionSheet}
+                  showToast={showToast}
+                  reminder={reminder}
+                  onReminderChange={handleReminderChange}
+                  onRequestExit={requestExit}
+                />
+              </div>
+              <div
+                className={`app-screen-page app-screen-gradient app-screen-layer ${screen === "feedback" ? "app-screen-layer--active" : ""}`}
+                aria-hidden={screen !== "feedback"}
+              >
+                <FeedbackScreen
+                  needsFeedback={hasPendingFeedback}
+                  feedbackOutfit={feedbackOutfit}
+                  feedbackDesc={feedbackDesc}
+                  setFeedbackDesc={setFeedbackDesc}
+                  feelSet={feelSet}
+                  setFeelSet={setFeelSet}
+                  submitFeedback={submitFeedback}
+                  onRequestExit={requestExit}
+                />
+              </div>
+            </div>
+          )}
         </div>
         </div>
 
@@ -3001,14 +3424,15 @@ export default function App() {
                 <button 
                   key={tab.id}
                   onClick={() => {
-                    if (tab.id === "home") {
+                    const next = tab.id as Screen;
+                    if (next === "home" && screen !== "home") {
                       setSelectedRegion(null);
                     }
-                    setScreen(tab.id as Screen);
+                    setScreen(next);
                   }}
-                  className={`flex-1 flex flex-col items-center gap-1 transition-all ${screen === tab.id ? "text-stone-800" : "text-stone-400 hover:text-stone-600"}`}
+                  className={`flex-1 flex flex-col items-center gap-1 transition-colors duration-150 ${screen === tab.id ? "text-stone-800" : "text-stone-400 hover:text-stone-600"}`}
                 >
-                  <div className={`rounded-xl p-1.5 transition-all ${screen === tab.id ? "bg-stone-200/70 shadow-sm" : ""}`}>
+                  <div className={`rounded-xl p-1.5 transition-[background-color,box-shadow] duration-150 ${screen === tab.id ? "bg-stone-200/70 shadow-sm" : ""}`}>
                     {tab.icon}
                   </div>
                   <span className={`text-[9px] font-bold tracking-tight ${screen === tab.id ? "text-stone-800" : "text-stone-400"}`}>{tab.label}</span>

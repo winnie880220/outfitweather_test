@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { filterInspirationCardsWithPhoto } from "../lib/inspiration-photo";
 import { Shirt } from "lucide-react";
 import { BottomActionBar } from "../components/BottomActionBar";
 import { FeedScreenHeader } from "../components/FeedScreenHeader";
@@ -125,15 +126,33 @@ export function InspirationFeedScreen({
   onRequestExit: () => void;
 }) {
   const [genderFilter, setGenderFilter] = useState<InspirationGenderFilter>("all");
+  const [failedPhotoIds, setFailedPhotoIds] = useState<Set<string>>(() => new Set());
 
-  const filteredCards = useMemo(
-    () => filterCardsByGender(cards, genderFilter),
-    [cards, genderFilter]
+  const photoCards = useMemo(
+    () => filterInspirationCardsWithPhoto(cards),
+    [cards]
   );
+
+  const filteredCards = useMemo(() => {
+    const byGender = filterCardsByGender(photoCards, genderFilter);
+    if (failedPhotoIds.size === 0) return byGender;
+    return byGender.filter((card) => !failedPhotoIds.has(card.id));
+  }, [photoCards, genderFilter, failedPhotoIds]);
+
+  const handlePhotoFailed = useCallback((cardId: string) => {
+    setFailedPhotoIds((prev) => {
+      if (prev.has(cardId)) return prev;
+      const next = new Set(prev);
+      next.add(cardId);
+      return next;
+    });
+  }, []);
+
   const reelScrollRef = useReelSlideHeight<HTMLDivElement>([filteredCards.length, genderFilter]);
 
-  if (cards.length === 0) {
-    if (insightsLoading) {
+  const showLoading = insightsLoading && photoCards.length === 0;
+
+  if (showLoading) {
       return (
         <div className="inspiration-feed-layout app-screen-gradient">
           <FeedScreenHeader
@@ -153,7 +172,9 @@ export function InspirationFeedScreen({
           </div>
         </div>
       );
-    }
+  }
+
+  if (photoCards.length === 0) {
     return (
       <InspirationEmptyState
         regionLabel={regionLabel}
@@ -192,7 +213,10 @@ export function InspirationFeedScreen({
         aria-label="穿搭靈感，上下滑動切換"
       >
         {filteredCards.length === 0 ? (
-          <FilteredEmptyState filter={genderFilter} totalInRegion={cards.length} />
+          <FilteredEmptyState
+            filter={genderFilter}
+            totalInRegion={photoCards.length}
+          />
         ) : (
           filteredCards.map((card) => (
             <div key={card.id} className="inspiration-feed-reel-slide">
@@ -203,6 +227,7 @@ export function InspirationFeedScreen({
                 isSaved={isInspirationFavorite(favorites, card.id)}
                 favoriteBusy={favoriteBusyId === card.id}
                 onToggleFavorite={() => onToggleFavorite(card)}
+                onPhotoFailed={() => handlePhotoFailed(card.id)}
               />
             </div>
           ))

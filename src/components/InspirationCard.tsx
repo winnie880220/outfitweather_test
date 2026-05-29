@@ -18,6 +18,7 @@ export function InspirationCard({
   layout = "list",
   /** 收藏頁一律顯示愛心，以便取消收藏（含自己的穿搭） */
   showFavoriteButton,
+  onPhotoFailed,
 }: {
   card: InspirationItem;
   currentUserName?: string;
@@ -26,10 +27,15 @@ export function InspirationCard({
   favoriteBusy?: boolean;
   layout?: "list" | "reel";
   showFavoriteButton?: boolean;
+  /** 圖片載入失敗（無有效照片） */
+  onPhotoFailed?: () => void;
 }) {
   const showFavorite =
     showFavoriteButton ?? !isOwnOutfit(card, currentUserName);
   const isReel = layout === "reel";
+  const hasPhotoUrl = Boolean(card.photoUrl?.trim());
+
+  if (!hasPhotoUrl) return null;
 
   return (
     <article
@@ -48,6 +54,7 @@ export function InspirationCard({
           bg={card.bg}
           objectFit="contain"
           className={isReel ? "h-full w-full min-h-0" : "inspiration-card-photo-feed"}
+          onPhotoError={onPhotoFailed}
         />
         {showFavorite ? (
           <button

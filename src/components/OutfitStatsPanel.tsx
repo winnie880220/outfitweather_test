@@ -20,13 +20,8 @@ export function OutfitStatsPanel({
         <p className="mt-0.5 text-center text-sm font-bold tracking-wide text-stone-600">
           TOP 3
         </p>
-        {insights && insights.sampleCount > 0 && (
-          <p className="mt-2 text-center text-xs text-stone-400">
-            此天氣區間 {insights.sampleCount} 筆穿搭
-          </p>
-        )}
-        {loading && !insights ? (
-          <div className="py-12 text-center text-sm text-stone-400 animate-pulse">
+        {loading ? (
+          <div className="py-12 text-center text-sm text-stone-400">
             統計資料載入中…
           </div>
         ) : !insights || insights.sampleCount === 0 ? (
@@ -46,11 +41,18 @@ export function OutfitStatsPanel({
             )}
           </div>
         ) : (
-          <div className="mt-5 flex flex-col gap-5">
+          <>
+            {insights.sampleCount > 0 && (
+              <p className="mt-2 text-center text-xs text-stone-400">
+                此天氣區間 {insights.sampleCount} 筆穿搭
+              </p>
+            )}
+            <div className="mt-5 flex flex-col gap-5">
             <TagColumn title="上著" items={insights.upperTop3} />
             <TagColumn title="下著" items={insights.lowerTop3} />
             <ColorColumn title="顏色" items={insights.colorTop3 ?? []} />
-          </div>
+            </div>
+          </>
         )}
       </div>
     </div>

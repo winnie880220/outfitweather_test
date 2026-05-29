@@ -288,7 +288,6 @@ export async function getOutfitInsights(
 
   const total = records.length;
   const withPhoto = records.filter((r) => Boolean(r.photoUrl));
-  const withoutPhoto = records.filter((r) => !r.photoUrl);
 
   const upperCounts = countTagFrequency(records, (r) => r.upperBodyTags);
   const lowerCounts = countTagFrequency(records, (r) => r.lowerBodyTags);
@@ -300,8 +299,8 @@ export async function getOutfitInsights(
   const lowerTop3 = toTop3(lowerCounts, total);
   const colorTop3 = toColorTop3(colorCounts, total);
 
-  /** 有照片優先；無照片仍以 emoji 卡片顯示（避免 Notion 有性別／標籤卻被完全排除） */
-  const inspiration = [...withPhoto, ...withoutPhoto]
+  /** 靈感牆僅顯示有照片的紀錄（標籤統計仍含無照片樣本） */
+  const inspiration = withPhoto
     .slice(0, 20)
     .map((r, i) => toInspirationCard(r, i, upperTop3, lowerTop3));
 

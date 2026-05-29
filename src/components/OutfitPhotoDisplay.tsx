@@ -7,12 +7,14 @@ export function OutfitPhotoDisplay({
   bg = "#ebe6dc",
   objectFit = "contain",
   className = "",
+  onPhotoError,
 }: {
   photoUrl?: string;
   emoji: string;
   bg?: string;
   objectFit?: "contain" | "cover";
   className?: string;
+  onPhotoError?: () => void;
 }) {
   const [broken, setBroken] = useState(false);
   useEffect(() => {
@@ -32,7 +34,10 @@ export function OutfitPhotoDisplay({
           alt="穿搭"
           decoding="async"
           className={`absolute inset-0 block h-full w-full ${imgFitClass} object-center`}
-          onError={() => setBroken(true)}
+          onError={() => {
+            setBroken(true);
+            onPhotoError?.();
+          }}
         />
       ) : (
         <div className="absolute inset-0 flex items-center justify-center text-8xl select-none">
