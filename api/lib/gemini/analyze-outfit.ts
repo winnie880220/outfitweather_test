@@ -217,7 +217,7 @@ async function generateWithModel(
   ).slice(0, 1);
   const allowedLabels = new Set([...normalizedUpperBodyTags, ...normalizedLowerBodyTags]);
   const tagAnchors = parseTagAnchors(parsed.tagAnchors, allowedLabels);
-  const colors = normalizeOutfitColors(coerceStringArray(parsed.colors));
+  const colors = normalizeOutfitColors(parsed.colors);
 
   return {
     upperBodyTags: normalizedUpperBodyTags,
