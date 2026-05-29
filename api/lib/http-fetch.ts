@@ -1,4 +1,10 @@
-/** 避開 Vercel/API 編譯時 fetch Response 與 Express／DOM 型別衝突 */
+/** 避開 Vercel/API 編譯時 fetch Response／RequestInit 與 Express／DOM 型別衝突 */
+export type HttpRequestInit = {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string | FormData | Buffer | null;
+};
+
 export type HttpFetchResponse = {
   ok: boolean;
   status: number;
@@ -7,9 +13,9 @@ export type HttpFetchResponse = {
 
 export async function httpFetch(
   url: string,
-  init?: RequestInit
+  init?: HttpRequestInit
 ): Promise<HttpFetchResponse> {
-  return (await fetch(url, init)) as HttpFetchResponse;
+  return (await fetch(url, init as globalThis.RequestInit)) as HttpFetchResponse;
 }
 
 export class HttpFetchError extends Error {
@@ -24,7 +30,7 @@ export class HttpFetchError extends Error {
 
 export async function httpFetchJson<T>(
   url: string,
-  init?: RequestInit
+  init?: HttpRequestInit
 ): Promise<T> {
   const res = await httpFetch(url, init);
   if (!res.ok) {

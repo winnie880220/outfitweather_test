@@ -1,4 +1,5 @@
 import { env } from "../env";
+import { httpFetch } from "../http-fetch";
 import { notionRequest } from "./client";
 import { parseNotionPage, type NotionProp, type ParsedNotionRecord } from "./parse-page";
 import { RECORDS_DB } from "./schema";
@@ -18,7 +19,7 @@ type PageResponse = {
 };
 
 async function fetchFileUploadUrl(fileUploadId: string): Promise<string | undefined> {
-  const res = await fetch(`https://api.notion.com/v1/file_uploads/${fileUploadId}`, {
+  const res = await httpFetch(`https://api.notion.com/v1/file_uploads/${fileUploadId}`, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${env.notionApiKey}`,

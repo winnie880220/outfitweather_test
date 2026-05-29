@@ -1,12 +1,13 @@
 import { env } from "../env";
+import { httpFetch, type HttpRequestInit } from "../http-fetch";
 
 export const NOTION_VERSION = "2022-06-28";
 
 export async function notionRequest<T>(
   path: string,
-  init: RequestInit = {}
+  init: HttpRequestInit = {}
 ): Promise<T> {
-  const res = await fetch(`https://api.notion.com/v1${path}`, {
+  const res = await httpFetch(`https://api.notion.com/v1${path}`, {
     ...init,
     headers: {
       Authorization: `Bearer ${env.notionApiKey}`,

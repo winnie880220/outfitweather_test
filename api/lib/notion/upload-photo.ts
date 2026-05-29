@@ -1,4 +1,5 @@
 import { env } from "../env";
+import { httpFetch } from "../http-fetch";
 
 /** Notion 檔案上傳 API 需較新版本 */
 const NOTION_FILE_VERSION = "2025-09-03";
@@ -20,7 +21,7 @@ export async function uploadImageToNotion(
   const base64 = stripBase64(imageBase64);
   const buffer = Buffer.from(base64, "base64");
 
-  const createRes = await fetch("https://api.notion.com/v1/file_uploads", {
+  const createRes = await httpFetch("https://api.notion.com/v1/file_uploads", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${env.notionApiKey}`,
@@ -42,7 +43,7 @@ export async function uploadImageToNotion(
   const blob = new Blob([buffer], { type: mimeType || "image/jpeg" });
   form.append("file", blob, filename);
 
-  const sendRes = await fetch(
+  const sendRes = await httpFetch(
     `https://api.notion.com/v1/file_uploads/${createData.id}/send`,
     {
       method: "POST",
