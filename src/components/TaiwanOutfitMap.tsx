@@ -302,6 +302,10 @@ function shouldSkipPathPaint(path: L.Path, sig: string): boolean {
   return false;
 }
 
+function clearPathPaintSig(path: L.Path): void {
+  delete (path as PathWithPaintSig)._owPaintSig;
+}
+
 function userDistrictLabelIcon(district: TaipeiDistrict): L.DivIcon {
   const safe = district.replace(/"/g, "");
   return L.divIcon({
@@ -436,6 +440,8 @@ export function TaiwanOutfitMap({
   const initialFocusDone = useRef(false);
   const lastFocusedRegionKeyRef = useRef<string | null>(null);
   const districtsVisibleRef = useRef(false);
+  /** 追蹤行政區圖層是否剛從隱藏恢復，以便強制重繪漸層 */
+  const prevDistrictsShownOnMapRef = useRef(false);
   const mapPaintRafRef = useRef<number | null>(null);
   /** 僅在選單切換行政區時自動聚焦，避免使用者縮小後被拉回 */
   const autoFocusedDistrictRef = useRef<string | null>(null);
@@ -720,6 +726,19 @@ export function TaiwanOutfitMap({
     });
   }, [mapView, selectedRegion, userDistrict, districtFillByName]);
 
+  const invalidateDistrictPaintCache = useCallback(() => {
+    districtLayerRef.current?.eachLayer((layer) => {
+      if ("setStyle" in layer) clearPathPaintSig(layer as L.Path);
+    });
+    countyLayerRef.current?.eachLayer((layer) => {
+      const feat = (layer as L.Layer & { feature?: Feature }).feature;
+      const name = feat?.properties?.COUNTYNAME as string | undefined;
+      if (name === TAIPEI_COUNTY && "setStyle" in layer) {
+        clearPathPaintSig(layer as L.Path);
+      }
+    });
+  }, []);
+
   /** 依縮放切換：縮小＝台北市大區色塊；放大＝行政區色塊、大區色塊消失 */
   const syncDistrictLayerVisibility = useCallback(() => {
     const map = mapRef.current;
@@ -728,12 +747,18 @@ export function TaiwanOutfitMap({
 
     const showDistricts =
       mapView === "taipei-districts" && districtsVisibleRef.current;
+    const districtsJustShown =
+      showDistricts && !prevDistrictsShownOnMapRef.current;
 
     if (showDistricts && districtLayer && districtsReady) {
+      if (districtsJustShown) {
+        invalidateDistrictPaintCache();
+      }
       if (!map.hasLayer(districtLayer)) districtLayer.addTo(map);
       applyCountyStyles();
       applyDistrictStyles();
       districtLayer.bringToFront();
+      prevDistrictsShownOnMapRef.current = true;
       return;
     }
 
@@ -742,7 +767,14 @@ export function TaiwanOutfitMap({
     }
     applyCountyStyles();
     countyLayerRef.current?.bringToFront();
-  }, [mapView, districtsReady, applyDistrictStyles, applyCountyStyles]);
+    prevDistrictsShownOnMapRef.current = false;
+  }, [
+    mapView,
+    districtsReady,
+    applyDistrictStyles,
+    applyCountyStyles,
+    invalidateDistrictPaintCache,
+  ]);
 
   const scheduleMapPaint = useCallback(() => {
     if (mapPaintRafRef.current != null) {
