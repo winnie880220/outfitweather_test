@@ -62,6 +62,16 @@ function readNumberProp(prop?: NotionProp): number | undefined {
   return undefined;
 }
 
+/** Notion Gender 選項正規化（相容「女性」等舊值） */
+export function parseUserGenderFromNotion(name?: string | null): UserGender | undefined {
+  const raw = name?.trim();
+  if (!raw) return undefined;
+  if (raw === "男生" || raw === "女生" || raw === "不分") return raw;
+  if (raw === "男性" || raw === "男") return "男生";
+  if (raw === "女性" || raw === "女") return "女生";
+  return undefined;
+}
+
 function plainText(prop?: NotionProp): string {
   if (!prop) return "";
   if (prop.type === "title") {
@@ -115,11 +125,9 @@ export function parseNotionPage(page: {
 
   const temperature = p[RECORDS_DB.temperature]?.number ?? undefined;
   const lowerSelect = p[RECORDS_DB.lowerBodyTags]?.select?.name;
-  const genderName = p[RECORDS_DB.gender]?.select?.name;
-  const gender: UserGender | undefined =
-    genderName === "男生" || genderName === "女生" || genderName === "不分"
-      ? genderName
-      : undefined;
+  const gender: UserGender | undefined = parseUserGenderFromNotion(
+    p[RECORDS_DB.gender]?.select?.name
+  );
 
   return {
     id: page.id,

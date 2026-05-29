@@ -247,10 +247,25 @@ export async function getOutfitInsights(
   temp: number,
   delta = 1,
   county?: string,
-  district?: string
+  district?: string,
+  options?: { fallbackTemp?: number }
 ): Promise<OutfitInsights> {
   const rounded = Math.round(temp);
+  const fallbackRounded =
+    options?.fallbackTemp != null && Number.isFinite(options.fallbackTemp)
+      ? Math.round(options.fallbackTemp)
+      : null;
+
   let records = await queryRecordsByTemperature(rounded, delta);
+  let usedTemp = rounded;
+  if (
+    records.length === 0 &&
+    fallbackRounded != null &&
+    fallbackRounded !== rounded
+  ) {
+    records = await queryRecordsByTemperature(fallbackRounded, delta);
+    usedTemp = fallbackRounded;
+  }
 
   const countyTrim = county?.trim();
   const districtTrim = district?.trim();
@@ -264,6 +279,7 @@ export async function getOutfitInsights(
 
   const total = records.length;
   const withPhoto = records.filter((r) => Boolean(r.photoUrl));
+  const withoutPhoto = records.filter((r) => !r.photoUrl);
 
   const upperCounts = countTagFrequency(records, (r) => r.upperBodyTags);
   const lowerCounts = countTagFrequency(records, (r) => r.lowerBodyTags);
@@ -273,14 +289,15 @@ export async function getOutfitInsights(
   const lowerTop3 = toTop3(lowerCounts, total);
   const colorTop3 = toColorTop3(colorCounts, total);
 
-  const inspiration = withPhoto
+  /** 有照片優先；無照片仍以 emoji 卡片顯示（避免 Notion 有性別／標籤卻被完全排除） */
+  const inspiration = [...withPhoto, ...withoutPhoto]
     .slice(0, 20)
     .map((r, i) => toInspirationCard(r, i, upperTop3, lowerTop3));
 
   return {
-    targetTemp: rounded,
-    tempMin: rounded - delta,
-    tempMax: rounded + delta,
+    targetTemp: usedTemp,
+    tempMin: usedTemp - delta,
+    tempMax: usedTemp + delta,
     sampleCount: total,
     photoCount: withPhoto.length,
     upperTop3,

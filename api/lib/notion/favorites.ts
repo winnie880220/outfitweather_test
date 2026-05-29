@@ -25,6 +25,26 @@ type DatabaseResponse = {
 
 let cachedIdFieldType: string | null = null;
 
+const NOTION_WRITE_GAP_MS = 220;
+const MAX_LEGACY_FAVORITE_ROW_PATCHES = 24;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isNotionWriteQuotaError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return (
+    msg.includes("MAX_WRITE_OPERATIONS") ||
+    msg.includes("rate limited") ||
+    msg.includes("Rate limit")
+  );
+}
+
+function notionQuotaErrorMessage(): string {
+  return "Notion 寫入次數已達本小時上限，請稍後再試取消收藏";
+}
+
 async function getRecordIdFieldType(): Promise<string> {
   if (cachedIdFieldType) return cachedIdFieldType;
   const db = await notionRequest<DatabaseResponse>(
@@ -183,10 +203,16 @@ export async function toggleOutfitFavorite(
       }
       await setFavoriteIds(active.pageId, merged);
     } else {
-      await removeFavoriteIdFromAllUserRows(favoriter, outfitRecordId);
+      await removeFavoriteIdFromAllUserRows(
+        favoriter,
+        outfitRecordId,
+        active.pageId
+      );
     }
 
-    const favoriteIds = await collectFavoriteIdsForUser(favoriter);
+    const favoriteIds = params.favorited
+      ? await collectFavoriteIdsForUser(favoriter)
+      : await collectFavoriteIdsForUser(favoriter, active.pageId);
 
     return {
       ok: true,
@@ -201,15 +227,30 @@ export async function toggleOutfitFavorite(
       source: "notion",
     };
   } catch (error) {
+    if (isNotionWriteQuotaError(error)) {
+      return { ok: false, error: notionQuotaErrorMessage() };
+    }
     const message = error instanceof Error ? error.message : "收藏更新失敗";
     return { ok: false, error: message };
   }
 }
 
+/**
+ * 彙整收藏 ID。
+ * - 未傳 activePageId：合併所有歷史列（相容舊資料）
+ * - 傳 activePageId：僅讀當日 active 列（取消收藏後以此為準，避免重複寫入）
+ */
 async function collectFavoriteIdsForUser(
-  favoriterUserName: string
+  favoriterUserName: string,
+  canonicalActivePageId?: string
 ): Promise<string[]> {
   const pages = await queryRecordsByUserName(favoriterUserName);
+
+  if (canonicalActivePageId) {
+    const active = pages.find((p) => p.id === canonicalActivePageId);
+    return active ? readFavoriteIds(active.properties) : [];
+  }
+
   const ids = new Set<string>();
   for (const page of pages) {
     for (const id of readFavoriteIds(page.properties)) {
@@ -219,20 +260,53 @@ async function collectFavoriteIdsForUser(
   return [...ids];
 }
 
-/** 從收藏者所有歷史列移除指定穿搭 ID（取消收藏須清乾淨，否則舊列會讓項目再次出現） */
+function mergeFavoriteIdsFromPages(
+  pages: Array<{ id: string; properties: Record<string, NotionProp> }>
+): string[] {
+  const ids = new Set<string>();
+  for (const page of pages) {
+    for (const id of readFavoriteIds(page.properties)) {
+      ids.add(id);
+    }
+  }
+  return [...ids];
+}
+
+/** 取消收藏：先寫入 active 列完整清單，再循序清除歷史列上的殘留 ID */
 async function removeFavoriteIdFromAllUserRows(
   favoriterUserName: string,
-  outfitRecordId: string
+  outfitRecordId: string,
+  activePageId: string
 ): Promise<void> {
   const pages = await queryRecordsByUserName(favoriterUserName);
-  await Promise.all(
-    pages.map(async (page) => {
-      const current = readFavoriteIds(page.properties);
-      const next = withoutFavoriteRecordId(current, outfitRecordId);
-      if (next.length === current.length) return;
+  const merged = mergeFavoriteIdsFromPages(pages);
+  const nextOnActive = withoutFavoriteRecordId(merged, outfitRecordId);
+
+  await setFavoriteIds(activePageId, nextOnActive);
+
+  const legacyPages = pages
+    .filter((p) => p.id !== activePageId)
+    .filter((p) =>
+      readFavoriteIds(p.properties).some((id) =>
+        favoriteRecordIdsMatch(id, outfitRecordId)
+      )
+    )
+    .slice(0, MAX_LEGACY_FAVORITE_ROW_PATCHES);
+
+  for (let i = 0; i < legacyPages.length; i += 1) {
+    if (i > 0) await sleep(NOTION_WRITE_GAP_MS);
+    const page = legacyPages[i]!;
+    const current = readFavoriteIds(page.properties);
+    const next = withoutFavoriteRecordId(current, outfitRecordId);
+    try {
       await setFavoriteIds(page.id, next);
-    })
-  );
+    } catch (error) {
+      if (isNotionWriteQuotaError(error)) {
+        throw new Error(notionQuotaErrorMessage());
+      }
+      throw error;
+    }
+  }
 }
 
 /** 彙整使用者所有列上的 Favorite（ID 值），回傳對應穿搭卡片 */

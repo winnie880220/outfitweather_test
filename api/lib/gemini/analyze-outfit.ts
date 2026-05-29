@@ -53,6 +53,16 @@ function isQuotaError(error: unknown): boolean {
   );
 }
 
+/** API 金鑰失效 → 可改試下一把 key */
+function isApiKeyError(error: unknown): boolean {
+  const msg = errorMessage(error);
+  return (
+    msg.includes("API key expired") ||
+    msg.includes("API_KEY_INVALID") ||
+    (msg.includes("API key") && msg.includes("INVALID"))
+  );
+}
+
 /** 模型不存在或不支援 → 換下一個模型 */
 function isModelUnavailableError(error: unknown): boolean {
   const msg = errorMessage(error);
@@ -254,6 +264,9 @@ export async function analyzeOutfitImage(
         if (shouldTryNextModel(error)) {
           continue;
         }
+        if (isApiKeyError(error) && i < keys.length - 1) {
+          break;
+        }
         // 非可切模型錯誤：若還有下一把 key，改用下一把；否則拋出
         if (i < keys.length - 1) break;
         throw error;
@@ -264,6 +277,12 @@ export async function analyzeOutfitImage(
   if (isQuotaError(lastError)) {
     throw new Error(
       "Gemini 免費額度已用完，請稍後再試或至 Google AI Studio 檢查配額與帳單"
+    );
+  }
+
+  if (isApiKeyError(lastError)) {
+    throw new Error(
+      "Gemini API 金鑰已過期或無效，請至 Google AI Studio 重新建立金鑰，並更新本機 .env.local 或 Vercel 的 GEMINI_API_KEY"
     );
   }
 

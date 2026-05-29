@@ -155,7 +155,12 @@ async function handleApi(
       const delta = parseFloat(url.searchParams.get("delta") ?? "1") || 1;
       const county = url.searchParams.get("county")?.trim() || undefined;
       const district = url.searchParams.get("district")?.trim() || undefined;
-      const data = await getOutfitInsights(temp, delta, county, district);
+      const airTempRaw = url.searchParams.get("airTemp");
+      const airTempParsed = airTempRaw ? parseFloat(airTempRaw) : Number.NaN;
+      const fallbackTemp = Number.isNaN(airTempParsed) ? undefined : airTempParsed;
+      const data = await getOutfitInsights(temp, delta, county, district, {
+        fallbackTemp,
+      });
       return send(res, 200, { ok: true, data, source: "notion" });
     }
 

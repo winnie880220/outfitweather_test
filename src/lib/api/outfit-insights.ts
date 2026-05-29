@@ -51,7 +51,8 @@ export async function fetchOutfitInsights(
   temp: number,
   delta = 1,
   county?: string,
-  district?: string
+  district?: string,
+  options?: { airTemp?: number }
 ): Promise<OutfitInsights> {
   const params = new URLSearchParams({
     temp: String(Math.round(temp)),
@@ -59,5 +60,12 @@ export async function fetchOutfitInsights(
   });
   if (county?.trim()) params.set("county", county.trim());
   if (district?.trim()) params.set("district", district.trim());
+  if (
+    options?.airTemp != null &&
+    Number.isFinite(options.airTemp) &&
+    Math.round(options.airTemp) !== Math.round(temp)
+  ) {
+    params.set("airTemp", String(Math.round(options.airTemp)));
+  }
   return apiGet<OutfitInsights>(`/api/outfit-insights?${params}`);
 }

@@ -67,12 +67,22 @@ function InspirationEmptyState({
   );
 }
 
-function FilteredEmptyState({ filter }: { filter: InspirationGenderFilter }) {
+function FilteredEmptyState({
+  filter,
+  totalInRegion,
+}: {
+  filter: InspirationGenderFilter;
+  totalInRegion: number;
+}) {
   const label = filter === "女生" ? "女生" : "男生";
   return (
     <div className="inspiration-filter-empty py-12 text-center">
       <p className="text-sm font-medium text-stone-700">目前沒有{label}穿搭靈感</p>
-      <p className="mt-1 text-xs text-stone-500">試試切換「全部」或其他分類</p>
+      <p className="mt-1 text-xs text-stone-500">
+        {totalInRegion > 0
+          ? `此溫區與地區共有 ${totalInRegion} 筆穿搭，請切換「全部」查看，或確認 Notion 的 Gender 欄位為「${label}」。`
+          : "試試切換「全部」、調整地區選單，或確認體感溫度區間內是否有紀錄。"}
+      </p>
     </div>
   );
 }
@@ -182,7 +192,7 @@ export function InspirationFeedScreen({
         aria-label="穿搭靈感，上下滑動切換"
       >
         {filteredCards.length === 0 ? (
-          <FilteredEmptyState filter={genderFilter} />
+          <FilteredEmptyState filter={genderFilter} totalInRegion={cards.length} />
         ) : (
           filteredCards.map((card) => (
             <div key={card.id} className="inspiration-feed-reel-slide">

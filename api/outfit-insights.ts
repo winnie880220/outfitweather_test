@@ -27,9 +27,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const county = getQueryString(req.query, "county") || undefined;
   const district = getQueryString(req.query, "district") || undefined;
+  const airTempRaw = getQueryString(req.query, "airTemp");
+  const airTempParsed = airTempRaw ? parseFloat(airTempRaw) : Number.NaN;
+  const fallbackTemp = Number.isNaN(airTempParsed) ? undefined : airTempParsed;
 
   try {
-    const data = await getOutfitInsights(temp, safeDelta, county, district);
+    const data = await getOutfitInsights(temp, safeDelta, county, district, {
+      fallbackTemp,
+    });
     return sendJson(res, 200, { ok: true, data, source: "notion" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "穿搭統計失敗";

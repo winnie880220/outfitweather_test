@@ -40,6 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return sendJson(res, 200, { ok: true, data, source: "gemini" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "穿搭分析失敗";
-    return sendJson(res, 500, { ok: false, error: message });
+    const status = message.includes("金鑰") || message.includes("API key") ? 503 : 500;
+    return sendJson(res, status, { ok: false, error: message });
   }
 }

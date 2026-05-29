@@ -1363,6 +1363,7 @@ export default function App() {
   const regionWeatherFetchKeyRef = useRef<string | null>(null);
   const regionInsightsFetchKeyRef = useRef<string | null>(null);
   const regionColorFillsKeyRef = useRef<string | null>(null);
+  const regionColorFillsRequestIdRef = useRef(0);
   const regionInsightsInFlightRef = useRef<Set<string>>(new Set());
   const regionColorFillsInFlightRef = useRef<Set<string>>(new Set());
   const regionInsightsLastRequestAtRef = useRef<Map<string, number>>(new Map());
@@ -1533,9 +1534,13 @@ export default function App() {
   const loadOutfitInsights = useCallback(async (weatherSnapshot: WeatherData) => {
     try {
       setInsightsLoading(true);
+      const refTemp = weatherInsightReferenceTemp(weatherSnapshot);
       const data = await fetchOutfitInsights(
-        weatherInsightReferenceTemp(weatherSnapshot),
-        getInsightTempDelta(weatherSnapshot)
+        refTemp,
+        getInsightTempDelta(weatherSnapshot),
+        undefined,
+        undefined,
+        { airTemp: weatherSnapshot.temp }
       );
       setOutfitInsights(data);
     } catch (error) {
@@ -1568,7 +1573,13 @@ export default function App() {
       try {
         if (showLoading) setRegionInsightsLoading(true);
         const district = region.level === "district" ? region.district : undefined;
-        const data = await fetchOutfitInsights(refTemp, delta, region.county, district);
+        const data = await fetchOutfitInsights(
+          refTemp,
+          delta,
+          region.county,
+          district,
+          { airTemp: weatherSnapshot.temp }
+        );
         regionInsightsFetchKeyRef.current = fetchKey;
         setRegionInsights(data);
       } catch (error) {
@@ -1617,20 +1628,29 @@ export default function App() {
     if (regionColorFillsInFlightRef.current.has(key)) return;
     regionColorFillsInFlightRef.current.add(key);
     regionColorFillsLastRequestAtRef.current.set(key, now);
+    const requestId = ++regionColorFillsRequestIdRef.current;
+
+    const isStale = () => requestId !== regionColorFillsRequestIdRef.current;
+
     try {
-      const { fills } = await fetchRegionColorFills(refTemp, delta);
+      let { fills } = await fetchRegionColorFills(refTemp, delta);
+      const airRounded = Math.round(weatherSnapshot.temp);
+      const refRounded = Math.round(refTemp);
+      if (fills.length === 0 && airRounded !== refRounded) {
+        const fallback = await fetchRegionColorFills(weatherSnapshot.temp, delta);
+        if (fallback.fills.length > 0) fills = fallback.fills;
+      }
+      if (isStale()) return;
       regionColorFillsKeyRef.current = key;
       setRegionColorFills(fills);
     } catch (error) {
+      if (isStale()) return;
       console.warn("Region color fills:", error);
       if (isRateLimitedError(error)) {
-        // 限流時保留前一次成功填色，避免地圖瞬間全部清空。
         regionColorFillsKeyRef.current = key;
         regionColorFillsLastRequestAtRef.current.set(key, Date.now() + 6000);
-      } else {
-        regionColorFillsKeyRef.current = null;
-        setRegionColorFills([]);
       }
+      // 失敗時保留前一次填色，避免地圖顏色閃爍消失
     } finally {
       regionColorFillsInFlightRef.current.delete(key);
     }
@@ -1644,6 +1664,7 @@ export default function App() {
 
   useEffect(() => {
     if (screen !== "home") return;
+    if (selectedRegion && regionWeatherLoading) return;
 
     const colorWeatherSnapshot =
       selectedRegion && regionWeather ? regionWeather : weather;
@@ -1652,13 +1673,17 @@ export default function App() {
     if (typeof refTemp !== "number" || Number.isNaN(refTemp)) return;
     const delta = getInsightTempDelta(colorWeatherSnapshot);
     const key = `${Math.round(refTemp)}@d${delta}r3`;
-    if (regionColorFillsKeyRef.current === key) return;
+    if (regionColorFillsKeyRef.current === key && regionColorFills.length > 0) {
+      return;
+    }
     void loadRegionColorFills(colorWeatherSnapshot);
   }, [
     screen,
     selectedRegion,
     regionWeather,
+    regionWeatherLoading,
     weather,
+    regionColorFills.length,
     loadRegionColorFills,
   ]);
 
@@ -1967,9 +1992,14 @@ export default function App() {
   }, [weatherSnapshotForInspiration]);
 
   const activeInspirationKey = useMemo(() => {
-    if (inspirationQueryTemp == null) return null;
-    return `${regionKey(activeInspirationRegion)}@${Math.round(inspirationQueryTemp)}`;
-  }, [activeInspirationRegion, inspirationQueryTemp]);
+    if (inspirationQueryTemp == null || !weatherSnapshotForInspiration) return null;
+    const delta = getInsightTempDelta(weatherSnapshotForInspiration);
+    return `${regionKey(activeInspirationRegion)}@${Math.round(inspirationQueryTemp)}@d${delta}`;
+  }, [
+    activeInspirationRegion,
+    inspirationQueryTemp,
+    weatherSnapshotForInspiration,
+  ]);
 
   /** 靈感頁／首頁「全區」時載入區域穿搭靈感 */
   useEffect(() => {
@@ -2093,10 +2123,11 @@ export default function App() {
       showToast(saved ? "已取消收藏" : "已加入收藏 ♡");
     } catch (error) {
       console.warn("toggleOutfitFavorite:", error);
+      const msg = error instanceof Error ? error.message : "";
       showToast(
-        error instanceof Error && error.message
-          ? error.message
-          : "收藏同步失敗"
+        msg.includes("MAX_WRITE_OPERATIONS") || msg.includes("寫入次數")
+          ? "Notion 寫入次數已達本小時上限，請稍後再試"
+          : msg || "收藏同步失敗"
       );
     } finally {
       setFavoriteBusyId(null);
@@ -2195,8 +2226,14 @@ export default function App() {
         setOutfitAnalysisLoading(false);
         console.warn("Gemini analyze:", error);
         const msg = error instanceof Error ? error.message : "";
-        if (msg.includes("額度") || msg.includes("429") || msg.includes("quota")) {
+        if (msg.includes("金鑰") || msg.includes("API key")) {
+          showToast(
+            "Gemini API 金鑰已過期，請更新 GEMINI_API_KEY（仍會儲存照片與天氣）"
+          );
+        } else if (msg.includes("額度") || msg.includes("429") || msg.includes("quota")) {
           showToast("Gemini 額度不足，仍會儲存照片與天氣（無 AI 標籤）");
+        } else if (msg.includes("MAX_WRITE_OPERATIONS")) {
+          showToast("Notion 寫入次數已達上限，請稍後再試");
         } else {
           showToast(msg || "AI 辨識失敗，仍會儲存照片與天氣");
         }
