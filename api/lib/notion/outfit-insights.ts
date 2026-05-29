@@ -13,6 +13,7 @@ import {
 } from "../../../lib/taipei-district";
 import type { TaiwanCounty } from "../../../lib/taiwan-county";
 import { pickTopRegionColorNames } from "../../../lib/map-region-color-rank";
+import { rankingColorsFromRecord } from "../../../lib/outfit-colors";
 import {
   canonicalColorName,
   colorNameToHex,
@@ -316,17 +317,11 @@ export async function getOutfitInsights(
   };
 }
 
-/** 地圖填色：與區域排行榜 colorTop3 相同，僅統計 Color 多選（正規化色名） */
+/** 地圖填色／colorTop3：每筆紀錄只計第一主色（正規化後） */
 function colorsForRegionAggregation(record: ParsedNotionRecord): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const raw of record.colors) {
-    const canonical = canonicalColorName(raw);
-    if (!canonical || seen.has(canonical)) continue;
-    seen.add(canonical);
-    out.push(canonical);
-  }
-  return out;
+  return rankingColorsFromRecord(record.colors)
+    .map((raw) => canonicalColorName(raw))
+    .filter((c): c is string => Boolean(c));
 }
 
 function ensureColorBucket(
@@ -354,12 +349,9 @@ function addRecordColorsToBucket(
   bucket: { colorCounts: Map<string, number> },
   record: ParsedNotionRecord
 ) {
-  const seen = new Set<string>();
-  for (const colorName of colorsForRegionAggregation(record)) {
-    if (seen.has(colorName)) continue;
-    seen.add(colorName);
-    bucket.colorCounts.set(colorName, (bucket.colorCounts.get(colorName) ?? 0) + 1);
-  }
+  const [colorName] = colorsForRegionAggregation(record);
+  if (!colorName) return;
+  bucket.colorCounts.set(colorName, (bucket.colorCounts.get(colorName) ?? 0) + 1);
 }
 
 /** 一次查詢後依區域聚合顏色排行第一，供地圖行政區填色 */

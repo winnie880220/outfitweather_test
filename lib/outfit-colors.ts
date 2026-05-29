@@ -9,6 +9,17 @@ export function dominantOutfitColor(
   return limitOutfitColors(colors)[0] ?? null;
 }
 
+/**
+ * 排行榜／地圖分區填色：每筆紀錄只計一個主色（第一色，非三色加總）。
+ * Notion 寫入時亦應將主色排在 Color 多選的第一項。
+ */
+export function rankingColorsFromRecord(
+  colors: string[] | undefined | null
+): string[] {
+  const first = dominantOutfitColor(colors);
+  return first ? [first] : [];
+}
+
 export function limitOutfitColors(
   colors: string[],
   max = MAX_OUTFIT_COLORS
