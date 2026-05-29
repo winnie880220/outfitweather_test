@@ -13,7 +13,10 @@ import {
 } from "../../../lib/taipei-district";
 import { TAIWAN_COUNTIES, type TaiwanCounty } from "../../../lib/taiwan-county";
 import type { MapFillLocaleSpec } from "../../../lib/map-fill-locales";
-import { pickTopRegionColorNames } from "../../../lib/map-region-color-rank";
+import {
+  mapGradientFromColorCounts,
+  pickTopRegionColorNames,
+} from "../../../lib/map-region-color-rank";
 import { rankingColorsFromRecord } from "../../../lib/outfit-colors";
 import {
   canonicalColorName,
@@ -337,25 +340,16 @@ function fillFromLocaleRecords(
   }
   const top = pickTopRegionColorNames(colorCounts);
   if (!top) return null;
+
+  const gradient = mapGradientFromColorCounts(colorCounts, filtered.length);
+  if (!gradient) return null;
+
   return {
     regionKey: locale.regionKey,
     county: locale.county,
     ...(locale.district ? { district: locale.district } : {}),
-    colorName: top.colorName,
-    hex: colorNameToHex(top.colorName),
+    ...gradient,
     rankingColorNames: top.colorNames,
-    ...(top.colorName2
-      ? {
-          colorName2: top.colorName2,
-          hex2: colorNameToHex(top.colorName2),
-        }
-      : {}),
-    ...(top.colorName3
-      ? {
-          colorName3: top.colorName3,
-          hex3: colorNameToHex(top.colorName3),
-        }
-      : {}),
   };
 }
 

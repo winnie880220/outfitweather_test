@@ -1,3 +1,5 @@
+import { colorNameToHex } from "../src/lib/color-lexicon";
+
 export type TopRegionColorRank = {
   /** 並列第一的全部顏色（穩定排序） */
   colorNames: string[];
@@ -70,6 +72,29 @@ export function mapGradientFromColorTop3(
   }
 
   return base;
+}
+
+/** 由區域色票計數產生地圖漸層（與 outfit-insights colorTop3 規則一致） */
+export function mapGradientFromColorCounts(
+  counts: Map<string, number>,
+  total: number
+): MapColorGradientFill | null {
+  if (counts.size === 0 || total <= 0) return null;
+
+  const items: ColorRankForMapFill[] = [...counts.entries()]
+    .sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return a[0].localeCompare(b[0], "zh-Hant");
+    })
+    .slice(0, 3)
+    .map(([name, count]) => ({
+      name,
+      hex: colorNameToHex(name),
+      percent: Math.round((count / total) * 100),
+      count,
+    }));
+
+  return mapGradientFromColorTop3(items);
 }
 
 /** 區域顏色票數排行：並列第一時 colorNames 含全部同色票數者 */

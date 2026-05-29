@@ -4,7 +4,7 @@ import type { RegionColorFill } from "./api/region-color-fills";
 const CACHE_KEY = "ow-map-bootstrap-v3";
 const CACHE_SCHEMA_KEY = "ow-map-cache-schema";
 /** 部署新填色邏輯時遞增，會自動清除舊 session 快取 */
-const CACHE_SCHEMA = "2026-05-29-fill-stable";
+const CACHE_SCHEMA = "2026-05-29-map-gradient-unified";
 
 const LEGACY_CACHE_KEYS = ["ow-map-data-regions-v1", "ow-map-bootstrap-v2"];
 
