@@ -142,9 +142,11 @@ export type ToggleFavoriteParams = {
   outfitPageId: string;
   favorited: boolean;
   activeRecord?: ActiveUserRecordState | null;
-  profile?: Pick<
-    ActiveUserRecordContext,
-    "location" | "gender" | "temp" | "apparentTemp" | "weather"
+  profile?: Partial<
+    Pick<
+      ActiveUserRecordContext,
+      "location" | "gender" | "temp" | "apparentTemp" | "weather"
+    >
   >;
 };
 

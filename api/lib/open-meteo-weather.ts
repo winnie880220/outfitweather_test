@@ -1,5 +1,6 @@
 import type { WeatherData } from "./types";
 import { reverseGeocode } from "./geocode";
+import { httpFetch } from "./http-fetch";
 
 const getWeatherCondition = (code: number): string => {
   const mapping: Record<number, string> = {
@@ -108,7 +109,7 @@ export async function getCurrentWeatherFromOpenMeteo(
   lon: number,
   displayName?: string
 ): Promise<WeatherData> {
-  const weatherRes = await fetch(
+  const weatherRes = await httpFetch(
     `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&timezone=auto&forecast_days=1&current_weather=true&hourly=temperature_2m,relativehumidity_2m,precipitation_probability,apparent_temperature,uv_index&daily=temperature_2m_max,temperature_2m_min`
   );
 

@@ -144,7 +144,12 @@ export type ColorChipTheme = {
 export function getColorChipTheme(name: string): ColorChipTheme {
   const fill = colorNameToHex(name);
   const text = "#44403c";
-  if (typeof CSS !== "undefined" && typeof CSS.supports === "function" && CSS.supports("color", "color-mix(in srgb, red 50%, white)")) {
+  const cssApi = globalThis as typeof globalThis & {
+    CSS?: { supports?: (property: string, value: string) => boolean };
+  };
+  if (
+    cssApi.CSS?.supports?.("color", "color-mix(in srgb, red 50%, white)")
+  ) {
     return {
       fill,
       bg: `color-mix(in srgb, ${fill} 34%, #faf7f2)`,

@@ -1,11 +1,12 @@
 import type { GeoSearchResult } from "./types";
+import { httpFetch } from "./http-fetch";
 
 /** Photon 支援中文「台北」；Open-Meteo 常無結果 */
 export async function searchLocationsPhoton(query: string): Promise<GeoSearchResult[]> {
   const q = query.trim();
   if (q.length < 2) return [];
 
-  const res = await fetch(
+  const res = await httpFetch(
     `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=12&lang=default`
   );
   if (!res.ok) return [];
@@ -46,7 +47,7 @@ export async function searchLocations(query: string): Promise<GeoSearchResult[]>
   const q = query.trim();
   if (q.length < 2) return [];
 
-  const res = await fetch(
+  const res = await httpFetch(
     `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=10&language=zh`
   );
 
@@ -87,7 +88,7 @@ export async function searchLocations(query: string): Promise<GeoSearchResult[]>
 
 export async function reverseGeocode(lat: number, lon: number): Promise<string> {
   try {
-    const bdcRes = await fetch(
+    const bdcRes = await httpFetch(
       `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=zh`
     );
     if (bdcRes.ok) {
@@ -108,7 +109,7 @@ export async function reverseGeocode(lat: number, lon: number): Promise<string> 
     /* fallback */
   }
 
-  const photonRes = await fetch(
+  const photonRes = await httpFetch(
     `https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}&lang=en`
   );
 

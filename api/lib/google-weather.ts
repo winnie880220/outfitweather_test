@@ -1,6 +1,7 @@
 import type { WeatherData } from "./types";
 import { reverseGeocode } from "./geocode";
 import { env } from "./env";
+import { httpFetch } from "./http-fetch";
 
 type GoogleTemperature = { degrees?: number; unit?: string };
 
@@ -86,7 +87,7 @@ function buildGoogleWeatherUrl(
 }
 
 async function fetchGoogleJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+  const res = await httpFetch(url);
   if (!res.ok) {
     let detail = "";
     try {
