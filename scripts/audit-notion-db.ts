@@ -120,18 +120,18 @@ async function main() {
     .slice(0, 10)
     .forEach(([loc, c]) => console.log(`  ${loc}: ${c}`));
 
-  console.log("\n── 溫度區間查詢（App 同款 filter）──");
+  console.log("\n── 體感溫度區間查詢（App 同款 filter）──");
   for (const temp of [20, 24, 26, 28, 30, 32]) {
     for (const delta of [1, 2]) {
       const hits = await queryRecordsByTemperature(temp, delta);
-      console.log(`  temp=${temp} ±${delta} → ${hits.length} 筆`);
+      console.log(`  體感=${temp} ±${delta} → ${hits.length} 筆`);
     }
   }
 
-  console.log("\n── 靈感 API 模擬（台北市）──");
+  console.log("\n── 靈感 API 模擬（台北市，體感溫度）──");
   for (const temp of [26, 28, 30]) {
     const ins = await getOutfitInsights(temp, 2, "台北市");
-    console.log(`  ${temp}°C ±2 台北市: sample=${ins.sampleCount}, inspiration=${ins.inspiration.length}`);
+    console.log(`  體感 ${temp}°C ±2 台北市: sample=${ins.sampleCount}, inspiration=${ins.inspiration.length}`);
   }
 
   console.log("\n✅ 稽核完成");

@@ -31,9 +31,19 @@ export function OutfitStatsPanel({
           </div>
         ) : !insights || insights.sampleCount === 0 ? (
           <div className="py-10 text-center text-sm leading-relaxed text-stone-400">
-            此溫度尚無足夠穿搭資料
-            <br />
-            <span className="text-xs">完成一筆記錄後就會出現在這裡</span>
+            {insights ? (
+              <>
+                體感 {insights.tempMin}–{insights.tempMax}°C 尚無足夠穿搭
+                <br />
+                <span className="text-xs">可試試鄰近行政區，或完成一筆記錄</span>
+              </>
+            ) : (
+              <>
+                尚無法載入排行資料
+                <br />
+                <span className="text-xs">請稍後再試或檢查網路</span>
+              </>
+            )}
           </div>
         ) : (
           <div className="mt-5 flex flex-col gap-5">

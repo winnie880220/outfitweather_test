@@ -1,3 +1,4 @@
+import { recordInsightReferenceTemp } from "../../../lib/weather-insight-temp";
 import { getNotionDatabaseId, isNotionConfigured } from "../env";
 import { notionRequest } from "./client";
 import { parseNotionPage, type NotionProp, type ParsedNotionRecord } from "./parse-page";
@@ -9,17 +10,11 @@ type QueryResponse = {
   next_cursor: string | null;
 };
 
-/** 查詢氣溫落在 [temp - delta, temp + delta] 的紀錄 */
-export async function queryRecordsByTemperature(
-  temp: number,
-  delta = 1
+async function queryRecordsByNumberProperty(
+  property: string,
+  min: number,
+  max: number
 ): Promise<ParsedNotionRecord[]> {
-  if (!isNotionConfigured()) {
-    return [];
-  }
-
-  const min = temp - delta;
-  const max = temp + delta;
   const records: ParsedNotionRecord[] = [];
   let cursor: string | undefined;
 
@@ -28,14 +23,8 @@ export async function queryRecordsByTemperature(
       page_size: 100,
       filter: {
         and: [
-          {
-            property: RECORDS_DB.temperature,
-            number: { greater_than_or_equal_to: min },
-          },
-          {
-            property: RECORDS_DB.temperature,
-            number: { less_than_or_equal_to: max },
-          },
+          { property, number: { greater_than_or_equal_to: min } },
+          { property, number: { less_than_or_equal_to: max } },
         ],
       },
       sorts: [{ property: RECORDS_DB.startedAt, direction: "descending" }],
@@ -59,6 +48,38 @@ export async function queryRecordsByTemperature(
   } while (cursor);
 
   return records;
+}
+
+/** 查詢體感溫度落在 [refTemp - delta, refTemp + delta] 的紀錄（無體感時以 Temperature 比對） */
+export async function queryRecordsByTemperature(
+  refTemp: number,
+  delta = 1
+): Promise<ParsedNotionRecord[]> {
+  if (!isNotionConfigured()) {
+    return [];
+  }
+
+  const min = refTemp - delta;
+  const max = refTemp + delta;
+
+  const [byApparent, byTemperature] = await Promise.all([
+    queryRecordsByNumberProperty(RECORDS_DB.apparentTemp, min, max).catch(
+      () => [] as ParsedNotionRecord[]
+    ),
+    queryRecordsByNumberProperty(RECORDS_DB.temperature, min, max).catch(
+      () => [] as ParsedNotionRecord[]
+    ),
+  ]);
+
+  const merged = new Map<string, ParsedNotionRecord>();
+  for (const record of [...byApparent, ...byTemperature]) {
+    merged.set(record.id, record);
+  }
+
+  return [...merged.values()].filter((r) => {
+    const t = recordInsightReferenceTemp(r);
+    return t != null && t >= min && t <= max;
+  });
 }
 
 /** 查詢指定 userName 的全部紀錄（含 active 與歷史列） */

@@ -1,3 +1,4 @@
+import { recordInsightReferenceTemp } from "../../../lib/weather-insight-temp";
 import type { ApiResponse, NotionRecordPayload, UserGender } from "../types";
 import { isNotionConfigured } from "../env";
 import { createRecordInNotion } from "./records";
@@ -49,6 +50,17 @@ export function isSameTempBand(a: number, b: number): boolean {
   return Math.abs(tempBandCenter(a) - tempBandCenter(b)) <= 1;
 }
 
+/** active 列溫區比對用體感溫度（無則退回氣溫） */
+export function activeRecordBandTemp(ctx: ActiveUserRecordContext): number {
+  if (
+    typeof ctx.apparentTemp === "number" &&
+    Number.isFinite(ctx.apparentTemp)
+  ) {
+    return ctx.apparentTemp;
+  }
+  return ctx.temp;
+}
+
 function pageOwnerName(properties: Record<string, NotionProp>): string {
   const prop = properties[RECORDS_DB.userName];
   if (!prop || prop.type !== "title") return "";
@@ -59,7 +71,7 @@ async function validateActivePage(
   pageId: string,
   userName: string,
   date: string,
-  temp: number
+  bandTemp: number
 ): Promise<ActiveUserRecordState | null> {
   if (!pageId || pageId.startsWith("local-")) return null;
   try {
@@ -69,13 +81,14 @@ async function validateActivePage(
     const recordDate = parsed?.startedAt
       ? localDateString(new Date(parsed.startedAt))
       : date;
-    const recordTemp = parsed?.temperature ?? temp;
+    const recordBandTemp =
+      (parsed ? recordInsightReferenceTemp(parsed) : undefined) ?? bandTemp;
     if (recordDate !== date) return null;
-    if (!isSameTempBand(recordTemp, temp)) return null;
+    if (!isSameTempBand(recordBandTemp, bandTemp)) return null;
     return {
       pageId: page.id,
       date,
-      tempBand: tempBandCenter(temp),
+      tempBand: tempBandCenter(bandTemp),
     };
   } catch {
     return null;
@@ -107,7 +120,7 @@ function buildActiveRecordPayload(ctx: ActiveUserRecordContext): NotionRecordPay
 }
 
 /**
- * 取得或建立「當日 + 當前氣溫區間」的使用者 active 列（收藏／記錄／回饋皆寫入此列）
+ * 取得或建立「當日 + 當前體感溫度區間」的使用者 active 列（收藏／記錄／回饋皆寫入此列）
  */
 export async function ensureActiveUserRecord(
   ctx: ActiveUserRecordContext,
@@ -126,7 +139,8 @@ export async function ensureActiveUserRecord(
   }
 
   const date = localDateString();
-  const tempBand = tempBandCenter(ctx.temp);
+  const bandTemp = activeRecordBandTemp(ctx);
+  const tempBand = tempBandCenter(bandTemp);
 
   try {
     if (existing?.pageId) {
@@ -134,7 +148,7 @@ export async function ensureActiveUserRecord(
         existing.pageId,
         userName,
         date,
-        ctx.temp
+        bandTemp
       );
       if (valid) {
         return {

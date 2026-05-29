@@ -12,7 +12,7 @@ export type RegionColorFillsData = {
   fills: RegionColorFill[];
 };
 
-/** GET /api/region-color-fills?temp=26&delta=1 */
+/** GET /api/region-color-fills?temp=26&delta=1（temp 為體感溫度參考值） */
 export async function fetchRegionColorFills(
   temp: number,
   delta = 1

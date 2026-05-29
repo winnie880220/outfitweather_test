@@ -97,7 +97,10 @@ export type ToggleFavoriteParams = {
   outfitPageId: string;
   favorited: boolean;
   activeRecord?: ActiveUserRecordState | null;
-  profile?: Pick<ActiveUserRecordContext, "location" | "gender" | "temp" | "weather">;
+  profile?: Pick<
+    ActiveUserRecordContext,
+    "location" | "gender" | "temp" | "apparentTemp" | "weather"
+  >;
 };
 
 export async function toggleOutfitFavorite(
@@ -129,6 +132,7 @@ export async function toggleOutfitFavorite(
     {
       userName: favoriter,
       temp,
+      apparentTemp: params.profile?.apparentTemp ?? temp,
       location: params.profile?.location,
       gender: params.profile?.gender,
       weather: params.profile?.weather,

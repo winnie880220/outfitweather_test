@@ -31,6 +31,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         location?: string;
         gender?: string;
         temp?: number;
+        apparentTemp?: number;
         weather?: string;
         /** @deprecated */
         userName?: string;
@@ -69,6 +70,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               ? body.gender
               : undefined,
           temp: typeof body.temp === "number" ? body.temp : undefined,
+          apparentTemp:
+            typeof body.apparentTemp === "number" ? body.apparentTemp : undefined,
           weather: typeof body.weather === "string" ? body.weather : undefined,
         },
       });

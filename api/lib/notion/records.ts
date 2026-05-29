@@ -19,17 +19,19 @@ function rankingDeltaFromPayload(payload: NotionRecordPayload): 1 | 2 {
   return Math.abs(max - min) >= 8 ? 2 : 1;
 }
 
-/** 寫入 CurrentRanking：該區在此氣溫下顏色排行第一 */
+/** 寫入 CurrentRanking：該區在此體感溫度區間下顏色排行第一 */
 async function withCurrentRanking(
   payload: NotionRecordPayload
 ): Promise<NotionRecordPayload> {
   if (payload.currentRanking?.trim()) return payload;
-  if (!payload.location?.trim() || payload.temperature === undefined) return payload;
+  if (!payload.location?.trim()) return payload;
+  const refTemp = payload.apparentTemp ?? payload.temperature;
+  if (refTemp === undefined) return payload;
 
   try {
     const delta = rankingDeltaFromPayload(payload);
     const top = await getRegionTopColorForLocation(
-      payload.temperature,
+      refTemp,
       payload.location,
       delta
     );

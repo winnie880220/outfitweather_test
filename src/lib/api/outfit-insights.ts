@@ -44,7 +44,7 @@ export type OutfitInsights = {
   inspiration: InspirationItem[];
 };
 
-/** GET /api/outfit-insights?temp=26&delta=1&county=台北市 */
+/** GET /api/outfit-insights?temp=26&delta=1（temp 為體感溫度參考值） */
 export async function fetchOutfitInsights(
   temp: number,
   delta = 1,

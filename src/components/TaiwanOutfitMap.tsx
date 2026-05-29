@@ -91,6 +91,14 @@ type MapColorJoinAnimation = {
   colorName: string;
 };
 
+/** 顏色加入動效標籤：台北市全市＝台北全區；行政區維持「台北市 ○○區」 */
+function colorJoinLabelForRegion(region: MapRegion): string {
+  if (region.level === "county" && region.county === TAIPEI_COUNTY) {
+    return "台北全區";
+  }
+  return regionLabel(region);
+}
+
 function countyStyle(
   selected: boolean,
   dimmed = false,
@@ -745,13 +753,17 @@ export function TaiwanOutfitMap({
       }
 
       if (region.county === TAIPEI_COUNTY) {
+        /** 台北全區：維持縮小視野（整市一塊色），不在此時切到行政區分區 */
         if (mapView !== "taipei-districts") {
           onMapViewChange("taipei-districts");
         }
+        districtsVisibleRef.current = false;
+        setDistrictsVisibleByZoom(false);
         const bounds = getTaipeiBounds();
         if (bounds?.isValid()) {
-          focusBounds(bounds, 12, TAIPEI_DISTRICTS_MIN_ZOOM);
+          focusBounds(bounds, TAIPEI_DISTRICTS_HIDE_ZOOM);
         }
+        scheduleMapPaint();
         return;
       }
 
@@ -1067,7 +1079,7 @@ export function TaiwanOutfitMap({
         colorName: anim.colorName,
         colorHex,
         colorRgb: colorHexToRgbCsv(colorHex),
-        label: regionLabel(target),
+        label: colorJoinLabelForRegion(target),
       });
 
       if (colorJoinTimerRef.current != null) {

@@ -2,7 +2,7 @@ import { getRegionColorFills } from "./lib/notion/outfit-insights";
 import { isNotionConfigured } from "./lib/env";
 import { getQueryString, sendJson, type VercelRequest, type VercelResponse } from "./lib/vercel";
 
-/** GET /api/region-color-fills?temp=26&delta=1 */
+/** GET /api/region-color-fills?temp=26&delta=1（temp＝體感溫度） */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") {
     return sendJson(res, 405, { ok: false, error: "Method not allowed" });

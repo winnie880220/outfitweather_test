@@ -18,6 +18,7 @@ export async function toggleOutfitFavorite(
     location?: string;
     gender?: UserGender | null;
     temp?: number;
+    apparentTemp?: number;
     weather?: string;
   }
 ): Promise<ToggleFavoriteResult> {
@@ -31,6 +32,9 @@ export async function toggleOutfitFavorite(
     ...(options?.location ? { location: options.location } : {}),
     ...(options?.gender ? { gender: options.gender } : {}),
     ...(typeof options?.temp === "number" ? { temp: options.temp } : {}),
+    ...(typeof options?.apparentTemp === "number"
+      ? { apparentTemp: options.apparentTemp }
+      : {}),
     ...(options?.weather ? { weather: options.weather } : {}),
   });
 }

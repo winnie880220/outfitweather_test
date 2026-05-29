@@ -58,6 +58,7 @@ import {
   type LocationPickerValue,
 } from "../lib/location-picker";
 import { buildRecordWeatherMetrics } from "../lib/weather-metrics";
+import { weatherInsightReferenceTemp } from "../lib/weather-insight-temp";
 import { limitOutfitColors } from "../lib/outfit-colors";
 import {
   isSameRegion,
@@ -1530,7 +1531,7 @@ export default function App() {
     try {
       setInsightsLoading(true);
       const data = await fetchOutfitInsights(
-        weatherSnapshot.temp,
+        weatherInsightReferenceTemp(weatherSnapshot),
         getInsightTempDelta(weatherSnapshot)
       );
       setOutfitInsights(data);
@@ -1548,11 +1549,11 @@ export default function App() {
       region: MapRegion,
       opts?: { showLoading?: boolean; force?: boolean }
     ) => {
-      const temp = weatherSnapshot.temp;
-      if (typeof temp !== "number" || Number.isNaN(temp)) return;
+      const refTemp = weatherInsightReferenceTemp(weatherSnapshot);
+      if (typeof refTemp !== "number" || Number.isNaN(refTemp)) return;
 
       const delta = getInsightTempDelta(weatherSnapshot);
-      const fetchKey = `${regionKey(region)}@${Math.round(temp)}@d${delta}`;
+      const fetchKey = `${regionKey(region)}@${Math.round(refTemp)}@d${delta}`;
       const showLoading = opts?.showLoading !== false;
       const force = opts?.force === true;
       const now = Date.now();
@@ -1564,7 +1565,7 @@ export default function App() {
       try {
         if (showLoading) setRegionInsightsLoading(true);
         const district = region.level === "district" ? region.district : undefined;
-        const data = await fetchOutfitInsights(temp, delta, region.county, district);
+        const data = await fetchOutfitInsights(refTemp, delta, region.county, district);
         regionInsightsFetchKeyRef.current = fetchKey;
         setRegionInsights(data);
       } catch (error) {
@@ -1593,7 +1594,9 @@ export default function App() {
         (selectedRegion && regionWeather && isSameRegion(selectedRegion, region)
           ? regionWeather
           : weather);
-      if (!snap || typeof snap.temp !== "number" || Number.isNaN(snap.temp)) return;
+      if (!snap) return;
+      const refTemp = weatherInsightReferenceTemp(snap);
+      if (typeof refTemp !== "number" || Number.isNaN(refTemp)) return;
       regionInsightsFetchKeyRef.current = null;
       void loadRegionInsights(snap, region, { showLoading: false, force: true });
     },
@@ -1601,10 +1604,10 @@ export default function App() {
   );
 
   const loadRegionColorFills = useCallback(async (weatherSnapshot: WeatherData) => {
-    const temp = weatherSnapshot.temp;
-    if (typeof temp !== "number" || Number.isNaN(temp)) return;
+    const refTemp = weatherInsightReferenceTemp(weatherSnapshot);
+    if (typeof refTemp !== "number" || Number.isNaN(refTemp)) return;
     const delta = getInsightTempDelta(weatherSnapshot);
-    const key = `${Math.round(temp)}@d${delta}r3`;
+    const key = `${Math.round(refTemp)}@d${delta}r3`;
     const now = Date.now();
     const lastAt = regionColorFillsLastRequestAtRef.current.get(key) ?? 0;
     if (now - lastAt < 2500) return;
@@ -1612,7 +1615,7 @@ export default function App() {
     regionColorFillsInFlightRef.current.add(key);
     regionColorFillsLastRequestAtRef.current.set(key, now);
     try {
-      const { fills } = await fetchRegionColorFills(temp, delta);
+      const { fills } = await fetchRegionColorFills(refTemp, delta);
       regionColorFillsKeyRef.current = key;
       setRegionColorFills(fills);
     } catch (error) {
@@ -1642,10 +1645,10 @@ export default function App() {
     const colorWeatherSnapshot =
       selectedRegion && regionWeather ? regionWeather : weather;
     if (!colorWeatherSnapshot) return;
-    const temp = colorWeatherSnapshot.temp;
-    if (typeof temp !== "number" || Number.isNaN(temp)) return;
+    const refTemp = weatherInsightReferenceTemp(colorWeatherSnapshot);
+    if (typeof refTemp !== "number" || Number.isNaN(refTemp)) return;
     const delta = getInsightTempDelta(colorWeatherSnapshot);
-    const key = `${Math.round(temp)}@d${delta}r3`;
+    const key = `${Math.round(refTemp)}@d${delta}r3`;
     if (regionColorFillsKeyRef.current === key) return;
     void loadRegionColorFills(colorWeatherSnapshot);
   }, [
@@ -1673,16 +1676,18 @@ export default function App() {
   }, [selectedRegion, loadRegionWeather]);
 
   useEffect(() => {
-    if (!selectedRegion || regionWeatherLoading || !regionWeather) return;
+    if (!selectedRegion || regionWeatherLoading) return;
+    const snapshot = regionWeather ?? weather;
+    if (!snapshot) return;
 
-    const delta = getInsightTempDelta(regionWeather);
-    const key = `${regionKey(selectedRegion)}@${Math.round(regionWeather.temp)}@d${delta}`;
+    const delta = getInsightTempDelta(snapshot);
+    const key = `${regionKey(selectedRegion)}@${Math.round(weatherInsightReferenceTemp(snapshot))}@d${delta}`;
     if (regionInsightsFetchKeyRef.current === key) return;
 
-    void loadRegionInsights(regionWeather, selectedRegion, {
+    void loadRegionInsights(snapshot, selectedRegion, {
       showLoading: !regionInsightsRef.current,
     });
-  }, [selectedRegion, regionWeatherLoading, regionWeather, loadRegionInsights]);
+  }, [selectedRegion, regionWeatherLoading, regionWeather, weather, loadRegionInsights]);
 
   const syncUserFavorites = useCallback(async (name: string) => {
     const trimmed = name.trim();
@@ -1953,7 +1958,8 @@ export default function App() {
   }, [selectedRegion, regionWeather, activeInspirationRegion, weather]);
 
   const inspirationQueryTemp = useMemo(() => {
-    const t = weatherSnapshotForInspiration?.temp;
+    if (!weatherSnapshotForInspiration) return null;
+    const t = weatherInsightReferenceTemp(weatherSnapshotForInspiration);
     return typeof t === "number" && !Number.isNaN(t) ? t : null;
   }, [weatherSnapshotForInspiration]);
 
@@ -2044,6 +2050,7 @@ export default function App() {
         location: weather?.locationName ?? userLocation?.name,
         gender: userGender,
         temp: weather?.temp,
+        apparentTemp: weather?.apparentTemp,
         weather: weather?.condition,
       });
       const active: ActiveUserRecord = result.activeUserRecord;

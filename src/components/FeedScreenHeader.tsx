@@ -1,6 +1,7 @@
 import { ChevronLeft, LogOut } from "lucide-react";
 import type { OutfitInsights } from "../lib/api/outfit-insights";
 import type { WeatherData } from "../types/api";
+import { weatherInsightReferenceTemp } from "../../lib/weather-insight-temp";
 
 function AppExitButton({ onClick }: { onClick: () => void }) {
   return (
@@ -30,7 +31,7 @@ export function FeedScreenHeader({
 }) {
   const tempLabel = insights
     ? `${insights.tempMin}–${insights.tempMax}°C`
-    : `${Math.round(weather?.temp ?? 26)}°`;
+    : `${Math.round(weather ? weatherInsightReferenceTemp(weather) : 26)}°`;
 
   const badge = regionLabel
     ? `${regionLabel} · ${tempLabel}`

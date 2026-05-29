@@ -2,7 +2,7 @@ import { getOutfitInsights } from "./lib/notion/outfit-insights";
 import { isNotionConfigured } from "./lib/env";
 import { getQueryString, sendJson, type VercelRequest, type VercelResponse } from "./lib/vercel";
 
-/** GET /api/outfit-insights?temp=26&delta=1&county=台北市&district=大安區 */
+/** GET /api/outfit-insights?temp=26&delta=1（temp＝體感溫度）&county=台北市&district=大安區 */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") {
     return sendJson(res, 405, { ok: false, error: "Method not allowed" });

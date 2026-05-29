@@ -169,7 +169,12 @@ export function InspirationFeedScreen({
         onRequestExit={onRequestExit}
       />
 
-      <InspirationGenderTabs value={genderFilter} onChange={setGenderFilter} />
+      <div className="inspiration-feed-intro">
+        <InspirationGenderTabs value={genderFilter} onChange={setGenderFilter} />
+        <p className="inspiration-apparent-hint">
+          以體感溫度提供更準確的穿搭靈感
+        </p>
+      </div>
 
       <div
         ref={reelScrollRef}

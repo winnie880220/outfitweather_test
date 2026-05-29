@@ -57,7 +57,7 @@ export type OutfitInsights = {
   inspiration: InspirationItem[];
 };
 
-/** 各縣市／行政區在目前天氣溫度區間的顏色排行第一（地圖填色用） */
+/** 各縣市／行政區在目前體感溫度區間的顏色排行第一（地圖填色用） */
 export type RegionColorFill = {
   regionKey: string;
   county: TaiwanCounty;
@@ -187,7 +187,7 @@ function toInspirationCard(
     stuffiness: record.stuffiness,
   };
   const tags = [...record.upperBodyTags, ...record.lowerBodyTags];
-  const tempNum = record.temperature ?? 0;
+  const tempNum = record.apparentTemp ?? record.temperature ?? 0;
   const emoji =
     record.upperBodyTags[0] ? tagEmoji(record.upperBodyTags[0]) : tagEmoji(record.lowerBodyTags[0] ?? "");
 
@@ -386,7 +386,7 @@ export async function getRegionColorFills(
 }
 
 /**
- * 依定位字串與氣溫區間，取得該區顏色排行第一（與地圖填色邏輯一致）
+ * 依定位字串與體感溫度區間，取得該區顏色排行第一（與地圖填色邏輯一致）
  */
 export async function getRegionTopColorForLocation(
   temp: number,

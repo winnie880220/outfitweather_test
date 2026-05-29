@@ -43,7 +43,7 @@ export interface ReminderSettings {
   minute: number;
 }
 
-/** 當日＋氣溫區間的 active Notion 列（收藏／記錄／回饋寫入此列） */
+/** 當日＋體感溫度區間的 active Notion 列（收藏／記錄／回饋寫入此列） */
 export interface ActiveUserRecord {
   pageId: string;
   date: string;
