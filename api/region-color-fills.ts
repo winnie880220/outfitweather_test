@@ -25,8 +25,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const delta = deltaRaw ? parseFloat(deltaRaw) : 1;
   const safeDelta = Number.isNaN(delta) ? 1 : Math.min(3, Math.max(0, delta));
 
+  const airTempRaw = getQueryString(req.query, "airTemp");
+  const airTempParsed = airTempRaw ? parseFloat(airTempRaw) : Number.NaN;
+  const fallbackTemp = Number.isNaN(airTempParsed) ? undefined : airTempParsed;
+
   try {
-    const fills = await getRegionColorFills(temp, safeDelta);
+    const fills = await getRegionColorFills(temp, safeDelta, { fallbackTemp });
     return sendJson(res, 200, { ok: true, data: { fills }, source: "notion" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "區域色票失敗";

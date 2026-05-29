@@ -173,7 +173,10 @@ async function handleApi(
         return send(res, 400, { ok: false, error: "請提供有效的 temp" });
       }
       const delta = parseFloat(url.searchParams.get("delta") ?? "1") || 1;
-      const fills = await getRegionColorFills(temp, delta);
+      const airTempRaw = url.searchParams.get("airTemp");
+      const airTempParsed = airTempRaw ? parseFloat(airTempRaw) : Number.NaN;
+      const fallbackTemp = Number.isNaN(airTempParsed) ? undefined : airTempParsed;
+      const fills = await getRegionColorFills(temp, delta, { fallbackTemp });
       return send(res, 200, { ok: true, data: { fills }, source: "notion" });
     }
 

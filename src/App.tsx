@@ -1633,13 +1633,9 @@ export default function App() {
     const isStale = () => requestId !== regionColorFillsRequestIdRef.current;
 
     try {
-      let { fills } = await fetchRegionColorFills(refTemp, delta);
-      const airRounded = Math.round(weatherSnapshot.temp);
-      const refRounded = Math.round(refTemp);
-      if (fills.length === 0 && airRounded !== refRounded) {
-        const fallback = await fetchRegionColorFills(weatherSnapshot.temp, delta);
-        if (fallback.fills.length > 0) fills = fallback.fills;
-      }
+      const { fills } = await fetchRegionColorFills(refTemp, delta, {
+        airTemp: weatherSnapshot.temp,
+      });
       if (isStale()) return;
       regionColorFillsKeyRef.current = key;
       setRegionColorFills(fills);

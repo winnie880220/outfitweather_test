@@ -31,6 +31,7 @@ import {
   type TaiwanCounty,
 } from "../../lib/taiwan-county";
 import { colorNameToHex, isLightMapFillHex } from "../lib/color-lexicon";
+import { applyMapPathGradientFill } from "../lib/map-path-gradient-fill";
 import {
   colorHexToRgbCsv,
   playRegionShapeColorPulse,
@@ -159,14 +160,32 @@ function districtStyle(selected: boolean, userLocated = false): L.PathOptions {
   };
 }
 
+type RegionFillPaint = Pick<RegionColorFill, "hex" | "hex2">;
+
+function regionFillOpacity(
+  fill: RegionFillPaint,
+  selected: boolean,
+  dimmed: boolean,
+  userLocated: boolean
+): number {
+  const light =
+    fill.hex2 != null
+      ? isLightMapFillHex(fill.hex) && isLightMapFillHex(fill.hex2)
+      : isLightMapFillHex(fill.hex);
+  if (selected) return 0.92;
+  if (dimmed) return 0.48;
+  if (userLocated) return 0.88;
+  return light ? 0.9 : 0.82;
+}
+
 function pathStyleWithTopColor(
-  hex: string | undefined,
+  fill: RegionFillPaint | undefined,
   selected: boolean,
   dimmed: boolean,
   userLocated: boolean,
   fallback: () => L.PathOptions
 ): L.PathOptions {
-  if (!hex) {
+  if (!fill?.hex) {
     if (userLocated) {
       const base = fallback();
       return {
@@ -179,7 +198,10 @@ function pathStyleWithTopColor(
     return fallback();
   }
 
-  const light = isLightMapFillHex(hex);
+  const light =
+    fill.hex2 != null
+      ? isLightMapFillHex(fill.hex) && isLightMapFillHex(fill.hex2)
+      : isLightMapFillHex(fill.hex);
   const border = selected
     ? "#57534e"
     : userLocated
@@ -189,20 +211,19 @@ function pathStyleWithTopColor(
         : "rgba(68, 64, 60, 0.42)";
 
   return {
-    fillColor: hex,
-    fillOpacity: selected
-      ? 0.92
-      : dimmed
-        ? 0.48
-        : userLocated
-          ? 0.88
-          : light
-            ? 0.9
-            : 0.82,
+    fillColor: fill.hex,
+    fillOpacity: regionFillOpacity(fill, selected, dimmed, userLocated),
     color: border,
     weight: selected || userLocated ? 2.5 : light ? 1.75 : 1.5,
     opacity: dimmed ? 0.72 : 0.95,
   };
+}
+
+function paintPathWithRegionFill(path: L.Path, fill: RegionFillPaint, style: L.PathOptions): void {
+  const opacity =
+    typeof style.fillOpacity === "number" ? style.fillOpacity : 0.82;
+  path.setStyle(style);
+  applyMapPathGradientFill(path, fill, opacity);
 }
 
 function userDistrictLabelIcon(district: TaipeiDistrict): L.DivIcon {
@@ -374,17 +395,17 @@ export function TaiwanOutfitMap({
     mapView === "taipei-districts" && districtsVisibleByZoom;
 
   const countyFillByName = useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, RegionColorFill>();
     for (const fill of regionColorFills) {
-      if (!fill.district) map.set(fill.county, fill.hex);
+      if (!fill.district) map.set(fill.county, fill);
     }
     return map;
   }, [regionColorFills]);
 
   const districtFillByName = useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, RegionColorFill>();
     for (const fill of regionColorFills) {
-      if (fill.district) map.set(fill.district, fill.hex);
+      if (fill.district) map.set(fill.district, fill);
     }
     return map;
   }, [regionColorFills]);
@@ -452,7 +473,7 @@ export function TaiwanOutfitMap({
         !!userCounty &&
         userCounty === name &&
         !selected;
-      const topHex = name ? countyFillByName.get(name) : undefined;
+      const regionFill = name ? countyFillByName.get(name) : undefined;
       if ("setStyle" in layer) {
         const path = layer as L.Path;
         /** 放大分區：大台北市色塊完全隱藏，僅顯示各行政區填色 */
@@ -466,18 +487,18 @@ export function TaiwanOutfitMap({
         }
         /** 縮小台北市視野：整市一塊顯示全市排行第一色（有資料時優先色塊，僅邊框標示目前位置） */
         if (name === TAIPEI_COUNTY && taipeiOverview) {
-          const style = topHex
-            ? pathStyleWithTopColor(topHex, !!selected, false, userLocated, () =>
-                countyStyle(!!selected, false, false)
-              )
-            : pathStyleWithTopColor(undefined, !!selected, false, userLocated, () =>
-                countyStyle(!!selected, false, false)
-              );
-          path.setStyle({
+          const style = pathStyleWithTopColor(
+            regionFill,
+            !!selected,
+            false,
+            userLocated,
+            () => countyStyle(!!selected, false, false)
+          );
+          const merged: L.PathOptions = {
             ...style,
             fillOpacity:
               typeof style.fillOpacity === "number"
-                ? Math.max(style.fillOpacity, topHex ? 0.88 : 0.82)
+                ? Math.max(style.fillOpacity, regionFill ? 0.88 : 0.82)
                 : 0.88,
             color: userLocated
               ? "#4a7ab8"
@@ -486,15 +507,27 @@ export function TaiwanOutfitMap({
                 : "rgba(68, 64, 60, 0.5)",
             weight: selected || userLocated ? 2.5 : 1.75,
             opacity: 0.95,
-          });
+          };
+          if (regionFill) {
+            paintPathWithRegionFill(path, regionFill, merged);
+          } else {
+            path.setStyle(merged);
+          }
           path.options.interactive = true;
           return;
         }
-        path.setStyle(
-          pathStyleWithTopColor(topHex, !!selected, dimmed, userLocated, () =>
-            countyStyle(!!selected, dimmed, false)
-          )
+        const style = pathStyleWithTopColor(
+          regionFill,
+          !!selected,
+          dimmed,
+          userLocated,
+          () => countyStyle(!!selected, dimmed, false)
         );
+        if (regionFill) {
+          paintPathWithRegionFill(path, regionFill, style);
+        } else {
+          path.setStyle(style);
+        }
         path.options.interactive = !(name === TAIPEI_COUNTY && dimmed);
       }
     });
@@ -570,11 +603,19 @@ export function TaiwanOutfitMap({
         selectedRegion?.level === "district" && selectedRegion.district === name;
       const userLocated =
         !!userDistrict && userDistrict === name && !selected;
-      const topHex = name ? districtFillByName.get(name) : undefined;
-      const style = pathStyleWithTopColor(topHex, !!selected, false, userLocated, () =>
-        districtStyle(!!selected, false)
+      const regionFill = name ? districtFillByName.get(name) : undefined;
+      const style = pathStyleWithTopColor(
+        regionFill,
+        !!selected,
+        false,
+        userLocated,
+        () => districtStyle(!!selected, false)
       );
-      path.setStyle({ ...style, stroke: true });
+      if (regionFill) {
+        paintPathWithRegionFill(path, regionFill, { ...style, stroke: true });
+      } else {
+        path.setStyle({ ...style, stroke: true });
+      }
       path.options.interactive = true;
     });
   }, [mapView, selectedRegion, userDistrict, districtFillByName]);
@@ -1286,7 +1327,9 @@ export function TaiwanOutfitMap({
 
         {!selectedRegion && mapReady ? (
           <p className="map-county-hint pointer-events-none absolute bottom-3 left-0 right-0 text-center text-[11px] font-medium leading-snug text-stone-500">
-            <span className="block">填色為該區域穿搭排行第一顏色</span>
+            <span className="block">
+              填色為該區域穿搭排行第一顏色；並列第一時以兩色漸層顯示
+            </span>
             <span className="mt-0.5 block">
               {mapView === "taipei-districts"
                 ? showDistrictLayers

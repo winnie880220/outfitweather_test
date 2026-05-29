@@ -51,6 +51,33 @@ const COLOR_HEX: Record<string, string> = {
   金色: "#c9a227",
   金: "#c9a227",
   銀色: "#b8b4ae",
+  深色: "#57534e",
+  淺色: "#d6d3d1",
+};
+
+/** 單字「色」或 Gemini 模糊色名，不參與地圖排行 */
+const VAGUE_COLOR_NAME = /^(深|淺|亮|暗)?色$/;
+
+/** 寫入 Notion 的別名 → 標準色名（統計時合併票數） */
+const COLOR_CANONICAL: Record<string, string> = {
+  黑: "黑色",
+  白: "白色",
+  米: "米白",
+  灰: "灰色",
+  紅: "紅色",
+  粉: "粉色",
+  橘: "橘色",
+  橙: "橙色",
+  黃: "黃色",
+  卡其: "卡其色",
+  棕: "棕色",
+  咖啡: "咖啡色",
+  綠: "綠色",
+  藍: "藍色",
+  紫: "紫色",
+  金: "金色",
+  深: "深色",
+  淺: "淺色",
 };
 
 function hashHue(input: string): number {
@@ -75,15 +102,34 @@ export function isLightMapFillHex(hex: string): boolean {
   return luminance > 0.82;
 }
 
-export function colorNameToHex(name: string): string {
+/**
+ * 將 Notion／AI 色名正規化為標準色名；無法辨識或過於模糊則回傳 null。
+ * 避免「色」被 key.includes 誤判成「黑色」。
+ */
+export function canonicalColorName(name: string): string | null {
   const trimmed = name.trim();
-  if (!trimmed) return "#a8a29e";
-  const direct = COLOR_HEX[trimmed];
-  if (direct) return direct;
-  for (const [key, hex] of Object.entries(COLOR_HEX)) {
-    if (trimmed.includes(key) || key.includes(trimmed)) return hex;
+  if (!trimmed || VAGUE_COLOR_NAME.test(trimmed)) return null;
+
+  const alias = COLOR_CANONICAL[trimmed];
+  if (alias) return alias;
+  if (COLOR_HEX[trimmed]) return trimmed;
+
+  const keys = Object.keys(COLOR_HEX).sort((a, b) => b.length - a.length);
+  for (const key of keys) {
+    if (trimmed === key) return key;
+    if (key.length >= 2 && trimmed.includes(key)) return key;
   }
-  const hue = hashHue(trimmed);
+
+  if (trimmed.length <= 10) return trimmed;
+  return null;
+}
+
+export function colorNameToHex(name: string): string {
+  const canonical = canonicalColorName(name);
+  if (!canonical) return "#a8a29e";
+  const direct = COLOR_HEX[canonical];
+  if (direct) return direct;
+  const hue = hashHue(canonical);
   return `hsl(${hue}, 42%, 58%)`;
 }
 

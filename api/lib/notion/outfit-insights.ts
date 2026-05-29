@@ -12,7 +12,11 @@ import {
   type TaipeiDistrict,
 } from "../../../lib/taipei-district";
 import type { TaiwanCounty } from "../../../lib/taiwan-county";
-import { colorNameToHex } from "../../../src/lib/color-lexicon";
+import { pickTopRegionColorNames } from "../../../lib/map-region-color-rank";
+import {
+  canonicalColorName,
+  colorNameToHex,
+} from "../../../src/lib/color-lexicon";
 import { queryRecordsByTemperature } from "./query-records";
 import { hydrateRecordPhotoUrls } from "./resolve-photo";
 
@@ -64,6 +68,9 @@ export type RegionColorFill = {
   district?: TaipeiDistrict;
   colorName: string;
   hex: string;
+  /** 與 colorName 並列第一時的第二色 */
+  colorName2?: string;
+  hex2?: string;
 };
 
 const TAG_EMOJI: Record<string, string> = {
@@ -283,7 +290,9 @@ export async function getOutfitInsights(
 
   const upperCounts = countTagFrequency(records, (r) => r.upperBodyTags);
   const lowerCounts = countTagFrequency(records, (r) => r.lowerBodyTags);
-  const colorCounts = countTagFrequency(records, (r) => r.colors);
+  const colorCounts = countTagFrequency(records, (r) =>
+    colorsForRegionAggregation(r)
+  );
 
   const upperTop3 = toTop3(upperCounts, total);
   const lowerTop3 = toTop3(lowerCounts, total);
@@ -307,14 +316,17 @@ export async function getOutfitInsights(
   };
 }
 
-/** 地圖填色：與區域排行榜 colorTop3 相同，僅統計 Color 多選 */
+/** 地圖填色：與區域排行榜 colorTop3 相同，僅統計 Color 多選（正規化色名） */
 function colorsForRegionAggregation(record: ParsedNotionRecord): string[] {
-  return record.colors.map((c) => c.trim()).filter(Boolean);
-}
-
-function pickTopColorName(counts: Map<string, number>): string | null {
-  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  return sorted[0]?.[0] ?? null;
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of record.colors) {
+    const canonical = canonicalColorName(raw);
+    if (!canonical || seen.has(canonical)) continue;
+    seen.add(canonical);
+    out.push(canonical);
+  }
+  return out;
 }
 
 function ensureColorBucket(
@@ -353,10 +365,23 @@ function addRecordColorsToBucket(
 /** 一次查詢後依區域聚合顏色排行第一，供地圖行政區填色 */
 export async function getRegionColorFills(
   temp: number,
-  delta = 1
+  delta = 1,
+  options?: { fallbackTemp?: number }
 ): Promise<RegionColorFill[]> {
   const rounded = Math.round(temp);
-  const records = await queryRecordsByTemperature(rounded, delta);
+  const fallbackRounded =
+    options?.fallbackTemp != null && Number.isFinite(options.fallbackTemp)
+      ? Math.round(options.fallbackTemp)
+      : null;
+
+  let records = await queryRecordsByTemperature(rounded, delta);
+  if (
+    records.length === 0 &&
+    fallbackRounded != null &&
+    fallbackRounded !== rounded
+  ) {
+    records = await queryRecordsByTemperature(fallbackRounded, delta);
+  }
   const buckets = new Map<
     string,
     { county: TaiwanCounty; district?: TaipeiDistrict; colorCounts: Map<string, number> }
@@ -390,14 +415,20 @@ export async function getRegionColorFills(
 
   const fills: RegionColorFill[] = [];
   for (const [regionKeyValue, bucket] of buckets) {
-    const top = pickTopColorName(bucket.colorCounts);
+    const top = pickTopRegionColorNames(bucket.colorCounts);
     if (!top) continue;
     fills.push({
       regionKey: regionKeyValue,
       county: bucket.county,
       ...(bucket.district ? { district: bucket.district } : {}),
-      colorName: top,
-      hex: colorNameToHex(top),
+      colorName: top.colorName,
+      hex: colorNameToHex(top.colorName),
+      ...(top.colorName2
+        ? {
+            colorName2: top.colorName2,
+            hex2: colorNameToHex(top.colorName2),
+          }
+        : {}),
     });
   }
 
@@ -424,5 +455,6 @@ export async function getRegionTopColorForLocation(
   if (!fill && region.level === "district") {
     fill = fills.find((f) => f.regionKey === region.county && !f.district);
   }
-  return fill?.colorName ?? null;
+  if (!fill) return null;
+  return fill.colorName2 ? `${fill.colorName}・${fill.colorName2}` : fill.colorName;
 }
