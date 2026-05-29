@@ -80,7 +80,7 @@ function FilteredEmptyState({
       <p className="text-sm font-medium text-stone-700">目前沒有{label}穿搭靈感</p>
       <p className="mt-1 text-xs text-stone-500">
         {totalInRegion > 0
-          ? `此溫區與地區共有 ${totalInRegion} 筆穿搭，請切換「全部」查看，或確認 Notion 的 Gender 欄位為「${label}」。`
+          ? `此溫區與地區共有 ${totalInRegion} 筆穿搭，請切換「全部」查看。`
           : "試試切換「全部」、調整地區選單，或確認體感溫度區間內是否有紀錄。"}
       </p>
     </div>
