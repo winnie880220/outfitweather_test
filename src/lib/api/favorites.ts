@@ -39,10 +39,24 @@ export async function toggleOutfitFavorite(
   });
 }
 
-/** 查詢收藏者 Favorite 內的全部 ID 對應穿搭（彙整所有使用者列） */
+/** 查詢今日 active 列 Favorite 內的穿搭卡片 */
 export async function fetchUserFavorites(
-  favoriterUserName: string
+  favoriterUserName: string,
+  options?: {
+    activeUserRecord?: ActiveUserRecord | null;
+    temp?: number;
+    apparentTemp?: number;
+  }
 ): Promise<InspirationItem[]> {
   const params = new URLSearchParams({ userName: favoriterUserName.trim() });
+  if (options?.activeUserRecord?.pageId) {
+    params.set("activePageId", options.activeUserRecord.pageId);
+  }
+  if (typeof options?.temp === "number" && !Number.isNaN(options.temp)) {
+    params.set("temp", String(Math.round(options.temp)));
+  }
+  if (typeof options?.apparentTemp === "number" && !Number.isNaN(options.apparentTemp)) {
+    params.set("apparentTemp", String(Math.round(options.apparentTemp)));
+  }
   return apiGet<InspirationItem[]>(`/api/favorites?${params}`);
 }

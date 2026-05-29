@@ -23,7 +23,7 @@ export function FavoritesScreen({
   onRequestExit,
 }: {
   cards: InspirationItem[];
-  /** 未依溫區篩選前的收藏總數 */
+  /** 今日 active 列上、未依溫區篩選前的收藏數 */
   totalFavoriteCount?: number;
   /** 目前顯示用溫區（體感 ±1 或 ±2） */
   favoriteTempBand?: { min: number; max: number } | null;
@@ -40,7 +40,7 @@ export function FavoritesScreen({
   return (
     <div className="inspiration-feed-layout inspiration-feed-layout--favorites app-screen-gradient">
       <FeedScreenHeader
-        title="收藏"
+        title="今日收藏"
         weather={weather}
         insights={insights}
         onRequestExit={onRequestExit}
@@ -53,18 +53,18 @@ export function FavoritesScreen({
           </div>
           {totalFavoriteCount > 0 && weather && favoriteTempBand ? (
             <>
-              <p className="text-sm font-medium text-stone-700">此溫區尚無收藏</p>
+              <p className="text-sm font-medium text-stone-700">此溫區尚無今日收藏</p>
               <p className="mt-2 max-w-[280px] text-xs leading-relaxed text-stone-500">
                 目前體感約 {Math.round(weatherInsightReferenceTemp(weather))}°C，僅顯示{" "}
-                {favoriteTempBand.min}–{favoriteTempBand.max}°C 的穿搭。你另有{" "}
+                {favoriteTempBand.min}–{favoriteTempBand.max}°C 的穿搭。你今天另有{" "}
                 {totalFavoriteCount} 筆收藏在其他溫區。
               </p>
             </>
           ) : (
             <>
-              <p className="text-sm font-medium text-stone-700">還沒有收藏</p>
+              <p className="text-sm font-medium text-stone-700">今天還沒有收藏</p>
               <p className="mt-2 max-w-[260px] text-xs leading-relaxed text-stone-500">
-                在靈感頁點卡片右上角的愛心，把喜歡的穿搭加入這裡。
+                在靈感頁點卡片右上角的愛心，收藏會記在今天的清單裡。
               </p>
             </>
           )}
@@ -73,7 +73,7 @@ export function FavoritesScreen({
         <div
           ref={reelScrollRef}
           className="inspiration-feed-scroll inspiration-feed-scroll--reels app-scroll app-inset min-h-0"
-          aria-label="收藏穿搭，上下滑動切換"
+          aria-label="今日收藏穿搭，上下滑動切換"
         >
           {cards.map((card) => (
             <div key={card.id} className="inspiration-feed-reel-slide">

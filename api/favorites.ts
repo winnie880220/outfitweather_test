@@ -18,7 +18,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === "GET") {
       const favoriterUserName =
         typeof req.query.userName === "string" ? req.query.userName : "";
-      const result = await queryFavoritedOutfits(favoriterUserName);
+      const activePageId =
+        typeof req.query.activePageId === "string" ? req.query.activePageId : undefined;
+      const tempRaw = req.query.temp;
+      const apparentTempRaw = req.query.apparentTemp;
+      const result = await queryFavoritedOutfits(favoriterUserName, {
+        activePageId,
+        profile: {
+          temp: typeof tempRaw === "string" ? Number(tempRaw) : undefined,
+          apparentTemp:
+            typeof apparentTempRaw === "string" ? Number(apparentTempRaw) : undefined,
+        },
+      });
       return sendJson(res, result.ok ? 200 : 502, result);
     }
 

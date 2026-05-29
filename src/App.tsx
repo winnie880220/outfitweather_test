@@ -2509,14 +2509,19 @@ export default function App() {
     }
     setInspirationFavorites(loadInspirationFavorites(trimmed));
     try {
-      const cards = await fetchUserFavorites(trimmed);
+      const session = loadSession();
+      const cards = await fetchUserFavorites(trimmed, {
+        activeUserRecord: session.activeUserRecord ?? activeUserRecord,
+        temp: weather?.temp,
+        apparentTemp: weather?.apparentTemp,
+      });
       const fromServer = favoritesStateFromCards(trimmed, cards);
       setInspirationFavorites(fromServer);
       saveInspirationFavorites(fromServer);
     } catch (error) {
       console.warn("fetchUserFavorites:", error);
     }
-  }, []);
+  }, [activeUserRecord, weather?.temp, weather?.apparentTemp]);
 
   useEffect(() => {
     void syncUserFavorites(userName);
@@ -2876,10 +2881,21 @@ export default function App() {
       return;
     }
     if (favoriteBusyId === card.id) return;
+
+    const willFavorite = !saved;
+    const snapshot =
+      inspirationFavorites.userName === trimmedName
+        ? inspirationFavorites
+        : loadInspirationFavorites(trimmedName);
+    const optimistic = willFavorite
+      ? addInspirationFavorite({ ...snapshot, userName: trimmedName }, card)
+      : removeInspirationFavorite({ ...snapshot, userName: trimmedName }, card.id);
+    setInspirationFavorites(optimistic);
+
     setFavoriteBusyId(card.id);
     try {
       const session = loadSession();
-      const result = await toggleOutfitFavorite(trimmedName, card.id, !saved, {
+      const result = await toggleOutfitFavorite(trimmedName, card.id, willFavorite, {
         activeUserRecord: session.activeUserRecord ?? activeUserRecord,
         location: weather?.locationName ?? userLocation?.name,
         gender: userGender,
@@ -2891,23 +2907,11 @@ export default function App() {
       setActiveUserRecord(active);
       saveSession({ activeUserRecord: active });
       setNotionPageId(active.pageId);
-      try {
-        const cards = await fetchUserFavorites(trimmedName);
-        const fromServer = favoritesStateFromCards(trimmedName, cards);
-        setInspirationFavorites(fromServer);
-        saveInspirationFavorites(fromServer);
-      } catch {
-        setInspirationFavorites((prev) => {
-          const base =
-            prev.userName === trimmedName ? prev : loadInspirationFavorites(trimmedName);
-          return saved
-            ? removeInspirationFavorite(base, card.id)
-            : addInspirationFavorite(base, card);
-        });
-      }
-      showToast(saved ? "已取消收藏" : "已加入收藏 ♡");
+      showToast(willFavorite ? "已加入收藏 ♡" : "已取消收藏");
     } catch (error) {
       console.warn("toggleOutfitFavorite:", error);
+      setInspirationFavorites(snapshot);
+      saveInspirationFavorites(snapshot);
       const msg = error instanceof Error ? error.message : "";
       showToast(
         msg.includes("MAX_WRITE_OPERATIONS") || msg.includes("寫入次數")
@@ -3417,7 +3421,7 @@ export default function App() {
               {[
                 { id: "home", icon: <Home size={20} />, label: "首頁" },
                 { id: "inspiration", icon: <Sparkles size={20} />, label: "靈感" },
-                { id: "favorites", icon: <Heart size={20} />, label: "收藏" },
+                { id: "favorites", icon: <Heart size={20} />, label: "今日收藏" },
                 { id: "record", icon: <Camera size={20} />, label: "記錄" },
                 { id: "feedback", icon: <Smile size={20} />, label: "回饋" },
               ].map((tab) => (

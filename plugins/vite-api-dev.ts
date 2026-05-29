@@ -309,7 +309,16 @@ async function handleApi(
       }
       if (req.method === "GET") {
         const favoriterUserName = url.searchParams.get("userName") ?? "";
-        const result = await queryFavoritedOutfits(favoriterUserName);
+        const activePageId = url.searchParams.get("activePageId") ?? undefined;
+        const tempRaw = url.searchParams.get("temp");
+        const apparentTempRaw = url.searchParams.get("apparentTemp");
+        const result = await queryFavoritedOutfits(favoriterUserName, {
+          activePageId,
+          profile: {
+            temp: tempRaw ? Number(tempRaw) : undefined,
+            apparentTemp: apparentTempRaw ? Number(apparentTempRaw) : undefined,
+          },
+        });
         return send(res, result.ok ? 200 : 502, result);
       }
       if (req.method === "POST") {

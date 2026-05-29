@@ -1,6 +1,6 @@
 import type { ApiResponse } from "../types";
 import { getNotionDatabaseId, isNotionConfigured } from "../env";
-import { queryRecordsByUserName, queryRecordsByRecordIds } from "./query-records";
+import { queryRecordsByRecordIds } from "./query-records";
 import { notionRequest } from "./client";
 import { readRecordIdFromProperties, type NotionProp } from "./parse-page";
 import {
@@ -23,14 +23,12 @@ type DatabaseResponse = {
   properties: Record<string, { type: string }>;
 };
 
+type OutfitPageMeta = {
+  owner: string;
+  recordId: string;
+};
+
 let cachedIdFieldType: string | null = null;
-
-const NOTION_WRITE_GAP_MS = 220;
-const MAX_LEGACY_FAVORITE_ROW_PATCHES = 24;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function isNotionWriteQuotaError(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
@@ -118,7 +116,8 @@ async function setFavoriteIds(
   });
 }
 
-async function fetchOutfitRecordId(outfitPageId: string): Promise<string> {
+/** 一次 GET 穿搭 page：作者 + ID 欄位 */
+async function fetchOutfitPageMeta(outfitPageId: string): Promise<OutfitPageMeta> {
   const page = await notionRequest<PageResponse>(`/pages/${outfitPageId}`, {
     method: "GET",
   });
@@ -126,14 +125,74 @@ async function fetchOutfitRecordId(outfitPageId: string): Promise<string> {
   if (!recordId) {
     throw new Error("此穿搭缺少 ID 欄位，無法收藏");
   }
-  return recordId;
+  return {
+    owner: pageOwnerName(page.properties).trim(),
+    recordId,
+  };
 }
 
-async function fetchOutfitPageOwner(outfitPageId: string): Promise<string> {
-  const page = await notionRequest<PageResponse>(`/pages/${outfitPageId}`, {
+async function readActiveFavoriteIds(activePageId: string): Promise<string[]> {
+  const page = await notionRequest<PageResponse>(`/pages/${activePageId}`, {
     method: "GET",
   });
-  return pageOwnerName(page.properties).trim();
+  return readFavoriteIds(page.properties);
+}
+
+/** 加入收藏：GET active → 合併 ID → PATCH */
+async function addFavoriteOnActiveRow(
+  activePageId: string,
+  outfitRecordId: string
+): Promise<string[]> {
+  const current = await readActiveFavoriteIds(activePageId);
+  const merged = [...current];
+  if (!merged.some((id) => favoriteRecordIdsMatch(id, outfitRecordId))) {
+    merged.push(outfitRecordId);
+  }
+  await setFavoriteIds(activePageId, merged);
+  return merged;
+}
+
+/** 取消收藏：只更新今日 active 列 */
+async function removeFavoriteOnActiveRow(
+  activePageId: string,
+  outfitRecordId: string
+): Promise<string[]> {
+  const current = await readActiveFavoriteIds(activePageId);
+  const next = withoutFavoriteRecordId(current, outfitRecordId);
+  await setFavoriteIds(activePageId, next);
+  return next;
+}
+
+async function resolveActivePageId(
+  favoriter: string,
+  options?: {
+    activePageId?: string;
+    activeRecord?: ActiveUserRecordState | null;
+    profile?: Partial<
+      Pick<
+        ActiveUserRecordContext,
+        "location" | "gender" | "temp" | "apparentTemp" | "weather"
+      >
+    >;
+  }
+): Promise<string | null> {
+  const trimmedPageId = options?.activePageId?.trim();
+  if (trimmedPageId) return trimmedPageId;
+
+  const temp = options?.profile?.temp ?? 26;
+  const ensured = await ensureActiveUserRecord(
+    {
+      userName: favoriter,
+      temp,
+      apparentTemp: options?.profile?.apparentTemp ?? temp,
+      location: options?.profile?.location,
+      gender: options?.profile?.gender,
+      weather: options?.profile?.weather,
+    },
+    options?.activeRecord ?? null
+  );
+  if (!ensured.ok || !ensured.data) return null;
+  return ensured.data.pageId;
 }
 
 export type ToggleFavoriteParams = {
@@ -150,6 +209,12 @@ export type ToggleFavoriteParams = {
   >;
 };
 
+export type QueryFavoritedOutfitsOptions = {
+  activePageId?: string;
+  activeRecord?: ActiveUserRecordState | null;
+  profile?: ToggleFavoriteParams["profile"];
+};
+
 export async function toggleOutfitFavorite(
   params: ToggleFavoriteParams
 ): Promise<
@@ -161,14 +226,13 @@ export async function toggleOutfitFavorite(
   if (!favoriter) return { ok: false, error: "缺少 favoriterUserName" };
   if (!outfitPageId) return { ok: false, error: "缺少 outfitPageId" };
 
-  const owner = await fetchOutfitPageOwner(outfitPageId);
-  if (params.favorited && owner && owner === favoriter) {
-    return { ok: false, error: "無法收藏自己的穿搭" };
-  }
-
   let outfitRecordId: string;
   try {
-    outfitRecordId = await fetchOutfitRecordId(outfitPageId);
+    const meta = await fetchOutfitPageMeta(outfitPageId);
+    if (params.favorited && meta.owner && meta.owner === favoriter) {
+      return { ok: false, error: "無法收藏自己的穿搭" };
+    }
+    outfitRecordId = meta.recordId;
   } catch (error) {
     const message = error instanceof Error ? error.message : "無法讀取穿搭 ID";
     return { ok: false, error: message };
@@ -194,27 +258,9 @@ export async function toggleOutfitFavorite(
   const active = ensured.data;
 
   try {
-    if (params.favorited) {
-      const page = await notionRequest<PageResponse>(`/pages/${active.pageId}`, {
-        method: "GET",
-      });
-      const current = readFavoriteIds(page.properties);
-      const merged = [...current];
-      if (!merged.some((id) => favoriteRecordIdsMatch(id, outfitRecordId))) {
-        merged.push(outfitRecordId);
-      }
-      await setFavoriteIds(active.pageId, merged);
-    } else {
-      await removeFavoriteIdFromAllUserRows(
-        favoriter,
-        outfitRecordId,
-        active.pageId
-      );
-    }
-
     const favoriteIds = params.favorited
-      ? await collectFavoriteIdsForUser(favoriter)
-      : await collectFavoriteIdsForUser(favoriter, active.pageId);
+      ? await addFavoriteOnActiveRow(active.pageId, outfitRecordId)
+      : await removeFavoriteOnActiveRow(active.pageId, outfitRecordId);
 
     return {
       ok: true,
@@ -237,83 +283,10 @@ export async function toggleOutfitFavorite(
   }
 }
 
-/**
- * 彙整收藏 ID。
- * - 未傳 activePageId：合併所有歷史列（相容舊資料）
- * - 傳 activePageId：僅讀當日 active 列（取消收藏後以此為準，避免重複寫入）
- */
-async function collectFavoriteIdsForUser(
-  favoriterUserName: string,
-  canonicalActivePageId?: string
-): Promise<string[]> {
-  const pages = await queryRecordsByUserName(favoriterUserName);
-
-  if (canonicalActivePageId) {
-    const active = pages.find((p) => p.id === canonicalActivePageId);
-    return active ? readFavoriteIds(active.properties) : [];
-  }
-
-  const ids = new Set<string>();
-  for (const page of pages) {
-    for (const id of readFavoriteIds(page.properties)) {
-      ids.add(id);
-    }
-  }
-  return [...ids];
-}
-
-function mergeFavoriteIdsFromPages(
-  pages: Array<{ id: string; properties: Record<string, NotionProp> }>
-): string[] {
-  const ids = new Set<string>();
-  for (const page of pages) {
-    for (const id of readFavoriteIds(page.properties)) {
-      ids.add(id);
-    }
-  }
-  return [...ids];
-}
-
-/** 取消收藏：先寫入 active 列完整清單，再循序清除歷史列上的殘留 ID */
-async function removeFavoriteIdFromAllUserRows(
-  favoriterUserName: string,
-  outfitRecordId: string,
-  activePageId: string
-): Promise<void> {
-  const pages = await queryRecordsByUserName(favoriterUserName);
-  const merged = mergeFavoriteIdsFromPages(pages);
-  const nextOnActive = withoutFavoriteRecordId(merged, outfitRecordId);
-
-  await setFavoriteIds(activePageId, nextOnActive);
-
-  const legacyPages = pages
-    .filter((p) => p.id !== activePageId)
-    .filter((p) =>
-      readFavoriteIds(p.properties).some((id) =>
-        favoriteRecordIdsMatch(id, outfitRecordId)
-      )
-    )
-    .slice(0, MAX_LEGACY_FAVORITE_ROW_PATCHES);
-
-  for (let i = 0; i < legacyPages.length; i += 1) {
-    if (i > 0) await sleep(NOTION_WRITE_GAP_MS);
-    const page = legacyPages[i]!;
-    const current = readFavoriteIds(page.properties);
-    const next = withoutFavoriteRecordId(current, outfitRecordId);
-    try {
-      await setFavoriteIds(page.id, next);
-    } catch (error) {
-      if (isNotionWriteQuotaError(error)) {
-        throw new Error(notionQuotaErrorMessage());
-      }
-      throw error;
-    }
-  }
-}
-
-/** 彙整使用者所有列上的 Favorite（ID 值），回傳對應穿搭卡片 */
+/** 僅讀取「今日 active 列」Favorite，不回溯歷史列 */
 export async function queryFavoritedOutfits(
-  favoriterUserName: string
+  favoriterUserName: string,
+  options?: QueryFavoritedOutfitsOptions
 ): Promise<ApiResponse<InspirationItem[]>> {
   const favoriter = favoriterUserName.trim();
   if (!favoriter) {
@@ -325,7 +298,12 @@ export async function queryFavoritedOutfits(
   }
 
   try {
-    const recordIds = await collectFavoriteIdsForUser(favoriter);
+    const activePageId = await resolveActivePageId(favoriter, options);
+    if (!activePageId) {
+      return { ok: true, data: [], source: "notion" };
+    }
+
+    const recordIds = await readActiveFavoriteIds(activePageId);
     if (recordIds.length === 0) {
       return { ok: true, data: [], source: "notion" };
     }
