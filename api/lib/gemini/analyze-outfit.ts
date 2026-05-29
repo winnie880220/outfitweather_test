@@ -1,11 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
 import { env, isGeminiConfigured } from "../env";
 import {
-  filterAllowedTags,
-  LOWER_BODY_TAGS,
   normalizeOutfitColors,
+  normalizeOutfitTagNames,
   OUTFIT_ANALYSIS_PROMPT,
-  UPPER_BODY_TAGS,
+  resolveTagName,
 } from "./outfit-taxonomy";
 
 export type OutfitTagAnchor = {
@@ -77,19 +76,20 @@ function clampPct(value: unknown): number | null {
 
 function parseTagAnchors(
   raw: unknown,
-  allowedLabels: Set<string>
+  knownTags: string[]
 ): OutfitTagAnchor[] {
-  if (!Array.isArray(raw)) return [];
+  if (!Array.isArray(raw) || knownTags.length === 0) return [];
   const anchors: OutfitTagAnchor[] = [];
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
     const row = item as Record<string, unknown>;
     const label = typeof row.label === "string" ? row.label.trim() : "";
-    if (!label || !allowedLabels.has(label)) continue;
+    const resolved = label ? resolveTagName(label, knownTags) : null;
+    if (!resolved) continue;
     const anchorX = clampPct(row.anchorX);
     const anchorY = clampPct(row.anchorY);
     if (anchorX === null || anchorY === null) continue;
-    anchors.push({ label, anchorX, anchorY });
+    anchors.push({ label: resolved, anchorX, anchorY });
   }
   return anchors;
 }
@@ -207,16 +207,13 @@ async function generateWithModel(
     throw new Error("Gemini 回傳格式無法解析");
   }
 
-  const normalizedUpperBodyTags = filterAllowedTags(
-    coerceStringArray(parsed.upperBodyTags),
-    UPPER_BODY_TAGS
-  );
-  const normalizedLowerBodyTags = filterAllowedTags(
-    coerceStringArray(parsed.lowerBodyTags),
-    LOWER_BODY_TAGS
+  const normalizedUpperBodyTags = normalizeOutfitTagNames(parsed.upperBodyTags, 6);
+  const normalizedLowerBodyTags = normalizeOutfitTagNames(
+    parsed.lowerBodyTags,
+    2
   ).slice(0, 1);
-  const allowedLabels = new Set([...normalizedUpperBodyTags, ...normalizedLowerBodyTags]);
-  const tagAnchors = parseTagAnchors(parsed.tagAnchors, allowedLabels);
+  const knownTags = [...normalizedUpperBodyTags, ...normalizedLowerBodyTags];
+  const tagAnchors = parseTagAnchors(parsed.tagAnchors, knownTags);
   const colors = normalizeOutfitColors(parsed.colors);
 
   return {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import L from "leaflet";
 import { feature } from "topojson-client";
 import type { Feature, FeatureCollection, Geometry } from "geojson";
@@ -22,7 +23,7 @@ import {
   isTaiwanCounty,
   type TaiwanCounty,
 } from "../../lib/taiwan-county";
-import { isLightMapFillHex } from "../lib/color-lexicon";
+import { colorNameToHex, isLightMapFillHex } from "../lib/color-lexicon";
 import type { RegionColorFill } from "../lib/api/region-color-fills";
 import type { WeatherData } from "../types/api";
 import "leaflet/dist/leaflet.css";
@@ -73,6 +74,11 @@ function showTaipeiCountyPath(path: L.Path): void {
 }
 
 export type MapViewMode = "counties" | "taipei-districts";
+type MapColorJoinAnimation = {
+  id: number;
+  region: MapRegion;
+  colorName: string;
+};
 
 function countyStyle(
   selected: boolean,
@@ -272,6 +278,7 @@ function MapWeatherOverlay({
 
 export function TaiwanOutfitMap({
   regionColorFills,
+  mapColorJoinAnimation,
   weather,
   weatherLoading,
   userCounty,
@@ -284,6 +291,7 @@ export function TaiwanOutfitMap({
 }: {
   /** 各區顏色排行第一，填滿行政區／縣市形狀 */
   regionColorFills: RegionColorFill[];
+  mapColorJoinAnimation: MapColorJoinAnimation | null;
   weather: WeatherData | null;
   weatherLoading: boolean;
   userCounty: TaiwanCounty | null;
@@ -320,6 +328,15 @@ export function TaiwanOutfitMap({
   const [mapReady, setMapReady] = useState(false);
   const [districtsReady, setDistrictsReady] = useState(false);
   const [districtsVisibleByZoom, setDistrictsVisibleByZoom] = useState(false);
+  const [colorJoinFx, setColorJoinFx] = useState<{
+    id: number;
+    left: number;
+    top: number;
+    colorName: string;
+    colorHex: string;
+    label: string;
+  } | null>(null);
+  const colorJoinTimerRef = useRef<number | null>(null);
 
   mapInteractionRef.current = {
     mapView,
@@ -876,8 +893,50 @@ export function TaiwanOutfitMap({
       if (mapPaintRafRef.current != null) {
         cancelAnimationFrame(mapPaintRafRef.current);
       }
+      if (colorJoinTimerRef.current != null) {
+        window.clearTimeout(colorJoinTimerRef.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (!mapColorJoinAnimation || !mapReady) return;
+    const map = mapRef.current;
+    const frame = containerRef.current;
+    if (!map || !frame) return;
+
+    const target = mapColorJoinAnimation.region;
+    const targetLatLng =
+      target.level === "district"
+        ? districtBoundsRef.current.get(target.district)?.getCenter() ??
+          L.latLng(TAIPEI_DISTRICT_CENTROIDS[target.district])
+        : countyBoundsRef.current.get(target.county)?.getCenter() ??
+          L.latLng(COUNTY_CENTROIDS[target.county]);
+
+    const point = map.latLngToContainerPoint(targetLatLng);
+    const rect = frame.getBoundingClientRect();
+    const left = Math.max(24, Math.min(rect.width - 24, point.x));
+    const top = Math.max(24, Math.min(rect.height - 24, point.y));
+    const colorName = mapColorJoinAnimation.colorName;
+
+    setColorJoinFx({
+      id: mapColorJoinAnimation.id,
+      left,
+      top,
+      colorName,
+      colorHex: colorNameToHex(colorName),
+      label: regionLabel(target),
+    });
+
+    if (colorJoinTimerRef.current != null) {
+      window.clearTimeout(colorJoinTimerRef.current);
+    }
+    colorJoinTimerRef.current = window.setTimeout(() => {
+      setColorJoinFx((prev) =>
+        prev?.id === mapColorJoinAnimation.id ? null : prev
+      );
+    }, 1650);
+  }, [mapColorJoinAnimation, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1053,6 +1112,30 @@ export function TaiwanOutfitMap({
             </span>
           </p>
         ) : null}
+
+        <AnimatePresence>
+          {colorJoinFx ? (
+            <motion.div
+              key={colorJoinFx.id}
+              className="map-color-join-fx"
+              style={{ left: colorJoinFx.left, top: colorJoinFx.top }}
+              initial={{ opacity: 0, scale: 0.58, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 1.12 }}
+              transition={{ duration: 0.32 }}
+            >
+              <span className="map-color-join-fx__halo" aria-hidden />
+              <span
+                className="map-color-join-fx__dot"
+                style={{ backgroundColor: colorJoinFx.colorHex }}
+                aria-hidden
+              />
+              <span className="map-color-join-fx__label">
+                +{colorJoinFx.colorName} 加入 {colorJoinFx.label}
+              </span>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </div>
     </section>
   );

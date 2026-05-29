@@ -62,6 +62,7 @@ import { limitOutfitColors } from "../lib/outfit-colors";
 import {
   isSameRegion,
   locationPickerToRegion,
+  parseLocationToRegion,
   mapRegionToLocation,
   regionKey,
   regionLabel,
@@ -196,6 +197,11 @@ function isRateLimitedError(error: unknown): boolean {
 type Screen = "welcome" | "home" | "inspiration" | "favorites" | "record" | "feedback";
 
 type Outfit = InspirationItem;
+type MapColorJoinAnimation = {
+  id: number;
+  region: MapRegion;
+  colorName: string;
+};
 
 // --- Mock Data ---
 const INITIAL_WARDROBE: Outfit[] = [
@@ -595,6 +601,7 @@ const HomeScreen = ({
   regionInsightsLoading,
   onOpenRegionInspiration,
   showPendingBanner,
+  mapColorJoinAnimation,
   onContinuePending,
   onRequestExit,
 }: {
@@ -617,6 +624,7 @@ const HomeScreen = ({
   regionInsightsLoading: boolean;
   onOpenRegionInspiration: () => void;
   showPendingBanner: boolean;
+  mapColorJoinAnimation: MapColorJoinAnimation | null;
   onContinuePending: () => void;
   onRequestExit: () => void;
 }) => (
@@ -643,6 +651,7 @@ const HomeScreen = ({
       <div className="home-map-stack relative flex min-h-0 flex-1 flex-col">
         <TaiwanOutfitMap
           regionColorFills={regionColorFills}
+          mapColorJoinAnimation={mapColorJoinAnimation}
           weather={mapWeather}
           weatherLoading={mapWeatherLoading}
           userCounty={userCounty}
@@ -1297,6 +1306,8 @@ export default function App() {
   const [showPendingExitBlock, setShowPendingExitBlock] = useState(false);
   const [feedbackShareSnapshot, setFeedbackShareSnapshot] =
     useState<FeedbackShareSnapshot | null>(null);
+  const [mapColorJoinAnimation, setMapColorJoinAnimation] =
+    useState<MapColorJoinAnimation | null>(null);
   const [currentTime, setCurrentTime] = useState("");
 
   const showToast = (msg: string) => setToastMsg(msg);
@@ -2254,11 +2265,23 @@ export default function App() {
   };
 
   const dismissFeedbackShareOverlay = useCallback(() => {
+    const snapshot = feedbackShareSnapshot;
     setFeedbackShareSnapshot(null);
     setFeelSet(false);
     setFeedbackDesc("尚未標記");
     setScreen("home");
-  }, []);
+    const colorName = limitOutfitColors(snapshot?.analysis?.colors ?? [])[0];
+    const region =
+      parseLocationToRegion(snapshot?.context.locationName ?? "") ??
+      locationPickerToRegion(locationPicker);
+    if (colorName) {
+      setMapColorJoinAnimation({
+        id: Date.now(),
+        region,
+        colorName,
+      });
+    }
+  }, [feedbackShareSnapshot, locationPicker]);
 
   const submitFeedback = async (
     metrics: {
@@ -2408,6 +2431,7 @@ export default function App() {
                   onSelectRegion={setSelectedRegion}
                   regionInsights={regionInsights}
                   regionInsightsLoading={regionInsightsLoading}
+                  mapColorJoinAnimation={mapColorJoinAnimation}
                   onOpenRegionInspiration={() => {
                     if (!selectedRegion) return;
                     setInspirationDrilldownRegion(selectedRegion);
