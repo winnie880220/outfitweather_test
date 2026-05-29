@@ -11,7 +11,11 @@ import {
   getRegionColorFills,
   getRegionColorFillsForLocales,
 } from "../api/lib/notion/outfit-insights";
-import { getMapColorsBundle } from "../api/lib/notion/map-colors";
+import {
+  getMapColorsBundle,
+  getMapDataRegionsFromRecords,
+  getMapRegionsWithColorFills,
+} from "../api/lib/notion/map-colors";
 import { getRecordByPageId } from "../api/lib/notion/get-record";
 import { createRecordInNotion, updateRecordInNotion } from "../api/lib/notion/records";
 import {
@@ -140,6 +144,23 @@ async function handleApi(
     if (url.pathname === "/api/map-colors" && req.method === "GET") {
       if (!isNotionOk()) {
         return send(res, 503, { ok: false, error: "Notion 未設定" });
+      }
+      if (url.searchParams.get("scope") === "regions") {
+        const temp = parseFloat(url.searchParams.get("temp") ?? "");
+        if (!Number.isNaN(temp)) {
+          const delta = parseFloat(url.searchParams.get("delta") ?? "1") || 1;
+          const airTempRaw = url.searchParams.get("airTemp");
+          const airTempParsed = airTempRaw ? parseFloat(airTempRaw) : Number.NaN;
+          const airTemp = Number.isNaN(airTempParsed) ? undefined : airTempParsed;
+          const { regions, fills } = await getMapRegionsWithColorFills(
+            temp,
+            delta,
+            airTemp
+          );
+          return send(res, 200, { ok: true, data: { regions, fills }, source: "notion" });
+        }
+        const regions = await getMapDataRegionsFromRecords();
+        return send(res, 200, { ok: true, data: { regions }, source: "notion" });
       }
       const { points, regions } = await getMapColorsBundle();
       return send(res, 200, { ok: true, data: { points, regions }, source: "notion" });

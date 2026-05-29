@@ -3,8 +3,11 @@ export { analyzeOutfit, type OutfitAnalysis, type OutfitTagAnchor } from "./outf
 export { fetchOutfitInsights } from "./outfit-insights";
 export type { MapColorPoint, MapColorsData, MapDataRegion } from "./map-colors";
 export { fetchMapColors } from "./map-colors";
-export { fetchMapDataRegions } from "./map-data-regions";
-export type { MapDataRegionsData } from "./map-data-regions";
+export {
+  fetchMapDataRegions,
+  fetchMapBootstrapWithFills,
+} from "./map-data-regions";
+export type { MapBootstrapData, MapDataRegionsData } from "./map-data-regions";
 export {
   fetchRegionColorFills,
   fetchRegionColorFillsByLocale,

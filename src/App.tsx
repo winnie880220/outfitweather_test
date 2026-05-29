@@ -38,7 +38,7 @@ import {
   fetchCurrentWeather,
   fetchOutfitInsights,
   fetchRegionColorFillsByLocale,
-  fetchMapDataRegions,
+  fetchMapBootstrapWithFills,
   reverseGeocode,
   updateRecord,
 } from "./lib/api";
@@ -83,10 +83,16 @@ import {
 import { parseLocationToCounty, type TaiwanCounty } from "../lib/taiwan-county";
 import {
   buildMapFillLocaleSpecs,
+  buildMapFillSpecsForDataRegions,
   buildPriorityLocaleWeatherTargets,
+  getInsightTempDeltaFromWeather,
   type MapFillLocaleSpec,
 } from "../lib/map-fill-locales";
-import { fetchLocaleWeatherMap } from "./lib/fetch-locale-weathers";
+import { fetchLocaleWeatherMapProgressive } from "./lib/fetch-locale-weathers";
+import {
+  readMapBootstrapCache,
+  writeMapBootstrapCache,
+} from "./lib/map-data-regions-cache";
 import { captureVideoFrame, compressDataUrl } from "./lib/image";
 import { hydratePendingRecordFromNotion } from "./lib/pending-record-hydrate";
 import { buildRecordUrl, clearRecordFromUrl, getRecordIdFromUrl } from "./lib/record-url";
@@ -245,6 +251,10 @@ function mergeRegionColorFills(
     next = mergeRegionColorFill(next, fill);
   }
   return next;
+}
+
+function mapFillSpecSig(spec: MapFillLocaleSpec): string {
+  return `${Math.round(spec.refTemp)}@d${spec.delta}`;
 }
 
 function isRateLimitedError(error: unknown): boolean {
@@ -1439,7 +1449,15 @@ export default function App() {
   const regionInsightsLastRequestAtRef = useRef<Map<string, number>>(new Map());
   const regionColorFillsLastRequestAtRef = useRef<Map<string, number>>(new Map());
   const localeWeatherFetchIdRef = useRef(0);
-  const mapFillSyncedKeysRef = useRef<Set<string>>(new Set());
+  /** 各區已套用填色的溫度區間簽章；體感溫度變了才重查 */
+  const mapFillSyncSigRef = useRef<Map<string, string>>(new Map());
+  const mapBootstrapInFlightRef = useRef(false);
+  const mapFillPendingSpecsRef = useRef<MapFillLocaleSpec[]>([]);
+  const mapFillFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mapDataRegionsRef = useRef<MapDataRegion[]>([]);
+  const mapViewRef = useRef<MapViewMode>(mapView);
+  const mapDataRegionKeysRef = useRef<Set<string>>(new Set());
+  const localeWeatherByKeyRef = useRef<Record<string, WeatherData>>({});
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -1689,6 +1707,119 @@ export default function App() {
     [weather, regionWeather, selectedRegion, loadRegionInsights]
   );
 
+  const loadRegionColorFillsForSpecs = useCallback(
+    async (
+      specs: MapFillLocaleSpec[],
+      options?: { urgent?: boolean; bootstrap?: boolean }
+    ) => {
+      if (specs.length === 0) return;
+      const key = specs
+        .map((s) => `${s.regionKey}@${Math.round(s.refTemp)}@d${s.delta}`)
+        .sort()
+        .join("|");
+      const now = Date.now();
+      const minGap = options?.bootstrap
+        ? 0
+        : options?.urgent || specs.length <= 2
+          ? 280
+          : 900;
+      const lastAt = regionColorFillsLastRequestAtRef.current.get(key) ?? 0;
+      if (now - lastAt < minGap) return;
+      if (regionColorFillsInFlightRef.current.has(key)) return;
+      regionColorFillsInFlightRef.current.add(key);
+      regionColorFillsLastRequestAtRef.current.set(key, now);
+      const requestId = ++regionColorFillsRequestIdRef.current;
+
+      const isStale = () => requestId !== regionColorFillsRequestIdRef.current;
+
+      try {
+        const { fills } = await fetchRegionColorFillsByLocale(specs);
+        if (isStale()) return;
+        for (const spec of specs) {
+          mapFillSyncSigRef.current.set(spec.regionKey, mapFillSpecSig(spec));
+        }
+        setRegionColorFills((prev) => {
+          let next = mergeRegionColorFills(prev, fills);
+          const region = selectedRegionRef.current;
+          const insights = regionInsightsRef.current;
+          if (region && insights) {
+            const patch = regionFillFromInsights(region, insights);
+            if (patch) next = mergeRegionColorFill(next, patch);
+          }
+          return next;
+        });
+        if (options?.bootstrap) {
+          const regions = mapDataRegionsRef.current;
+          if (regions.length > 0 && fills.length > 0) {
+            const fillTempKey = mapFillSpecSig(specs[0]!);
+            writeMapBootstrapCache(regions, fills, fillTempKey);
+          }
+        }
+      } catch (error) {
+        if (isStale()) return;
+        console.warn("Region color fills:", error);
+        if (isRateLimitedError(error)) {
+          regionColorFillsLastRequestAtRef.current.set(key, Date.now() + 6000);
+        }
+      } finally {
+        regionColorFillsInFlightRef.current.delete(key);
+      }
+    },
+    []
+  );
+
+  const flushMapFillPending = useCallback(
+    (urgent: boolean) => {
+      if (mapFillFlushTimerRef.current != null) {
+        clearTimeout(mapFillFlushTimerRef.current);
+        mapFillFlushTimerRef.current = null;
+      }
+      const batch = mapFillPendingSpecsRef.current.splice(0);
+      if (batch.length === 0) return;
+      void loadRegionColorFillsForSpecs(batch, { urgent });
+    },
+    [loadRegionColorFillsForSpecs]
+  );
+
+  const enqueueMapFillSpecs = useCallback(
+    (specs: MapFillLocaleSpec[], options?: { urgent?: boolean }) => {
+      const pending = specs.filter(
+        (s) => mapFillSyncSigRef.current.get(s.regionKey) !== mapFillSpecSig(s)
+      );
+      if (pending.length === 0) return;
+      mapFillPendingSpecsRef.current.push(...pending);
+      if (options?.urgent) {
+        flushMapFillPending(true);
+        return;
+      }
+      if (mapFillFlushTimerRef.current != null) {
+        clearTimeout(mapFillFlushTimerRef.current);
+      }
+      mapFillFlushTimerRef.current = setTimeout(() => flushMapFillPending(false), 80);
+    },
+    [flushMapFillPending]
+  );
+
+  const scheduleMapFillsFromWeather = useCallback(
+    (weatherByKey: Record<string, WeatherData>, urgentRegionKeys?: string[]) => {
+      const includeDistricts = mapViewRef.current === "taipei-districts";
+      const filter = mapDataRegionKeysRef.current;
+      const regionFilter = filter.size > 0 ? filter : undefined;
+      const specs = buildMapFillLocaleSpecs(
+        weatherByKey,
+        includeDistricts,
+        regionFilter
+      );
+      if (specs.length === 0) return;
+      const urgentSet = new Set(urgentRegionKeys ?? []);
+      const urgentSpecs = specs.filter((s) => urgentSet.has(s.regionKey));
+      const restSpecs = specs.filter((s) => !urgentSet.has(s.regionKey));
+      if (urgentSpecs.length > 0) enqueueMapFillSpecs(urgentSpecs, { urgent: true });
+      if (restSpecs.length > 0) enqueueMapFillSpecs(restSpecs, { urgent: false });
+    },
+    [enqueueMapFillSpecs]
+  );
+
   const refreshLocaleWeathers = useCallback(
     async (
       includeTaipeiDistricts: boolean,
@@ -1702,43 +1833,81 @@ export default function App() {
         userKeys
       );
       if (targets.length === 0) return;
-      const map = await fetchLocaleWeatherMap(targets);
-      if (fetchId !== localeWeatherFetchIdRef.current) return;
-      setLocaleWeatherByKey((prev) => ({ ...prev, ...map }));
+
+      const weatherAcc: Record<string, WeatherData> = {
+        ...localeWeatherByKeyRef.current,
+      };
+
+      await fetchLocaleWeatherMapProgressive(
+        targets,
+        (regionKey, data) => {
+          if (fetchId !== localeWeatherFetchIdRef.current) return;
+          weatherAcc[regionKey] = data;
+          setLocaleWeatherByKey((prev) => {
+            const next = { ...prev, [regionKey]: data };
+            localeWeatherByKeyRef.current = next;
+            return next;
+          });
+          const urgent = userKeys.includes(regionKey);
+          scheduleMapFillsFromWeather(weatherAcc, urgent ? [regionKey] : undefined);
+        },
+        {
+          priorityKeys: userKeys,
+          shouldContinue: () => fetchId === localeWeatherFetchIdRef.current,
+        }
+      );
     },
-    []
+    [scheduleMapFillsFromWeather]
   );
 
-  const loadMapDataRegions = useCallback(async () => {
-    try {
-      const { regions } = await fetchMapDataRegions();
-      setMapDataRegions(regions);
-      return regions;
-    } catch (error) {
-      console.warn("Map data regions:", error);
-      return [] as MapDataRegion[];
+  const bootstrapMapFillsFromWeather = useCallback(
+    (w: WeatherData) => {
+      const regions = mapDataRegionsRef.current;
+      if (!regions.length) return;
+      const specs = buildMapFillSpecsForDataRegions(
+        regions,
+        localeWeatherByKeyRef.current,
+        w,
+        mapViewRef.current === "taipei-districts"
+      );
+      if (specs.length === 0) return;
+      void loadRegionColorFillsForSpecs(specs, { urgent: true, bootstrap: true });
+    },
+    [loadRegionColorFillsForSpecs]
+  );
+
+  /** 一次載入有資料區域 + 各區填色（優先 session 快取，否則單次 API） */
+  const loadMapBootstrap = useCallback(async (w: WeatherData) => {
+    const refTemp = weatherInsightReferenceTemp(w);
+    const delta = getInsightTempDeltaFromWeather(w);
+    const fillTempKey = `${Math.round(refTemp)}@d${delta}`;
+
+    const cached = readMapBootstrapCache();
+    if (
+      cached?.regions.length &&
+      cached.fills.length &&
+      cached.fillTempKey === fillTempKey
+    ) {
+      setMapDataRegions(cached.regions);
+      mapDataRegionsRef.current = cached.regions;
+      setRegionColorFills((prev) => mergeRegionColorFills(prev, cached.fills));
+      for (const fill of cached.fills) {
+        mapFillSyncSigRef.current.set(fill.regionKey, fillTempKey);
+      }
+      return cached.regions;
     }
-  }, []);
 
-  const loadRegionColorFillsForSpecs = useCallback(async (specs: MapFillLocaleSpec[]) => {
-    if (specs.length === 0) return;
-    const key = specs
-      .map((s) => `${s.regionKey}@${Math.round(s.refTemp)}@d${s.delta}`)
-      .sort()
-      .join("|");
-    const now = Date.now();
-    const lastAt = regionColorFillsLastRequestAtRef.current.get(key) ?? 0;
-    if (now - lastAt < 1200) return;
-    if (regionColorFillsInFlightRef.current.has(key)) return;
-    regionColorFillsInFlightRef.current.add(key);
-    regionColorFillsLastRequestAtRef.current.set(key, now);
-    const requestId = ++regionColorFillsRequestIdRef.current;
-
-    const isStale = () => requestId !== regionColorFillsRequestIdRef.current;
-
+    if (mapBootstrapInFlightRef.current) return mapDataRegionsRef.current;
+    mapBootstrapInFlightRef.current = true;
     try {
-      const { fills } = await fetchRegionColorFillsByLocale(specs);
-      if (isStale()) return;
+      const { regions, fills } = await fetchMapBootstrapWithFills(refTemp, delta, {
+        airTemp: w.temp,
+      });
+      setMapDataRegions(regions);
+      mapDataRegionsRef.current = regions;
+      for (const fill of fills) {
+        mapFillSyncSigRef.current.set(fill.regionKey, fillTempKey);
+      }
       setRegionColorFills((prev) => {
         let next = mergeRegionColorFills(prev, fills);
         const region = selectedRegionRef.current;
@@ -1749,24 +1918,28 @@ export default function App() {
         }
         return next;
       });
+      if (regions.length > 0 && fills.length > 0) {
+        writeMapBootstrapCache(regions, fills, fillTempKey);
+      }
+      return regions;
     } catch (error) {
-      if (isStale()) return;
-      console.warn("Region color fills:", error);
-      for (const spec of specs) {
-        mapFillSyncedKeysRef.current.delete(spec.regionKey);
-      }
-      if (isRateLimitedError(error)) {
-        regionColorFillsLastRequestAtRef.current.set(key, Date.now() + 6000);
-      }
+      console.warn("Map bootstrap:", error);
+      bootstrapMapFillsFromWeather(w);
+      return mapDataRegionsRef.current;
     } finally {
-      regionColorFillsInFlightRef.current.delete(key);
+      mapBootstrapInFlightRef.current = false;
     }
-  }, []);
+  }, [bootstrapMapFillsFromWeather]);
 
   const mapDataRegionKeys = useMemo(
     () => new Set(mapDataRegions.map((r) => r.regionKey)),
     [mapDataRegions]
   );
+
+  mapViewRef.current = mapView;
+  mapDataRegionKeysRef.current = mapDataRegionKeys;
+  mapDataRegionsRef.current = mapDataRegions;
+  localeWeatherByKeyRef.current = localeWeatherByKey;
 
   const priorityUserRegionKeys = useMemo(() => {
     const keys: string[] = [];
@@ -1784,13 +1957,30 @@ export default function App() {
   }, [weather, loadOutfitInsights]);
 
   useEffect(() => {
-    if (screen !== "home") return;
-    void loadMapDataRegions();
-  }, [screen, loadMapDataRegions]);
+    const cached = readMapBootstrapCache();
+    if (cached?.regions.length) {
+      setMapDataRegions(cached.regions);
+      mapDataRegionsRef.current = cached.regions;
+      if (cached.fills.length) {
+        setRegionColorFills(cached.fills);
+        for (const fill of cached.fills) {
+          mapFillSyncSigRef.current.set(fill.regionKey, cached.fillTempKey);
+        }
+      }
+    }
+  }, []);
+
+  /** 定位天氣一到就預載各區填色（含歡迎頁），進首頁即可直接顯示 */
+  useEffect(() => {
+    if (!weather) return;
+    void loadMapBootstrap(weather);
+  }, [weather, loadMapBootstrap]);
 
   useEffect(() => {
     if (screen !== "home") return;
-    mapFillSyncedKeysRef.current.clear();
+    for (const key of [...mapFillSyncSigRef.current.keys()]) {
+      if (key.includes(":")) mapFillSyncSigRef.current.delete(key);
+    }
   }, [screen, mapView]);
 
   useEffect(() => {
@@ -1830,42 +2020,41 @@ export default function App() {
           changed = true;
         }
       }
+      if (changed) {
+        localeWeatherByKeyRef.current = next;
+        scheduleMapFillsFromWeather(next, priorityUserRegionKeys);
+      }
       return changed ? next : prev;
     });
-  }, [screen, weather, userLocation?.name, userCounty, userDistrict]);
+  }, [
+    screen,
+    weather,
+    userLocation?.name,
+    userCounty,
+    userDistrict,
+    priorityUserRegionKeys,
+    scheduleMapFillsFromWeather,
+  ]);
 
   useEffect(() => {
     if (!selectedRegion || !regionWeather) return;
     const key = regionKey(selectedRegion);
-    setLocaleWeatherByKey((prev) =>
-      prev[key] === regionWeather ? prev : { ...prev, [key]: regionWeather }
-    );
-  }, [selectedRegion, regionWeather]);
+    setLocaleWeatherByKey((prev) => {
+      if (prev[key] === regionWeather) return prev;
+      const next = { ...prev, [key]: regionWeather };
+      localeWeatherByKeyRef.current = next;
+      scheduleMapFillsFromWeather(next, [key]);
+      return next;
+    });
+  }, [selectedRegion, regionWeather, scheduleMapFillsFromWeather]);
 
   useEffect(() => {
-    if (screen !== "home") return;
-    if (Object.keys(localeWeatherByKey).length === 0) return;
-    const includeDistricts = mapView === "taipei-districts";
-    const regionFilter =
-      mapDataRegionKeys.size > 0 ? mapDataRegionKeys : undefined;
-    const specs = buildMapFillLocaleSpecs(
-      localeWeatherByKey,
-      includeDistricts,
-      regionFilter
-    );
-    const pending = specs.filter((s) => !mapFillSyncedKeysRef.current.has(s.regionKey));
-    if (pending.length === 0) return;
-    for (const spec of pending) {
-      mapFillSyncedKeysRef.current.add(spec.regionKey);
-    }
-    void loadRegionColorFillsForSpecs(pending);
-  }, [
-    screen,
-    mapView,
-    localeWeatherByKey,
-    mapDataRegionKeys,
-    loadRegionColorFillsForSpecs,
-  ]);
+    return () => {
+      if (mapFillFlushTimerRef.current != null) {
+        clearTimeout(mapFillFlushTimerRef.current);
+      }
+    };
+  }, []);
 
   /** 選中區域的排行色與面板一致，避免 bulk 填色遺漏時地圖仍為預設米色 */
   useEffect(() => {
@@ -2475,9 +2664,9 @@ export default function App() {
       }
       if (weather && screen === "home") {
         for (const rk of priorityUserRegionKeys) {
-          mapFillSyncedKeysRef.current.delete(rk);
+          mapFillSyncSigRef.current.delete(rk);
         }
-        void loadMapDataRegions();
+        void loadMapBootstrap(weather);
         const merged: Record<string, WeatherData> = { ...localeWeatherByKey };
         const locName = userLocation?.name ?? weather.locationName;
         if (locName) {

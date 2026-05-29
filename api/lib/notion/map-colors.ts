@@ -10,6 +10,11 @@ import {
 } from "../../../lib/taiwan-county";
 import type { ParsedNotionRecord } from "./parse-page";
 import { collectMapDataRegions, type MapDataRegion } from "./map-data-regions";
+import {
+  getRegionColorFillsForLocales,
+  type RegionColorFill,
+} from "./outfit-insights";
+import type { MapFillLocaleSpec } from "../../../lib/map-fill-locales";
 import { queryRecordsWithColors } from "./query-records";
 
 export type MapColorPoint = {
@@ -86,6 +91,39 @@ export async function getMapColorsBundle(): Promise<MapColorsBundle> {
     points: recordsToMapColorPoints(records),
     regions: collectMapDataRegions(records),
   };
+}
+
+/** 僅區域列表（略過色票點運算，供地圖填色加速） */
+export async function getMapDataRegionsFromRecords(): Promise<MapDataRegion[]> {
+  const records = await queryRecordsWithColors();
+  return collectMapDataRegions(records);
+}
+
+export type MapRegionsWithFills = {
+  regions: MapDataRegion[];
+  fills: RegionColorFill[];
+};
+
+/** 有資料區域 + 以同一體感溫度區間一次算出各區填色（進場即顯示） */
+export async function getMapRegionsWithColorFills(
+  refTemp: number,
+  delta: number,
+  airTemp?: number
+): Promise<MapRegionsWithFills> {
+  const regions = await getMapDataRegionsFromRecords();
+  if (regions.length === 0) return { regions, fills: [] };
+
+  const air = airTemp ?? refTemp;
+  const locales: MapFillLocaleSpec[] = regions.map((r) => ({
+    regionKey: r.regionKey,
+    county: r.county,
+    ...(r.district ? { district: r.district } : {}),
+    refTemp,
+    airTemp: air,
+    delta,
+  }));
+  const fills = await getRegionColorFillsForLocales(locales);
+  return { regions, fills };
 }
 
 export async function getMapColorPoints(): Promise<MapColorPoint[]> {

@@ -179,6 +179,47 @@ export function buildMapFillLocaleSpecs(
   return specs;
 }
 
+/**
+ * 為所有有 Notion 資料的區域建立填色參數。
+ * 尚無該區天氣時以 fallbackWeather（通常為使用者定位天氣）代替，以便一次填滿地圖。
+ */
+export function buildMapFillSpecsForDataRegions(
+  dataRegions: MapDataRegionLike[],
+  weatherByRegionKey: Record<string, WeatherLike | undefined>,
+  fallbackWeather: WeatherLike | null | undefined,
+  includeTaipeiDistricts: boolean
+): MapFillLocaleSpec[] {
+  const specs: MapFillLocaleSpec[] = [];
+  const seen = new Set<string>();
+
+  for (const region of dataRegions) {
+    if (region.district && !includeTaipeiDistricts) continue;
+    const rk = region.regionKey;
+    if (seen.has(rk)) continue;
+
+    const w =
+      weatherByRegionKey[rk] ??
+      (region.district ? weatherByRegionKey[region.county] : undefined) ??
+      fallbackWeather;
+    if (!w) continue;
+
+    const ref = weatherInsightReferenceTemp(w);
+    if (!Number.isFinite(ref)) continue;
+
+    seen.add(rk);
+    specs.push({
+      regionKey: rk,
+      county: region.county,
+      ...(region.district ? { district: region.district } : {}),
+      refTemp: ref,
+      airTemp: w.temp,
+      delta: getInsightTempDeltaFromWeather(w),
+    });
+  }
+
+  return specs;
+}
+
 /** 從有資料區域 + 使用者定位，組出優先查天氣的目標（去重） */
 export function buildPriorityLocaleWeatherTargets(
   dataRegions: MapDataRegionLike[],
