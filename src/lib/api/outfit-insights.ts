@@ -29,6 +29,8 @@ export type InspirationItem = {
   location: string;
   photoUrl?: string;
   gender?: UserGender;
+  /** 溫區篩選用（體感優先，與 Notion 紀錄一致） */
+  referenceTemp?: number;
 };
 
 export type OutfitInsights = {

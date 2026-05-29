@@ -187,7 +187,8 @@ function toInspirationCard(
     stuffiness: record.stuffiness,
   };
   const tags = [...record.upperBodyTags, ...record.lowerBodyTags];
-  const tempNum = record.apparentTemp ?? record.temperature ?? 0;
+  const refTemp = record.apparentTemp ?? record.temperature;
+  const tempNum = refTemp ?? 0;
   const emoji =
     record.upperBodyTags[0] ? tagEmoji(record.upperBodyTags[0]) : tagEmoji(record.lowerBodyTags[0] ?? "");
 
@@ -207,6 +208,7 @@ function toInspirationCard(
     bg: CARD_BGS[index % CARD_BGS.length],
     match: matchPercent(record, upperTop, lowerTop),
     temp: `${Math.round(tempNum)}°C・${record.weather ?? "—"}`,
+    ...(refTemp != null ? { referenceTemp: Math.round(refTemp) } : {}),
     who: record.userName,
     date: formatRelativeDate(record.startedAt),
     feelMetrics,

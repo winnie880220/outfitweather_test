@@ -41,6 +41,31 @@ function pageOwnerName(properties: Record<string, NotionProp>): string {
   return prop.title?.map((t) => t.plain_text ?? "").join("") ?? "";
 }
 
+/** 比對 Favorite 內的 ID（支援 "32" 與 "OUT-32" 等格式） */
+function favoriteRecordIdsMatch(a: string, b: string): boolean {
+  const ta = a.trim();
+  const tb = b.trim();
+  if (!ta || !tb) return false;
+  if (ta === tb) return true;
+
+  const normalize = (id: string): string => {
+    const dash = id.lastIndexOf("-");
+    if (dash > 0) {
+      const suffix = id.slice(dash + 1);
+      const n = Number(suffix);
+      if (!Number.isNaN(n)) return String(n);
+    }
+    const n = Number(id);
+    return Number.isNaN(n) ? id : String(n);
+  };
+
+  return normalize(ta) === normalize(tb);
+}
+
+function withoutFavoriteRecordId(ids: string[], recordId: string): string[] {
+  return ids.filter((id) => !favoriteRecordIdsMatch(id, recordId));
+}
+
 /** 讀取 Favorite multi-select：被收藏穿搭的 ID 欄位值 */
 function readFavoriteIds(properties: Record<string, NotionProp>): string[] {
   const prop = properties[RECORDS_DB.favorite];
@@ -147,20 +172,26 @@ export async function toggleOutfitFavorite(
   const active = ensured.data;
 
   try {
-    const page = await notionRequest<PageResponse>(`/pages/${active.pageId}`, {
-      method: "GET",
-    });
-    const current = readFavoriteIds(page.properties);
-    const set = new Set(current);
-    if (params.favorited) set.add(outfitRecordId);
-    else set.delete(outfitRecordId);
-    const next = [...set];
-    await setFavoriteIds(active.pageId, next);
+    if (params.favorited) {
+      const page = await notionRequest<PageResponse>(`/pages/${active.pageId}`, {
+        method: "GET",
+      });
+      const current = readFavoriteIds(page.properties);
+      const merged = [...current];
+      if (!merged.some((id) => favoriteRecordIdsMatch(id, outfitRecordId))) {
+        merged.push(outfitRecordId);
+      }
+      await setFavoriteIds(active.pageId, merged);
+    } else {
+      await removeFavoriteIdFromAllUserRows(favoriter, outfitRecordId);
+    }
+
+    const favoriteIds = await collectFavoriteIdsForUser(favoriter);
 
     return {
       ok: true,
       data: {
-        favoriteIds: next,
+        favoriteIds,
         activeUserRecord: {
           pageId: active.pageId,
           date: active.date,
@@ -186,6 +217,22 @@ async function collectFavoriteIdsForUser(
     }
   }
   return [...ids];
+}
+
+/** 從收藏者所有歷史列移除指定穿搭 ID（取消收藏須清乾淨，否則舊列會讓項目再次出現） */
+async function removeFavoriteIdFromAllUserRows(
+  favoriterUserName: string,
+  outfitRecordId: string
+): Promise<void> {
+  const pages = await queryRecordsByUserName(favoriterUserName);
+  await Promise.all(
+    pages.map(async (page) => {
+      const current = readFavoriteIds(page.properties);
+      const next = withoutFavoriteRecordId(current, outfitRecordId);
+      if (next.length === current.length) return;
+      await setFavoriteIds(page.id, next);
+    })
+  );
 }
 
 /** 彙整使用者所有列上的 Favorite（ID 值），回傳對應穿搭卡片 */

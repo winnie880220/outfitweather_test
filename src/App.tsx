@@ -58,7 +58,10 @@ import {
   type LocationPickerValue,
 } from "../lib/location-picker";
 import { buildRecordWeatherMetrics } from "../lib/weather-metrics";
-import { weatherInsightReferenceTemp } from "../lib/weather-insight-temp";
+import {
+  cardMatchesInsightTempBand,
+  weatherInsightReferenceTemp,
+} from "../lib/weather-insight-temp";
 import { limitOutfitColors } from "../lib/outfit-colors";
 import {
   isSameRegion,
@@ -2020,10 +2023,26 @@ export default function App() {
     return [...optimistic, ...fromApi];
   }, [regionInsights, optimisticInspirationCards]);
 
-  const favoriteCards = useMemo(
+  const allFavoriteCards = useMemo(
     () => listFavoriteCards(inspirationFavorites),
     [inspirationFavorites]
   );
+
+  const favoriteTempBand = useMemo(() => {
+    if (!weather) return null;
+    const ref = Math.round(weatherInsightReferenceTemp(weather));
+    const delta = getInsightTempDelta(weather);
+    return { min: ref - delta, max: ref + delta };
+  }, [weather]);
+
+  const favoriteCards = useMemo(() => {
+    if (!favoriteTempBand) return allFavoriteCards;
+    const ref = (favoriteTempBand.min + favoriteTempBand.max) / 2;
+    const delta = favoriteTempBand.max - ref;
+    return allFavoriteCards.filter((card) =>
+      cardMatchesInsightTempBand(card, ref, delta)
+    );
+  }, [allFavoriteCards, favoriteTempBand]);
 
   const handleToggleFavorite = async (card: InspirationItem) => {
     const trimmedName = userName.trim();
@@ -2057,13 +2076,20 @@ export default function App() {
       setActiveUserRecord(active);
       saveSession({ activeUserRecord: active });
       setNotionPageId(active.pageId);
-      setInspirationFavorites((prev) => {
-        const base =
-          prev.userName === trimmedName ? prev : loadInspirationFavorites(trimmedName);
-        return saved
-          ? removeInspirationFavorite(base, card.id)
-          : addInspirationFavorite(base, card);
-      });
+      try {
+        const cards = await fetchUserFavorites(trimmedName);
+        const fromServer = favoritesStateFromCards(trimmedName, cards);
+        setInspirationFavorites(fromServer);
+        saveInspirationFavorites(fromServer);
+      } catch {
+        setInspirationFavorites((prev) => {
+          const base =
+            prev.userName === trimmedName ? prev : loadInspirationFavorites(trimmedName);
+          return saved
+            ? removeInspirationFavorite(base, card.id)
+            : addInspirationFavorite(base, card);
+        });
+      }
       showToast(saved ? "已取消收藏" : "已加入收藏 ♡");
     } catch (error) {
       console.warn("toggleOutfitFavorite:", error);
@@ -2480,6 +2506,8 @@ export default function App() {
               {screen === "favorites" && (
                 <FavoritesScreen
                   cards={favoriteCards}
+                  totalFavoriteCount={allFavoriteCards.length}
+                  favoriteTempBand={favoriteTempBand}
                   currentUserName={userName}
                   favorites={inspirationFavorites}
                   favoriteBusyId={favoriteBusyId}
