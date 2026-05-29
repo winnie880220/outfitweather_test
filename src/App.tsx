@@ -61,7 +61,6 @@ import {
 } from "../lib/location-picker";
 import { buildRecordWeatherMetrics } from "../lib/weather-metrics";
 import {
-  cardMatchesInsightTempBand,
   weatherInsightReferenceTemp,
 } from "../lib/weather-insight-temp";
 import { limitOutfitColors } from "../lib/outfit-colors";
@@ -111,11 +110,11 @@ import {
 import {
   addInspirationFavorite,
   favoritesStateFromCards,
+  mergeFavoritesFromServer,
+  clearInspirationFavorites,
   isInspirationFavorite,
   listFavoriteCards,
-  loadInspirationFavorites,
   removeInspirationFavorite,
-  saveInspirationFavorites,
   type InspirationFavoritesState,
 } from "./lib/inspiration-favorites";
 import { filterInspirationCardsWithPhoto } from "./lib/inspiration-photo";
@@ -381,11 +380,16 @@ const INITIAL_WARDROBE: Outfit[] = [
 
 // --- Components ---
 
+const TOAST_DISMISS_MS = 2500;
+
 const Toast = ({ message, onClear }: { message: string; onClear: () => void }) => {
+  const onClearRef = useRef(onClear);
+  onClearRef.current = onClear;
+
   useEffect(() => {
-    const timer = setTimeout(onClear, 2000);
-    return () => clearTimeout(timer);
-  }, [onClear, message]);
+    const timer = window.setTimeout(() => onClearRef.current(), TOAST_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [message]);
 
   if (typeof document === "undefined") return null;
 
@@ -1429,6 +1433,7 @@ export default function App() {
   const [feelSet, setFeelSet] = useState(false);
   const [feedbackDesc, setFeedbackDesc] = useState("尚未標記");
   const [toastMsg, setToastMsg] = useState("");
+  const [toastTick, setToastTick] = useState(0);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [showPendingExitBlock, setShowPendingExitBlock] = useState(false);
   const [feedbackShareSnapshot, setFeedbackShareSnapshot] =
@@ -1440,7 +1445,11 @@ export default function App() {
   }, []);
   const [currentTime, setCurrentTime] = useState("");
 
-  const showToast = (msg: string) => setToastMsg(msg);
+  const clearToast = useCallback(() => setToastMsg(""), []);
+  const showToast = useCallback((msg: string) => {
+    setToastMsg(msg);
+    setToastTick((n) => n + 1);
+  }, []);
 
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
@@ -1452,6 +1461,8 @@ export default function App() {
   });
   const [locating, setLocating] = useState(false);
   const homeGeoRequested = useRef(false);
+  const favoritesSyncUserRef = useRef<string | null>(null);
+  const favoritesMutatingRef = useRef(false);
   const [notionPageId, setNotionPageId] = useState<string | null>(null);
   /** 當日＋氣溫區間的 active 列（收藏／記錄／回饋皆寫入此列） */
   const [activeUserRecord, setActiveUserRecord] = useState<ActiveUserRecord | null>(
@@ -2376,11 +2387,19 @@ export default function App() {
     weather?.tempMax,
   ]);
 
+  const weatherFillAnchorRef = useRef<string | null>(null);
+
   /** 定位天氣一到就預載各區填色（體感溫區變了才重跑，避免重複上色） */
   useEffect(() => {
     if (!weather || !weatherFillAnchor) return;
+    if (weatherFillAnchorRef.current !== weatherFillAnchor) {
+      weatherFillAnchorRef.current = weatherFillAnchor;
+      clearRegionInsightsCache();
+      setRegionInsights(null);
+      regionInsightsRegionKeyRef.current = null;
+    }
     void loadMapBootstrap(weather);
-  }, [weather, weatherFillAnchor, loadMapBootstrap]);
+  }, [weather, weatherFillAnchor, loadMapBootstrap, clearRegionInsightsCache]);
 
   useEffect(() => {
     if (screen !== "home") return;
@@ -2504,28 +2523,50 @@ export default function App() {
   const syncUserFavorites = useCallback(async (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) {
+      favoritesSyncUserRef.current = null;
       setInspirationFavorites({ userName: "", items: {} });
       return;
     }
-    setInspirationFavorites(loadInspirationFavorites(trimmed));
+    if (favoritesMutatingRef.current) return;
+
+    const userChanged = favoritesSyncUserRef.current !== trimmed;
+    favoritesSyncUserRef.current = trimmed;
+    if (userChanged) {
+      clearInspirationFavorites(trimmed);
+      setInspirationFavorites({ userName: trimmed, items: {} });
+    }
+
     try {
       const session = loadSession();
-      const cards = await fetchUserFavorites(trimmed, {
+      const result = await fetchUserFavorites(trimmed, {
         activeUserRecord: session.activeUserRecord ?? activeUserRecord,
         temp: weather?.temp,
         apparentTemp: weather?.apparentTemp,
       });
-      const fromServer = favoritesStateFromCards(trimmed, cards);
-      setInspirationFavorites(fromServer);
-      saveInspirationFavorites(fromServer);
+      if (favoritesMutatingRef.current) return;
+      setInspirationFavorites(favoritesStateFromCards(trimmed, result.cards));
+      if (result.activeUserRecord) {
+        setActiveUserRecord(result.activeUserRecord);
+        saveSession({ activeUserRecord: result.activeUserRecord });
+      }
     } catch (error) {
       console.warn("fetchUserFavorites:", error);
+      if (favoritesMutatingRef.current) return;
+      if (userChanged) {
+        setInspirationFavorites({ userName: trimmed, items: {} });
+      }
     }
   }, [activeUserRecord, weather?.temp, weather?.apparentTemp]);
 
   useEffect(() => {
     void syncUserFavorites(userName);
   }, [userName, syncUserFavorites]);
+
+  useEffect(() => {
+    if (screen === "favorites" && userName.trim()) {
+      void syncUserFavorites(userName);
+    }
+  }, [screen, userName, syncUserFavorites]);
 
   useEffect(() => {
     const expired = expireStalePending();
@@ -2847,22 +2888,10 @@ export default function App() {
     [inspirationFavorites]
   );
 
-  const favoriteTempBand = useMemo(() => {
-    if (!weather) return null;
-    const ref = Math.round(weatherInsightReferenceTemp(weather));
-    const delta = getInsightTempDelta(weather);
-    return { min: ref - delta, max: ref + delta };
-  }, [weather]);
-
-  const favoriteCards = useMemo(() => {
-    const withPhoto = filterInspirationCardsWithPhoto(allFavoriteCards);
-    if (!favoriteTempBand) return withPhoto;
-    const ref = (favoriteTempBand.min + favoriteTempBand.max) / 2;
-    const delta = favoriteTempBand.max - ref;
-    return withPhoto.filter((card) =>
-      cardMatchesInsightTempBand(card, ref, delta)
-    );
-  }, [allFavoriteCards, favoriteTempBand]);
+  const favoriteCards = useMemo(
+    () => filterInspirationCardsWithPhoto(allFavoriteCards),
+    [allFavoriteCards]
+  );
 
   const handleToggleFavorite = async (card: InspirationItem) => {
     const trimmedName = userName.trim();
@@ -2886,13 +2915,14 @@ export default function App() {
     const snapshot =
       inspirationFavorites.userName === trimmedName
         ? inspirationFavorites
-        : loadInspirationFavorites(trimmedName);
+        : { userName: trimmedName, items: {} };
     const optimistic = willFavorite
       ? addInspirationFavorite({ ...snapshot, userName: trimmedName }, card)
       : removeInspirationFavorite({ ...snapshot, userName: trimmedName }, card.id);
     setInspirationFavorites(optimistic);
 
     setFavoriteBusyId(card.id);
+    favoritesMutatingRef.current = true;
     try {
       const session = loadSession();
       const result = await toggleOutfitFavorite(trimmedName, card.id, willFavorite, {
@@ -2906,12 +2936,27 @@ export default function App() {
       const active: ActiveUserRecord = result.activeUserRecord;
       setActiveUserRecord(active);
       saveSession({ activeUserRecord: active });
-      setNotionPageId(active.pageId);
+
+      const refreshed = await fetchUserFavorites(trimmedName, {
+        activeUserRecord: active,
+        temp: weather?.temp,
+        apparentTemp: weather?.apparentTemp,
+        readPageIdDirectly: true,
+      });
+      if (refreshed.activeUserRecord) {
+        setActiveUserRecord(refreshed.activeUserRecord);
+        saveSession({ activeUserRecord: refreshed.activeUserRecord });
+      }
+      setInspirationFavorites(
+        mergeFavoritesFromServer(trimmedName, refreshed.cards, {
+          card,
+          favorited: willFavorite,
+        })
+      );
       showToast(willFavorite ? "已加入收藏 ♡" : "已取消收藏");
     } catch (error) {
       console.warn("toggleOutfitFavorite:", error);
       setInspirationFavorites(snapshot);
-      saveInspirationFavorites(snapshot);
       const msg = error instanceof Error ? error.message : "";
       showToast(
         msg.includes("MAX_WRITE_OPERATIONS") || msg.includes("寫入次數")
@@ -2919,6 +2964,7 @@ export default function App() {
           : msg || "收藏同步失敗"
       );
     } finally {
+      favoritesMutatingRef.current = false;
       setFavoriteBusyId(null);
     }
   };
@@ -3355,8 +3401,6 @@ export default function App() {
               >
                 <FavoritesScreen
                   cards={favoriteCards}
-                  totalFavoriteCount={allFavoriteCards.length}
-                  favoriteTempBand={favoriteTempBand}
                   currentUserName={userName}
                   favorites={inspirationFavorites}
                   favoriteBusyId={favoriteBusyId}
@@ -3449,7 +3493,7 @@ export default function App() {
         {/* Toast Notification */}
         <AnimatePresence>
           {toastMsg ? (
-            <Toast key="app-toast" message={toastMsg} onClear={() => setToastMsg("")} />
+            <Toast key={toastTick} message={toastMsg} onClear={clearToast} />
           ) : null}
         </AnimatePresence>
 

@@ -3,6 +3,11 @@ import type { InspirationItem } from "./outfit-insights";
 import { apiGet, apiPost } from "./client";
 import type { ActiveUserRecord } from "../session-storage";
 
+export type UserFavoritesQueryResult = {
+  cards: InspirationItem[];
+  activeUserRecord: ActiveUserRecord | null;
+};
+
 export type ToggleFavoriteResult = {
   favoriteIds: string[];
   activeUserRecord: ActiveUserRecord;
@@ -46,11 +51,22 @@ export async function fetchUserFavorites(
     activeUserRecord?: ActiveUserRecord | null;
     temp?: number;
     apparentTemp?: number;
+    /** 剛 toggle 後讀同一列 Favorite */
+    readPageIdDirectly?: boolean;
   }
-): Promise<InspirationItem[]> {
+): Promise<UserFavoritesQueryResult> {
   const params = new URLSearchParams({ userName: favoriterUserName.trim() });
   if (options?.activeUserRecord?.pageId) {
     params.set("activePageId", options.activeUserRecord.pageId);
+  }
+  if (options?.readPageIdDirectly) {
+    params.set("readDirect", "1");
+    if (options.activeUserRecord?.date) {
+      params.set("activeDate", options.activeUserRecord.date);
+    }
+    if (typeof options.activeUserRecord?.tempBand === "number") {
+      params.set("activeTempBand", String(options.activeUserRecord.tempBand));
+    }
   }
   if (typeof options?.temp === "number" && !Number.isNaN(options.temp)) {
     params.set("temp", String(Math.round(options.temp)));
@@ -58,5 +74,14 @@ export async function fetchUserFavorites(
   if (typeof options?.apparentTemp === "number" && !Number.isNaN(options.apparentTemp)) {
     params.set("apparentTemp", String(Math.round(options.apparentTemp)));
   }
-  return apiGet<InspirationItem[]>(`/api/favorites?${params}`);
+  const data = await apiGet<UserFavoritesQueryResult | InspirationItem[]>(
+    `/api/favorites?${params}`
+  );
+  if (Array.isArray(data)) {
+    return { cards: data, activeUserRecord: options?.activeUserRecord ?? null };
+  }
+  return {
+    cards: data.cards ?? [],
+    activeUserRecord: data.activeUserRecord ?? null,
+  };
 }

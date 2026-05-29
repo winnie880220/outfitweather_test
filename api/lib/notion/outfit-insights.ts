@@ -253,28 +253,18 @@ function recordMatchesRegion(
 }
 
 export async function getOutfitInsights(
+  /** 體感溫度（與前端 weatherInsightReferenceTemp 一致） */
   temp: number,
   delta = 1,
   county?: string,
   district?: string,
-  options?: { fallbackTemp?: number }
+  /** @deprecated 不再以氣溫 fallback 查詢，僅依體感溫區 ±delta */
+  _options?: { fallbackTemp?: number }
 ): Promise<OutfitInsights> {
-  const rounded = Math.round(temp);
-  const fallbackRounded =
-    options?.fallbackTemp != null && Number.isFinite(options.fallbackTemp)
-      ? Math.round(options.fallbackTemp)
-      : null;
+  const refTemp = Math.round(temp);
+  const safeDelta = Math.min(3, Math.max(0, delta));
 
-  let records = await queryRecordsByTemperature(rounded, delta);
-  let usedTemp = rounded;
-  if (
-    records.length === 0 &&
-    fallbackRounded != null &&
-    fallbackRounded !== rounded
-  ) {
-    records = await queryRecordsByTemperature(fallbackRounded, delta);
-    usedTemp = fallbackRounded;
-  }
+  let records = await queryRecordsByTemperature(refTemp, safeDelta);
 
   const countyTrim = county?.trim();
   const districtTrim = district?.trim();
@@ -305,9 +295,9 @@ export async function getOutfitInsights(
     .map((r, i) => toInspirationCard(r, i, upperTop3, lowerTop3));
 
   return {
-    targetTemp: usedTemp,
-    tempMin: usedTemp - delta,
-    tempMax: usedTemp + delta,
+    targetTemp: refTemp,
+    tempMin: refTemp - safeDelta,
+    tempMax: refTemp + safeDelta,
     sampleCount: total,
     photoCount: withPhoto.length,
     upperTop3,

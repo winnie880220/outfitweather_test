@@ -22,8 +22,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         typeof req.query.activePageId === "string" ? req.query.activePageId : undefined;
       const tempRaw = req.query.temp;
       const apparentTempRaw = req.query.apparentTemp;
+      const readDirect = req.query.readDirect === "1";
+      const activeDate =
+        typeof req.query.activeDate === "string" ? req.query.activeDate : undefined;
+      const activeTempBandRaw = req.query.activeTempBand;
+      const activeRecord =
+        readDirect && activePageId && activeDate
+          ? {
+              pageId: activePageId,
+              date: activeDate,
+              tempBand:
+                typeof activeTempBandRaw === "string"
+                  ? Number(activeTempBandRaw)
+                  : 0,
+            }
+          : undefined;
       const result = await queryFavoritedOutfits(favoriterUserName, {
         activePageId,
+        activeRecord,
+        readPageIdDirectly: readDirect,
         profile: {
           temp: typeof tempRaw === "string" ? Number(tempRaw) : undefined,
           apparentTemp:

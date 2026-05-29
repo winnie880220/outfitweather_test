@@ -67,7 +67,8 @@ function pageOwnerName(properties: Record<string, NotionProp>): string {
   return prop.title?.map((t) => t.plain_text ?? "").join("") ?? "";
 }
 
-async function validateActivePage(
+/** 確認 page 仍為當日、同使用者、同體感溫區的 active 列 */
+export async function validateActiveUserPage(
   pageId: string,
   userName: string,
   date: string,
@@ -144,7 +145,7 @@ export async function ensureActiveUserRecord(
 
   try {
     if (existing?.pageId) {
-      const valid = await validateActivePage(
+      const valid = await validateActiveUserPage(
         existing.pageId,
         userName,
         date,

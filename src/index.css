@@ -3140,6 +3140,38 @@ body {
     flex: 1 0 auto;
   }
 
+  /*
+   * 主分頁常駐疊層：子層皆 absolute，父層在 height:auto 時會塌成 0（只剩導覽列可見）
+   */
+  .app-main-screens {
+    position: relative;
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    min-height: 100dvh;
+    flex: none;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  .app-main-screens > .app-screen-layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    flex: none;
+    box-sizing: border-box;
+  }
+
+  .app-main-screens > .app-screen-page.app-screen-layer {
+    min-height: 0;
+    overflow: hidden;
+    flex: none;
+  }
+
   /* 可捲動頁面：取消內部滾動，讓內容流向 body */
   .screen-scroll:not(.welcome-screen) {
     overflow-y: visible !important;
@@ -3205,12 +3237,24 @@ body {
   }
 
   .inspiration-feed-layout {
-    height: 100dvh;
-    max-height: 100dvh;
+    height: 100%;
+    max-height: 100%;
+    min-height: 0;
     overflow: hidden;
-    flex: none;
+    flex: 1 1 auto;
     box-sizing: border-box;
     padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .inspiration-feed-layout--favorites {
+    height: 100%;
+    max-height: 100%;
+    min-height: 0;
+  }
+
+  .inspiration-favorites-empty {
+    min-height: 0;
+    overflow: hidden;
   }
 
   .record-screen-layout:not(.record-screen-layout--with-extras) {

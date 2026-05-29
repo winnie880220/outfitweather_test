@@ -58,6 +58,22 @@ export function favoritesStateFromCards(
   return { userName: userName.trim(), items };
 }
 
+/** 合併伺服器回傳與剛操作的卡片（查詢空結果或缺圖時仍保留愛心／收藏列） */
+export function mergeFavoritesFromServer(
+  userName: string,
+  cards: InspirationItem[],
+  patch?: { card: InspirationItem; favorited: boolean }
+): InspirationFavoritesState {
+  const state = favoritesStateFromCards(userName, cards);
+  if (!patch) return state;
+  if (patch.favorited) {
+    state.items[patch.card.id] = state.items[patch.card.id] ?? patch.card;
+  } else {
+    delete state.items[patch.card.id];
+  }
+  return state;
+}
+
 export function listFavoriteCards(state: InspirationFavoritesState): InspirationItem[] {
   return Object.values(state.items);
 }
@@ -69,16 +85,15 @@ export function isInspirationFavorite(
   return Boolean(state.items[cardId]);
 }
 
+/** 僅更新記憶體狀態；收藏列表以 Notion active 列為準，不寫入 localStorage */
 export function addInspirationFavorite(
   state: InspirationFavoritesState,
   card: InspirationItem
 ): InspirationFavoritesState {
-  const next = {
+  return {
     userName: state.userName,
     items: { ...state.items, [card.id]: card },
   };
-  saveInspirationFavorites(next);
-  return next;
 }
 
 export function removeInspirationFavorite(
@@ -88,9 +103,7 @@ export function removeInspirationFavorite(
   if (!state.items[cardId]) return state;
   const items = { ...state.items };
   delete items[cardId];
-  const next = { userName: state.userName, items };
-  saveInspirationFavorites(next);
-  return next;
+  return { userName: state.userName, items };
 }
 
 export function clearInspirationFavorites(userName: string): void {

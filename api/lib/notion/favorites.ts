@@ -9,7 +9,10 @@ import {
 } from "./outfit-insights";
 import { RECORDS_DB } from "./schema";
 import {
+  activeRecordBandTemp,
   ensureActiveUserRecord,
+  tempBandCenter,
+  validateActiveUserPage,
   type ActiveUserRecordState,
   type ActiveUserRecordContext,
 } from "./user-active-record";
@@ -163,36 +166,54 @@ async function removeFavoriteOnActiveRow(
   return next;
 }
 
-async function resolveActivePageId(
-  favoriter: string,
-  options?: {
-    activePageId?: string;
-    activeRecord?: ActiveUserRecordState | null;
-    profile?: Partial<
-      Pick<
-        ActiveUserRecordContext,
-        "location" | "gender" | "temp" | "apparentTemp" | "weather"
-      >
-    >;
-  }
-): Promise<string | null> {
-  const trimmedPageId = options?.activePageId?.trim();
-  if (trimmedPageId) return trimmedPageId;
+function localDateString(d = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
+async function resolveActiveUserRecordForFavorites(
+  favoriter: string,
+  options?: QueryFavoritedOutfitsOptions
+): Promise<ActiveUserRecordState | null> {
+  const userName = favoriter.trim();
   const temp = options?.profile?.temp ?? 26;
-  const ensured = await ensureActiveUserRecord(
-    {
-      userName: favoriter,
-      temp,
-      apparentTemp: options?.profile?.apparentTemp ?? temp,
-      location: options?.profile?.location,
-      gender: options?.profile?.gender,
-      weather: options?.profile?.weather,
-    },
-    options?.activeRecord ?? null
-  );
+  const ctx: ActiveUserRecordContext = {
+    userName,
+    temp,
+    apparentTemp: options?.profile?.apparentTemp ?? temp,
+    location: options?.profile?.location,
+    gender: options?.profile?.gender,
+    weather: options?.profile?.weather,
+  };
+  const bandTemp = activeRecordBandTemp(ctx);
+  const date = localDateString();
+
+  const candidatePageId =
+    options?.activePageId?.trim() || options?.activeRecord?.pageId?.trim();
+  if (candidatePageId) {
+    const valid = await validateActiveUserPage(
+      candidatePageId,
+      userName,
+      date,
+      bandTemp
+    );
+    if (valid) return valid;
+  }
+
+  let existingForEnsure: ActiveUserRecordState | null = options?.activeRecord ?? null;
+  if (candidatePageId) {
+    existingForEnsure = null;
+  }
+
+  const ensured = await ensureActiveUserRecord(ctx, existingForEnsure);
   if (!ensured.ok || !ensured.data) return null;
-  return ensured.data.pageId;
+  return {
+    pageId: ensured.data.pageId,
+    date: ensured.data.date,
+    tempBand: ensured.data.tempBand,
+  };
 }
 
 export type ToggleFavoriteParams = {
@@ -213,6 +234,8 @@ export type QueryFavoritedOutfitsOptions = {
   activePageId?: string;
   activeRecord?: ActiveUserRecordState | null;
   profile?: ToggleFavoriteParams["profile"];
+  /** 剛寫入 Favorite 後，直接讀此 pageId，不重新 resolve（避免溫區判斷指到另一列） */
+  readPageIdDirectly?: boolean;
 };
 
 export async function toggleOutfitFavorite(
@@ -238,24 +261,14 @@ export async function toggleOutfitFavorite(
     return { ok: false, error: message };
   }
 
-  const temp = params.profile?.temp ?? 26;
-  const ensured = await ensureActiveUserRecord(
-    {
-      userName: favoriter,
-      temp,
-      apparentTemp: params.profile?.apparentTemp ?? temp,
-      location: params.profile?.location,
-      gender: params.profile?.gender,
-      weather: params.profile?.weather,
-    },
-    params.activeRecord ?? null
-  );
+  const active = await resolveActiveUserRecordForFavorites(favoriter, {
+    activeRecord: params.activeRecord ?? null,
+    profile: params.profile,
+  });
 
-  if (!ensured.ok || !ensured.data) {
-    return { ok: false, error: ensured.error ?? "無法取得 active 列" };
+  if (!active) {
+    return { ok: false, error: "無法取得 active 列" };
   }
-
-  const active = ensured.data;
 
   try {
     const favoriteIds = params.favorited
@@ -283,35 +296,79 @@ export async function toggleOutfitFavorite(
   }
 }
 
+export type FavoritedOutfitsQueryResult = {
+  cards: InspirationItem[];
+  activeUserRecord: ActiveUserRecordState | null;
+};
+
 /** 僅讀取「今日 active 列」Favorite，不回溯歷史列 */
 export async function queryFavoritedOutfits(
   favoriterUserName: string,
   options?: QueryFavoritedOutfitsOptions
-): Promise<ApiResponse<InspirationItem[]>> {
+): Promise<ApiResponse<FavoritedOutfitsQueryResult>> {
   const favoriter = favoriterUserName.trim();
   if (!favoriter) {
     return { ok: false, error: "缺少 favoriterUserName" };
   }
 
   if (!isNotionConfigured()) {
-    return { ok: true, data: [], source: "notion" };
+    return {
+      ok: true,
+      data: { cards: [], activeUserRecord: null },
+      source: "notion",
+    };
   }
 
   try {
-    const activePageId = await resolveActivePageId(favoriter, options);
-    if (!activePageId) {
-      return { ok: true, data: [], source: "notion" };
+    const directPageId = options?.readPageIdDirectly
+      ? options.activePageId?.trim() || options?.activeRecord?.pageId?.trim()
+      : "";
+    let active: ActiveUserRecordState | null = null;
+
+    if (directPageId) {
+      const temp = options?.profile?.temp ?? 26;
+      const bandTemp = activeRecordBandTemp({
+        userName: favoriter,
+        temp,
+        apparentTemp: options?.profile?.apparentTemp ?? temp,
+      });
+      active =
+        options?.activeRecord?.pageId === directPageId
+          ? options.activeRecord
+          : {
+              pageId: directPageId,
+              date: localDateString(),
+              tempBand: tempBandCenter(bandTemp),
+            };
+    } else {
+      active = await resolveActiveUserRecordForFavorites(favoriter, options);
     }
 
-    const recordIds = await readActiveFavoriteIds(activePageId);
+    if (!active) {
+      return {
+        ok: true,
+        data: { cards: [], activeUserRecord: null },
+        source: "notion",
+      };
+    }
+
+    const recordIds = await readActiveFavoriteIds(active.pageId);
     if (recordIds.length === 0) {
-      return { ok: true, data: [], source: "notion" };
+      return {
+        ok: true,
+        data: { cards: [], activeUserRecord: active },
+        source: "notion",
+      };
     }
 
     const idFieldType = await getRecordIdFieldType();
     const records = await queryRecordsByRecordIds(recordIds, idFieldType);
     const cards = recordsToInspirationCards(records);
-    return { ok: true, data: cards, source: "notion" };
+    return {
+      ok: true,
+      data: { cards, activeUserRecord: active },
+      source: "notion",
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : "收藏查詢失敗";
     return { ok: false, error: message };

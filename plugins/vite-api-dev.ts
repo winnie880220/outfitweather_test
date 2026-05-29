@@ -312,8 +312,21 @@ async function handleApi(
         const activePageId = url.searchParams.get("activePageId") ?? undefined;
         const tempRaw = url.searchParams.get("temp");
         const apparentTempRaw = url.searchParams.get("apparentTemp");
+        const readDirect = url.searchParams.get("readDirect") === "1";
+        const activeDate = url.searchParams.get("activeDate") ?? undefined;
+        const activeTempBandRaw = url.searchParams.get("activeTempBand");
+        const activeRecord =
+          readDirect && activePageId && activeDate
+            ? {
+                pageId: activePageId,
+                date: activeDate,
+                tempBand: activeTempBandRaw ? Number(activeTempBandRaw) : 0,
+              }
+            : undefined;
         const result = await queryFavoritedOutfits(favoriterUserName, {
           activePageId,
+          activeRecord,
+          readPageIdDirectly: readDirect,
           profile: {
             temp: tempRaw ? Number(tempRaw) : undefined,
             apparentTemp: apparentTempRaw ? Number(apparentTempRaw) : undefined,
@@ -331,6 +344,7 @@ async function handleApi(
           location?: string;
           gender?: string;
           temp?: number;
+          apparentTemp?: number;
           weather?: string;
         };
         const favoriterUserName = (body.favoriterUserName ?? body.userName ?? "").trim();
@@ -356,6 +370,7 @@ async function handleApi(
             location: body.location,
             gender: body.gender as NotionRecordPayload["gender"],
             temp: body.temp,
+            apparentTemp: body.apparentTemp,
             weather: body.weather,
           },
         });
