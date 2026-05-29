@@ -24,7 +24,7 @@ async function main() {
     startedAt: new Date().toISOString(),
     weather: "多雲",
     temperature: 26,
-    apparentTemp: "27",
+    apparentTemp: 27,
     humidity: 72,
     rainProb: 30,
     uvIndex: 5,

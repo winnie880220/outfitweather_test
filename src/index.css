@@ -2558,28 +2558,26 @@ body {
   position: absolute;
   z-index: 520;
   pointer-events: none;
-  transform: translate(-50%, -50%);
   display: inline-flex;
   align-items: center;
   gap: 0.32rem;
 }
 
-.map-color-join-fx__halo {
-  position: absolute;
-  inset: -0.5rem;
-  border-radius: 999px;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 75%);
-  animation: map-color-join-halo 1.2s ease-out;
-}
-
 .map-color-join-fx__dot {
+  --join-rgb: 237, 230, 216;
   position: relative;
+  flex-shrink: 0;
   width: 0.72rem;
   height: 0.72rem;
   border-radius: 999px;
   box-shadow:
     0 0 0 2px rgba(255, 255, 255, 0.95),
     0 4px 10px rgba(44, 40, 37, 0.24);
+  animation: map-color-join-dot-pulse 2.4s ease-out;
+}
+
+.leaflet-pane .map-region-color-join-pulse {
+  pointer-events: none;
 }
 
 .map-color-join-fx__label {
@@ -2598,14 +2596,29 @@ body {
   white-space: nowrap;
 }
 
-@keyframes map-color-join-halo {
+@keyframes map-color-join-dot-pulse {
   0% {
-    transform: scale(0.4);
-    opacity: 0.85;
+    box-shadow:
+      0 0 0 2px rgba(255, 255, 255, 0.95),
+      0 0 0 0 rgba(var(--join-rgb), 0.72),
+      0 4px 10px rgba(44, 40, 37, 0.24);
+  }
+  45% {
+    box-shadow:
+      0 0 0 2px rgba(255, 255, 255, 0.95),
+      0 0 0 22px rgba(var(--join-rgb), 0.35),
+      0 4px 10px rgba(44, 40, 37, 0.2);
+  }
+  70% {
+    box-shadow:
+      0 0 0 2px rgba(255, 255, 255, 0.95),
+      0 0 0 36px rgba(var(--join-rgb), 0),
+      0 4px 10px rgba(44, 40, 37, 0.18);
   }
   100% {
-    transform: scale(1.35);
-    opacity: 0;
+    box-shadow:
+      0 0 0 2px rgba(255, 255, 255, 0.95),
+      0 4px 10px rgba(44, 40, 37, 0.24);
   }
 }
 

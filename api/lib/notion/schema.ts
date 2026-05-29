@@ -7,6 +7,7 @@ export const RECORDS_DB = {
   temperature: "Temperature",
   maxTemp: "Max Temp",
   minTemp: "Min Temp",
+  /** Notion 類型：Number */
   apparentTemp: "Apparent Temp",
   humidity: "Humidity",
   rainProb: "Rain Prob",

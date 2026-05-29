@@ -602,6 +602,7 @@ const HomeScreen = ({
   onOpenRegionInspiration,
   showPendingBanner,
   mapColorJoinAnimation,
+  onMapColorJoinAnimationDone,
   onContinuePending,
   onRequestExit,
 }: {
@@ -625,6 +626,7 @@ const HomeScreen = ({
   onOpenRegionInspiration: () => void;
   showPendingBanner: boolean;
   mapColorJoinAnimation: MapColorJoinAnimation | null;
+  onMapColorJoinAnimationDone: () => void;
   onContinuePending: () => void;
   onRequestExit: () => void;
 }) => (
@@ -652,6 +654,7 @@ const HomeScreen = ({
         <TaiwanOutfitMap
           regionColorFills={regionColorFills}
           mapColorJoinAnimation={mapColorJoinAnimation}
+          onMapColorJoinAnimationDone={onMapColorJoinAnimationDone}
           weather={mapWeather}
           weatherLoading={mapWeatherLoading}
           userCounty={userCounty}
@@ -1308,6 +1311,9 @@ export default function App() {
     useState<FeedbackShareSnapshot | null>(null);
   const [mapColorJoinAnimation, setMapColorJoinAnimation] =
     useState<MapColorJoinAnimation | null>(null);
+  const clearMapColorJoinAnimation = useCallback(() => {
+    setMapColorJoinAnimation(null);
+  }, []);
   const [currentTime, setCurrentTime] = useState("");
 
   const showToast = (msg: string) => setToastMsg(msg);
@@ -2271,9 +2277,7 @@ export default function App() {
     setFeedbackDesc("尚未標記");
     setScreen("home");
     const colorName = limitOutfitColors(snapshot?.analysis?.colors ?? [])[0];
-    const region =
-      parseLocationToRegion(snapshot?.context.locationName ?? "") ??
-      locationPickerToRegion(locationPicker);
+    const region = locationPickerToRegion(locationPicker);
     if (colorName) {
       setMapColorJoinAnimation({
         id: Date.now(),
@@ -2432,6 +2436,7 @@ export default function App() {
                   regionInsights={regionInsights}
                   regionInsightsLoading={regionInsightsLoading}
                   mapColorJoinAnimation={mapColorJoinAnimation}
+                  onMapColorJoinAnimationDone={clearMapColorJoinAnimation}
                   onOpenRegionInspiration={() => {
                     if (!selectedRegion) return;
                     setInspirationDrilldownRegion(selectedRegion);

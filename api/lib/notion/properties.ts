@@ -11,6 +11,12 @@ const multiSelect = (values: string[]) => ({
   multi_select: values.filter(Boolean).map((name) => ({ name })),
 });
 
+function toRoundedNumber(value: string | number): number | null {
+  const n = typeof value === "number" ? value : Number(String(value).trim());
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n);
+}
+
 export function toNotionProperties(payload: NotionRecordPayload): NotionProps {
   const props: NotionProps = {};
 
@@ -47,7 +53,10 @@ export function toNotionProperties(payload: NotionRecordPayload): NotionProps {
     props[RECORDS_DB.minTemp] = { number: payload.minTemp };
   }
   if (payload.apparentTemp !== undefined) {
-    props[RECORDS_DB.apparentTemp] = richText(String(payload.apparentTemp));
+    const n = toRoundedNumber(payload.apparentTemp);
+    if (n != null) {
+      props[RECORDS_DB.apparentTemp] = { number: n };
+    }
   }
   if (payload.humidity !== undefined) {
     props[RECORDS_DB.humidity] = { number: payload.humidity };

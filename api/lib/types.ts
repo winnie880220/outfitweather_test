@@ -40,7 +40,7 @@ export interface NotionRecordPayload {
   temperature?: number;
   maxTemp?: number;
   minTemp?: number;
-  apparentTemp?: string | number;
+  apparentTemp?: number;
   humidity?: number;
   rainProb?: number;
   uvIndex?: number;

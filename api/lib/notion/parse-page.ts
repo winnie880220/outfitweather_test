@@ -33,7 +33,7 @@ export type ParsedNotionRecord = {
   temperature?: number;
   humidity?: number;
   rainProb?: number;
-  apparentTemp?: string;
+  apparentTemp?: number;
   upperBodyTags: string[];
   lowerBodyTags: string[];
   colors: string[];
@@ -46,6 +46,21 @@ export type ParsedNotionRecord = {
   /** Notion File Upload API 的 id（列表查詢可能無直接 url） */
   photoFileUploadId?: string;
 };
+
+/** number 欄位；舊資料若仍為 rich_text 則嘗試解析 */
+function readNumberProp(prop?: NotionProp): number | undefined {
+  if (!prop) return undefined;
+  if (prop.type === "number" && prop.number != null && !Number.isNaN(prop.number)) {
+    return prop.number;
+  }
+  if (prop.type === "rich_text") {
+    const text = prop.rich_text?.map((t) => t.plain_text ?? "").join("").trim();
+    if (!text) return undefined;
+    const n = Number(text);
+    if (!Number.isNaN(n)) return n;
+  }
+  return undefined;
+}
 
 function plainText(prop?: NotionProp): string {
   if (!prop) return "";
@@ -117,7 +132,7 @@ export function parseNotionPage(page: {
     temperature: temperature ?? undefined,
     humidity: p[RECORDS_DB.humidity]?.number ?? undefined,
     rainProb: p[RECORDS_DB.rainProb]?.number ?? undefined,
-    apparentTemp: plainText(p[RECORDS_DB.apparentTemp]) || undefined,
+    apparentTemp: readNumberProp(p[RECORDS_DB.apparentTemp]),
     upperBodyTags: p[RECORDS_DB.upperBodyTags]?.multi_select?.map((t) => t.name) ?? [],
     lowerBodyTags: lowerSelect ? [lowerSelect] : [],
     colors: p[RECORDS_DB.color]?.multi_select?.map((t) => t.name) ?? [],

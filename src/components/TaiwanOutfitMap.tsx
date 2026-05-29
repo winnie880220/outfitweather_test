@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { AnimatePresence, motion } from "motion/react";
 import L from "leaflet";
 import { feature } from "topojson-client";
@@ -24,6 +31,10 @@ import {
   type TaiwanCounty,
 } from "../../lib/taiwan-county";
 import { colorNameToHex, isLightMapFillHex } from "../lib/color-lexicon";
+import {
+  colorHexToRgbCsv,
+  playRegionShapeColorPulse,
+} from "../lib/map-region-color-pulse";
 import type { RegionColorFill } from "../lib/api/region-color-fills";
 import type { WeatherData } from "../types/api";
 import "leaflet/dist/leaflet.css";
@@ -279,6 +290,7 @@ function MapWeatherOverlay({
 export function TaiwanOutfitMap({
   regionColorFills,
   mapColorJoinAnimation,
+  onMapColorJoinAnimationDone,
   weather,
   weatherLoading,
   userCounty,
@@ -292,6 +304,8 @@ export function TaiwanOutfitMap({
   /** 各區顏色排行第一，填滿行政區／縣市形狀 */
   regionColorFills: RegionColorFill[];
   mapColorJoinAnimation: MapColorJoinAnimation | null;
+  /** 動效已播放後由地圖呼叫，避免關閉區域排行等操作再次觸發 */
+  onMapColorJoinAnimationDone?: () => void;
   weather: WeatherData | null;
   weatherLoading: boolean;
   userCounty: TaiwanCounty | null;
@@ -334,9 +348,12 @@ export function TaiwanOutfitMap({
     top: number;
     colorName: string;
     colorHex: string;
+    colorRgb: string;
     label: string;
   } | null>(null);
   const colorJoinTimerRef = useRef<number | null>(null);
+  const playedColorJoinAnimIdRef = useRef<number | null>(null);
+  const regionPulseCleanupRef = useRef<(() => void) | null>(null);
 
   mapInteractionRef.current = {
     mapView,
@@ -667,6 +684,96 @@ export function TaiwanOutfitMap({
     [onSelectRegion]
   );
 
+  const resolveRegionLatLng = useCallback(
+    (region: MapRegion): L.LatLng | null => {
+      if (region.level === "district") {
+        const label = districtLabelPointsRef.current.get(region.district);
+        if (label) return label;
+        const bounds = districtBoundsRef.current.get(region.district);
+        if (bounds?.isValid()) return bounds.getCenter();
+        const c = TAIPEI_DISTRICT_CENTROIDS[region.district];
+        return L.latLng(c[0], c[1]);
+      }
+      if (region.county === TAIPEI_COUNTY) {
+        const taipei = getTaipeiBounds();
+        if (taipei?.isValid()) return taipei.getCenter();
+      }
+      const countyBounds = countyBoundsRef.current.get(region.county);
+      if (countyBounds?.isValid()) return countyBounds.getCenter();
+      const c = COUNTY_CENTROIDS[region.county];
+      return c ? L.latLng(c[0], c[1]) : null;
+    },
+    [getTaipeiBounds]
+  );
+
+  const findRegionFeature = useCallback((region: MapRegion): Feature | null => {
+    if (region.level === "district") {
+      let found: Feature | null = null;
+      districtLayerRef.current?.eachLayer((layer) => {
+        const feat = (layer as L.Layer & { feature?: Feature }).feature;
+        const name = feat?.properties?.TOWNNAME as string | undefined;
+        if (name === region.district && feat) found = feat;
+      });
+      return found;
+    }
+
+    let found: Feature | null = null;
+    countyLayerRef.current?.eachLayer((layer) => {
+      const feat = (layer as L.Layer & { feature?: Feature }).feature;
+      const name = feat?.properties?.COUNTYNAME as string | undefined;
+      if (name === region.county && feat) found = feat;
+    });
+    return found;
+  }, []);
+
+  const focusRegionForColorJoin = useCallback(
+    (region: MapRegion) => {
+      const map = mapRef.current;
+      if (!map) return;
+
+      if (region.level === "district") {
+        if (mapView !== "taipei-districts") {
+          onMapViewChange("taipei-districts");
+        }
+        void loadDistrictLayer(map).then(() => {
+          districtsVisibleRef.current = true;
+          setDistrictsVisibleByZoom(true);
+          focusDistrict(region.district);
+          scheduleMapPaint();
+        });
+        return;
+      }
+
+      if (region.county === TAIPEI_COUNTY) {
+        if (mapView !== "taipei-districts") {
+          onMapViewChange("taipei-districts");
+        }
+        const bounds = getTaipeiBounds();
+        if (bounds?.isValid()) {
+          focusBounds(bounds, 12, TAIPEI_DISTRICTS_MIN_ZOOM);
+        }
+        return;
+      }
+
+      if (mapView !== "counties") {
+        onMapViewChange("counties");
+      }
+      const bounds = countyBoundsRef.current.get(region.county);
+      if (bounds?.isValid()) {
+        focusBounds(bounds, 10);
+      }
+    },
+    [
+      mapView,
+      onMapViewChange,
+      loadDistrictLayer,
+      focusDistrict,
+      focusBounds,
+      getTaipeiBounds,
+      scheduleMapPaint,
+    ]
+  );
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el || mapRef.current) return;
@@ -896,47 +1003,112 @@ export function TaiwanOutfitMap({
       if (colorJoinTimerRef.current != null) {
         window.clearTimeout(colorJoinTimerRef.current);
       }
+      regionPulseCleanupRef.current?.();
+      regionPulseCleanupRef.current = null;
     };
   }, []);
 
   useEffect(() => {
     if (!mapColorJoinAnimation || !mapReady) return;
     const map = mapRef.current;
-    const frame = containerRef.current;
-    if (!map || !frame) return;
+    const canvas = containerRef.current;
+    if (!map || !canvas) return;
 
-    const target = mapColorJoinAnimation.region;
-    const targetLatLng =
-      target.level === "district"
-        ? districtBoundsRef.current.get(target.district)?.getCenter() ??
-          L.latLng(TAIPEI_DISTRICT_CENTROIDS[target.district])
-        : countyBoundsRef.current.get(target.county)?.getCenter() ??
-          L.latLng(COUNTY_CENTROIDS[target.county]);
+    const anim = mapColorJoinAnimation;
+    if (playedColorJoinAnimIdRef.current === anim.id) return;
 
-    const point = map.latLngToContainerPoint(targetLatLng);
-    const rect = frame.getBoundingClientRect();
-    const left = Math.max(24, Math.min(rect.width - 24, point.x));
-    const top = Math.max(24, Math.min(rect.height - 24, point.y));
-    const colorName = mapColorJoinAnimation.colorName;
-
-    setColorJoinFx({
-      id: mapColorJoinAnimation.id,
-      left,
-      top,
-      colorName,
-      colorHex: colorNameToHex(colorName),
-      label: regionLabel(target),
-    });
-
-    if (colorJoinTimerRef.current != null) {
-      window.clearTimeout(colorJoinTimerRef.current);
+    const target = anim.region;
+    if (
+      target.level === "district" &&
+      mapView === "taipei-districts" &&
+      !districtsReady
+    ) {
+      focusRegionForColorJoin(target);
+      return;
     }
-    colorJoinTimerRef.current = window.setTimeout(() => {
-      setColorJoinFx((prev) =>
-        prev?.id === mapColorJoinAnimation.id ? null : prev
-      );
-    }, 1650);
-  }, [mapColorJoinAnimation, mapReady]);
+
+    let cancelled = false;
+    let placed = false;
+
+    const placeFx = () => {
+      if (cancelled || placed) return;
+      const latLng = resolveRegionLatLng(target);
+      if (!latLng) return;
+
+      scheduleMapInvalidate(map);
+      const point = map.latLngToContainerPoint(latLng);
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      if (width < 1 || height < 1) return;
+
+      placed = true;
+      playedColorJoinAnimIdRef.current = anim.id;
+      onMapColorJoinAnimationDone?.();
+
+      const left = Math.max(24, Math.min(width - 24, point.x));
+      const top = Math.max(24, Math.min(height - 24, point.y));
+      const colorHex = colorNameToHex(anim.colorName);
+
+      regionPulseCleanupRef.current?.();
+      const feature = findRegionFeature(target);
+      if (feature) {
+        regionPulseCleanupRef.current = playRegionShapeColorPulse(
+          map,
+          feature,
+          colorHex,
+          latLng
+        );
+      }
+
+      setColorJoinFx({
+        id: anim.id,
+        left,
+        top,
+        colorName: anim.colorName,
+        colorHex,
+        colorRgb: colorHexToRgbCsv(colorHex),
+        label: regionLabel(target),
+      });
+
+      if (colorJoinTimerRef.current != null) {
+        window.clearTimeout(colorJoinTimerRef.current);
+      }
+      colorJoinTimerRef.current = window.setTimeout(() => {
+        setColorJoinFx((prev) => (prev?.id === anim.id ? null : prev));
+        regionPulseCleanupRef.current?.();
+        regionPulseCleanupRef.current = null;
+      }, 3600);
+    };
+
+    const schedulePlace = () => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(placeFx);
+      });
+    };
+
+    focusRegionForColorJoin(target);
+    map.once("moveend", schedulePlace);
+    const fallback = window.setTimeout(schedulePlace, 520);
+    const lateFallback = window.setTimeout(schedulePlace, 920);
+
+    return () => {
+      cancelled = true;
+      map.off("moveend", schedulePlace);
+      window.clearTimeout(fallback);
+      window.clearTimeout(lateFallback);
+      regionPulseCleanupRef.current?.();
+      regionPulseCleanupRef.current = null;
+    };
+  }, [
+    mapColorJoinAnimation,
+    mapReady,
+    mapView,
+    districtsReady,
+    resolveRegionLatLng,
+    focusRegionForColorJoin,
+    findRegionFeature,
+    onMapColorJoinAnimationDone,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1119,15 +1291,19 @@ export function TaiwanOutfitMap({
               key={colorJoinFx.id}
               className="map-color-join-fx"
               style={{ left: colorJoinFx.left, top: colorJoinFx.top }}
-              initial={{ opacity: 0, scale: 0.58, y: 8 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 1.12 }}
-              transition={{ duration: 0.32 }}
+              initial={{ opacity: 0, scale: 0.58, x: "-50%", y: "calc(-50% + 8px)" }}
+              animate={{ opacity: 1, scale: 1, x: "-50%", y: "-50%" }}
+              exit={{ opacity: 0, scale: 1.12, x: "-50%", y: "-50%" }}
+              transition={{ duration: 0.45 }}
             >
-              <span className="map-color-join-fx__halo" aria-hidden />
               <span
                 className="map-color-join-fx__dot"
-                style={{ backgroundColor: colorJoinFx.colorHex }}
+                style={
+                  {
+                    backgroundColor: colorJoinFx.colorHex,
+                    "--join-rgb": colorJoinFx.colorRgb,
+                  } as CSSProperties
+                }
                 aria-hidden
               />
               <span className="map-color-join-fx__label">

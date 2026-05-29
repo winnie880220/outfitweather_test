@@ -81,7 +81,7 @@ export function buildRecordFromWeather(
     ...(typeof weather.tempMin === "number" && !Number.isNaN(weather.tempMin)
       ? { minTemp: Math.round(weather.tempMin) }
       : {}),
-    apparentTemp: String(Math.round(weather.apparentTemp)),
+    apparentTemp: Math.round(weather.apparentTemp),
     humidity: weather.humidity,
     rainProb: weather.rainProb,
     uvIndex: Math.round(weather.uvIndex),
@@ -121,9 +121,10 @@ export async function createFeedback(payload: {
       weather: payload.weatherSnapshot.condition,
       humidity: payload.weatherSnapshot.humidity,
       rainProb: payload.weatherSnapshot.rainProb,
-      apparentTemp: payload.weatherSnapshot.apparentTemp
-        ? String(Math.round(payload.weatherSnapshot.apparentTemp))
-        : undefined,
+      apparentTemp:
+        payload.weatherSnapshot.apparentTemp != null
+          ? Math.round(payload.weatherSnapshot.apparentTemp)
+          : undefined,
       uvIndex: payload.weatherSnapshot.uvIndex
         ? Math.round(payload.weatherSnapshot.uvIndex)
         : undefined,

@@ -2,6 +2,15 @@ import { ensureActiveUserRecord } from "../lib/notion/user-active-record";
 import type { ActiveUserRecordState } from "../lib/notion/user-active-record";
 import { sendJson, type VercelRequest, type VercelResponse } from "../lib/vercel";
 
+function optionalRoundedNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.round(value);
+  if (typeof value === "string" && value.trim()) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return Math.round(n);
+  }
+  return undefined;
+}
+
 async function readJsonBody(req: VercelRequest): Promise<unknown> {
   if (req.body !== undefined && req.body !== null) {
     return typeof req.body === "string" ? JSON.parse(req.body) : req.body;
@@ -26,7 +35,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       weather?: string;
       humidity?: number;
       rainProb?: number;
-      apparentTemp?: number;
+      apparentTemp?: number | string;
       uvIndex?: number;
       activeUserRecord?: ActiveUserRecordState | null;
     };
@@ -56,8 +65,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         humidity:
           typeof body.humidity === "number" ? body.humidity : undefined,
         rainProb: typeof body.rainProb === "number" ? body.rainProb : undefined,
-        apparentTemp:
-          typeof body.apparentTemp === "number" ? body.apparentTemp : undefined,
+        apparentTemp: optionalRoundedNumber(body.apparentTemp),
         uvIndex: typeof body.uvIndex === "number" ? body.uvIndex : undefined,
       },
       body.activeUserRecord ?? null
