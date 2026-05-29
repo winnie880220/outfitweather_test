@@ -1,16 +1,13 @@
-import { apiGet } from "./client";
+import { fetchMapColors, type MapDataRegion } from "./map-colors";
 
-export type MapDataRegion = {
-  regionKey: string;
-  county: string;
-  district?: string;
-};
+export type { MapDataRegion };
 
 export type MapDataRegionsData = {
   regions: MapDataRegion[];
 };
 
-/** GET /api/map-data-regions — 有穿搭色票資料的區域 */
+/** 從 /api/map-colors 取得有穿搭色票資料的區域 */
 export async function fetchMapDataRegions(): Promise<MapDataRegionsData> {
-  return apiGet<MapDataRegionsData>("/api/map-data-regions");
+  const { regions } = await fetchMapColors();
+  return { regions };
 }

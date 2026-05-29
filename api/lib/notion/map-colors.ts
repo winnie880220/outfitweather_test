@@ -9,6 +9,7 @@ import {
   type TaiwanCounty,
 } from "../../../lib/taiwan-county";
 import type { ParsedNotionRecord } from "./parse-page";
+import { collectMapDataRegions, type MapDataRegion } from "./map-data-regions";
 import { queryRecordsWithColors } from "./query-records";
 
 export type MapColorPoint = {
@@ -73,7 +74,21 @@ export function recordsToMapColorPoints(records: ParsedNotionRecord[]): MapColor
   return points.slice(0, MAX_POINTS);
 }
 
-export async function getMapColorPoints(): Promise<MapColorPoint[]> {
+export type MapColorsBundle = {
+  points: MapColorPoint[];
+  regions: MapDataRegion[];
+};
+
+/** 一次查詢回傳地圖色票點與有資料區域列表 */
+export async function getMapColorsBundle(): Promise<MapColorsBundle> {
   const records = await queryRecordsWithColors();
-  return recordsToMapColorPoints(records);
+  return {
+    points: recordsToMapColorPoints(records),
+    regions: collectMapDataRegions(records),
+  };
+}
+
+export async function getMapColorPoints(): Promise<MapColorPoint[]> {
+  const { points } = await getMapColorsBundle();
+  return points;
 }

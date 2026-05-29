@@ -11,8 +11,7 @@ import {
   getRegionColorFills,
   getRegionColorFillsForLocales,
 } from "../api/lib/notion/outfit-insights";
-import { getMapColorPoints } from "../api/lib/notion/map-colors";
-import { getMapDataRegions } from "../api/lib/notion/map-data-regions";
+import { getMapColorsBundle } from "../api/lib/notion/map-colors";
 import { getRecordByPageId } from "../api/lib/notion/get-record";
 import { createRecordInNotion, updateRecordInNotion } from "../api/lib/notion/records";
 import {
@@ -142,16 +141,8 @@ async function handleApi(
       if (!isNotionOk()) {
         return send(res, 503, { ok: false, error: "Notion 未設定" });
       }
-      const points = await getMapColorPoints();
-      return send(res, 200, { ok: true, data: { points }, source: "notion" });
-    }
-
-    if (url.pathname === "/api/map-data-regions" && req.method === "GET") {
-      if (!isNotionOk()) {
-        return send(res, 503, { ok: false, error: "Notion 未設定" });
-      }
-      const regions = await getMapDataRegions();
-      return send(res, 200, { ok: true, data: { regions }, source: "notion" });
+      const { points, regions } = await getMapColorsBundle();
+      return send(res, 200, { ok: true, data: { points, regions }, source: "notion" });
     }
 
     if (url.pathname === "/api/outfit-insights" && req.method === "GET") {

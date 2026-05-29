@@ -9,8 +9,15 @@ export type MapColorPoint = {
   lon: number;
 };
 
+export type MapDataRegion = {
+  regionKey: string;
+  county: string;
+  district?: string;
+};
+
 export type MapColorsData = {
   points: MapColorPoint[];
+  regions: MapDataRegion[];
 };
 
 /** GET /api/map-colors */

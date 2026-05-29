@@ -1,10 +1,10 @@
 export { ApiError } from "./client";
 export { analyzeOutfit, type OutfitAnalysis, type OutfitTagAnchor } from "./outfit";
 export { fetchOutfitInsights } from "./outfit-insights";
+export type { MapColorPoint, MapColorsData, MapDataRegion } from "./map-colors";
 export { fetchMapColors } from "./map-colors";
-export type { MapColorPoint, MapColorsData } from "./map-colors";
 export { fetchMapDataRegions } from "./map-data-regions";
-export type { MapDataRegion, MapDataRegionsData } from "./map-data-regions";
+export type { MapDataRegionsData } from "./map-data-regions";
 export {
   fetchRegionColorFills,
   fetchRegionColorFillsByLocale,
