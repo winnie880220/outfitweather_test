@@ -1,4 +1,5 @@
-import { apiGet } from "./client";
+import type { MapFillLocaleSpec } from "../../../lib/map-fill-locales";
+import { apiGet, apiPost } from "./client";
 
 export type RegionColorFill = {
   regionKey: string;
@@ -32,4 +33,11 @@ export async function fetchRegionColorFills(
     params.set("airTemp", String(Math.round(options.airTemp)));
   }
   return apiGet<RegionColorFillsData>(`/api/region-color-fills?${params}`);
+}
+
+/** POST /api/region-color-fills — 各地圖區塊依各自體感溫度查填色 */
+export async function fetchRegionColorFillsByLocale(
+  locales: MapFillLocaleSpec[]
+): Promise<RegionColorFillsData> {
+  return apiPost<RegionColorFillsData>("/api/region-color-fills", { locales });
 }

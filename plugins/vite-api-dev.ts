@@ -9,8 +9,10 @@ import { isGeminiConfigured } from "../api/lib/env";
 import {
   getOutfitInsights,
   getRegionColorFills,
+  getRegionColorFillsForLocales,
 } from "../api/lib/notion/outfit-insights";
 import { getMapColorPoints } from "../api/lib/notion/map-colors";
+import { getMapDataRegions } from "../api/lib/notion/map-data-regions";
 import { getRecordByPageId } from "../api/lib/notion/get-record";
 import { createRecordInNotion, updateRecordInNotion } from "../api/lib/notion/records";
 import {
@@ -144,6 +146,14 @@ async function handleApi(
       return send(res, 200, { ok: true, data: { points }, source: "notion" });
     }
 
+    if (url.pathname === "/api/map-data-regions" && req.method === "GET") {
+      if (!isNotionOk()) {
+        return send(res, 503, { ok: false, error: "Notion 未設定" });
+      }
+      const regions = await getMapDataRegions();
+      return send(res, 200, { ok: true, data: { regions }, source: "notion" });
+    }
+
     if (url.pathname === "/api/outfit-insights" && req.method === "GET") {
       if (!isNotionOk()) {
         return send(res, 503, { ok: false, error: "Notion 未設定" });
@@ -164,20 +174,50 @@ async function handleApi(
       return send(res, 200, { ok: true, data, source: "notion" });
     }
 
-    if (url.pathname === "/api/region-color-fills" && req.method === "GET") {
+    if (url.pathname === "/api/region-color-fills") {
       if (!isNotionOk()) {
         return send(res, 503, { ok: false, error: "Notion 未設定" });
       }
-      const temp = parseFloat(url.searchParams.get("temp") ?? "");
-      if (Number.isNaN(temp)) {
-        return send(res, 400, { ok: false, error: "請提供有效的 temp" });
+      if (req.method === "POST") {
+        const body = ((await readBody(req)) ?? {}) as { locales?: unknown };
+        const locales = Array.isArray(body.locales) ? body.locales : null;
+        if (!locales?.length) {
+          return send(res, 400, { ok: false, error: "缺少 locales" });
+        }
+        const parsed = locales
+          .map((item) => {
+            if (!item || typeof item !== "object") return null;
+            const row = item as Record<string, unknown>;
+            const county = typeof row.county === "string" ? row.county : "";
+            const refTemp = Number(row.refTemp);
+            if (!county || Number.isNaN(refTemp)) return null;
+            return {
+              regionKey: String(row.regionKey ?? county),
+              county,
+              ...(row.district ? { district: String(row.district) } : {}),
+              refTemp,
+              airTemp: Number(row.airTemp ?? refTemp),
+              delta: Number(row.delta ?? 1),
+            };
+          })
+          .filter(Boolean);
+        const fills = await getRegionColorFillsForLocales(
+          parsed as Parameters<typeof getRegionColorFillsForLocales>[0]
+        );
+        return send(res, 200, { ok: true, data: { fills }, source: "notion" });
       }
-      const delta = parseFloat(url.searchParams.get("delta") ?? "1") || 1;
-      const airTempRaw = url.searchParams.get("airTemp");
-      const airTempParsed = airTempRaw ? parseFloat(airTempRaw) : Number.NaN;
-      const fallbackTemp = Number.isNaN(airTempParsed) ? undefined : airTempParsed;
-      const fills = await getRegionColorFills(temp, delta, { fallbackTemp });
-      return send(res, 200, { ok: true, data: { fills }, source: "notion" });
+      if (req.method === "GET") {
+        const temp = parseFloat(url.searchParams.get("temp") ?? "");
+        if (Number.isNaN(temp)) {
+          return send(res, 400, { ok: false, error: "請提供有效的 temp" });
+        }
+        const delta = parseFloat(url.searchParams.get("delta") ?? "1") || 1;
+        const airTempRaw = url.searchParams.get("airTemp");
+        const airTempParsed = airTempRaw ? parseFloat(airTempRaw) : Number.NaN;
+        const fallbackTemp = Number.isNaN(airTempParsed) ? undefined : airTempParsed;
+        const fills = await getRegionColorFills(temp, delta, { fallbackTemp });
+        return send(res, 200, { ok: true, data: { fills }, source: "notion" });
+      }
     }
 
     if (url.pathname === "/api/notion-records") {

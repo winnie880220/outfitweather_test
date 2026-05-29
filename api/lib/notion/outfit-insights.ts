@@ -11,7 +11,8 @@ import {
   TAIPEI_COUNTY,
   type TaipeiDistrict,
 } from "../../../lib/taipei-district";
-import type { TaiwanCounty } from "../../../lib/taiwan-county";
+import { TAIWAN_COUNTIES, type TaiwanCounty } from "../../../lib/taiwan-county";
+import type { MapFillLocaleSpec } from "../../../lib/map-fill-locales";
 import { pickTopRegionColorNames } from "../../../lib/map-region-color-rank";
 import { rankingColorsFromRecord } from "../../../lib/outfit-colors";
 import {
@@ -324,107 +325,102 @@ function colorsForRegionAggregation(record: ParsedNotionRecord): string[] {
     .filter((c): c is string => Boolean(c));
 }
 
-function ensureColorBucket(
-  buckets: Map<
-    string,
-    { county: TaiwanCounty; district?: TaipeiDistrict; colorCounts: Map<string, number> }
-  >,
-  key: string,
-  county: TaiwanCounty,
-  district?: TaipeiDistrict
-) {
-  let bucket = buckets.get(key);
-  if (!bucket) {
-    bucket = {
-      county,
-      ...(district ? { district } : {}),
-      colorCounts: new Map(),
-    };
-    buckets.set(key, bucket);
+function tempQueryKey(refTemp: number, delta: number, airTemp: number): string {
+  return `${Math.round(refTemp)}@d${delta}@a${Math.round(airTemp)}`;
+}
+
+function fillFromLocaleRecords(
+  locale: MapFillLocaleSpec,
+  records: ParsedNotionRecord[]
+): RegionColorFill | null {
+  const filtered = records.filter((r) =>
+    recordMatchesRegion(r, locale.county, locale.district)
+  );
+  const colorCounts = new Map<string, number>();
+  for (const record of filtered) {
+    const [colorName] = colorsForRegionAggregation(record);
+    if (!colorName) continue;
+    colorCounts.set(colorName, (colorCounts.get(colorName) ?? 0) + 1);
   }
-  return bucket;
+  const top = pickTopRegionColorNames(colorCounts);
+  if (!top) return null;
+  return {
+    regionKey: locale.regionKey,
+    county: locale.county,
+    ...(locale.district ? { district: locale.district } : {}),
+    colorName: top.colorName,
+    hex: colorNameToHex(top.colorName),
+    ...(top.colorName2
+      ? {
+          colorName2: top.colorName2,
+          hex2: colorNameToHex(top.colorName2),
+        }
+      : {}),
+  };
 }
 
-function addRecordColorsToBucket(
-  bucket: { colorCounts: Map<string, number> },
-  record: ParsedNotionRecord
-) {
-  const [colorName] = colorsForRegionAggregation(record);
-  if (!colorName) return;
-  bucket.colorCounts.set(colorName, (bucket.colorCounts.get(colorName) ?? 0) + 1);
+async function queryRecordsForLocaleTemp(
+  refTemp: number,
+  delta: number,
+  airTemp: number
+): Promise<ParsedNotionRecord[]> {
+  const rounded = Math.round(refTemp);
+  const airRounded = Math.round(airTemp);
+  let records = await queryRecordsByTemperature(rounded, delta);
+  if (records.length === 0 && airRounded !== rounded) {
+    records = await queryRecordsByTemperature(airRounded, delta);
+  }
+  return records;
 }
 
-/** 一次查詢後依區域聚合顏色排行第一，供地圖行政區填色 */
+/**
+ * 各地圖區塊依「該區當下體感溫度」各自查穿搭排行色（同一溫區共用 Notion 查詢）。
+ */
+export async function getRegionColorFillsForLocales(
+  locales: MapFillLocaleSpec[]
+): Promise<RegionColorFill[]> {
+  if (locales.length === 0) return [];
+
+  const groups = new Map<string, MapFillLocaleSpec[]>();
+  for (const locale of locales) {
+    const key = tempQueryKey(locale.refTemp, locale.delta, locale.airTemp);
+    const list = groups.get(key) ?? [];
+    list.push(locale);
+    groups.set(key, list);
+  }
+
+  const fills: RegionColorFill[] = [];
+  for (const [, group] of groups) {
+    const sample = group[0]!;
+    const records = await queryRecordsForLocaleTemp(
+      sample.refTemp,
+      sample.delta,
+      sample.airTemp
+    );
+    for (const locale of group) {
+      const fill = fillFromLocaleRecords(locale, records);
+      if (fill) fills.push(fill);
+    }
+  }
+
+  return fills;
+}
+
+/** @deprecated 單一溫度全台聚合；請改用 getRegionColorFillsForLocales */
 export async function getRegionColorFills(
   temp: number,
   delta = 1,
   options?: { fallbackTemp?: number }
 ): Promise<RegionColorFill[]> {
-  const rounded = Math.round(temp);
-  const fallbackRounded =
-    options?.fallbackTemp != null && Number.isFinite(options.fallbackTemp)
-      ? Math.round(options.fallbackTemp)
-      : null;
-
-  let records = await queryRecordsByTemperature(rounded, delta);
-  if (
-    records.length === 0 &&
-    fallbackRounded != null &&
-    fallbackRounded !== rounded
-  ) {
-    records = await queryRecordsByTemperature(fallbackRounded, delta);
-  }
-  const buckets = new Map<
-    string,
-    { county: TaiwanCounty; district?: TaipeiDistrict; colorCounts: Map<string, number> }
-  >();
-
-  for (const record of records) {
-    const region = parseLocationToRegion(record.location);
-    if (!region) continue;
-
-    if (region.level === "district") {
-      const districtKey = regionKey(region);
-      addRecordColorsToBucket(
-        ensureColorBucket(buckets, districtKey, region.county, region.district),
-        record
-      );
-    }
-
-    if (region.county === TAIPEI_COUNTY) {
-      /** 台北市大區：含「台北市」與各行政區紀錄，供縮小地圖整市填色 */
-      addRecordColorsToBucket(
-        ensureColorBucket(buckets, TAIPEI_COUNTY, TAIPEI_COUNTY),
-        record
-      );
-    } else if (region.level === "county") {
-      addRecordColorsToBucket(
-        ensureColorBucket(buckets, region.county, region.county),
-        record
-      );
-    }
-  }
-
-  const fills: RegionColorFill[] = [];
-  for (const [regionKeyValue, bucket] of buckets) {
-    const top = pickTopRegionColorNames(bucket.colorCounts);
-    if (!top) continue;
-    fills.push({
-      regionKey: regionKeyValue,
-      county: bucket.county,
-      ...(bucket.district ? { district: bucket.district } : {}),
-      colorName: top.colorName,
-      hex: colorNameToHex(top.colorName),
-      ...(top.colorName2
-        ? {
-            colorName2: top.colorName2,
-            hex2: colorNameToHex(top.colorName2),
-          }
-        : {}),
-    });
-  }
-
-  return fills;
+  const air = options?.fallbackTemp ?? temp;
+  const locales: MapFillLocaleSpec[] = TAIWAN_COUNTIES.map((county) => ({
+    regionKey: county,
+    county,
+    refTemp: temp,
+    airTemp: air,
+    delta,
+  }));
+  return getRegionColorFillsForLocales(locales);
 }
 
 /**
@@ -441,12 +437,18 @@ export async function getRegionTopColorForLocation(
   const region = parseLocationToRegion(trimmed);
   if (!region) return null;
 
-  const fills = await getRegionColorFills(temp, delta);
-  const key = regionKey(region);
-  let fill = fills.find((f) => f.regionKey === key);
-  if (!fill && region.level === "district") {
-    fill = fills.find((f) => f.regionKey === region.county && !f.district);
-  }
+  const locales: MapFillLocaleSpec[] = [
+    {
+      regionKey: regionKey(region),
+      county: region.county,
+      ...(region.level === "district" ? { district: region.district } : {}),
+      refTemp: temp,
+      airTemp: temp,
+      delta,
+    },
+  ];
+  const fills = await getRegionColorFillsForLocales(locales);
+  const fill = fills[0];
   if (!fill) return null;
   return fill.colorName2 ? `${fill.colorName}・${fill.colorName2}` : fill.colorName;
 }

@@ -3,7 +3,12 @@ export { analyzeOutfit, type OutfitAnalysis, type OutfitTagAnchor } from "./outf
 export { fetchOutfitInsights } from "./outfit-insights";
 export { fetchMapColors } from "./map-colors";
 export type { MapColorPoint, MapColorsData } from "./map-colors";
-export { fetchRegionColorFills } from "./region-color-fills";
+export { fetchMapDataRegions } from "./map-data-regions";
+export type { MapDataRegion, MapDataRegionsData } from "./map-data-regions";
+export {
+  fetchRegionColorFills,
+  fetchRegionColorFillsByLocale,
+} from "./region-color-fills";
 export type { RegionColorFill, RegionColorFillsData } from "./region-color-fills";
 export type { OutfitInsights, OutfitTagStat, InspirationItem } from "./outfit-insights";
 export { fetchCurrentWeather } from "./weather";
